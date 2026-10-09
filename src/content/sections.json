@@ -1,0 +1,10 @@
+[
+  { "id": "foundations", "title": "Foundations", "blurb": "How a model behaves before it is an agent." },
+  { "id": "tools", "title": "Tool Use", "blurb": "Giving the model hands." },
+  { "id": "harness", "title": "The Harness", "blurb": "The program around the model. The heart of the course." },
+  { "id": "memory", "title": "Memory and Retrieval", "blurb": "What the agent knows, finds, and remembers." },
+  { "id": "patterns", "title": "Patterns and Multi-Agent", "blurb": "Workflows, orchestration, and handoffs." },
+  { "id": "reliability", "title": "Reliability and Safety", "blurb": "Guardrails, injection, retries, and humans in the loop." },
+  { "id": "operate", "title": "Evals and Operating Agents", "blurb": "Measure it, trace it, cache it, ship it." },
+  { "id": "cases", "title": "Case Studies", "blurb": "The 6-step agent design method on real systems." }
+]

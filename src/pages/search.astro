@@ -1,0 +1,16 @@
+---
+import Base from '../layouts/Base.astro';
+import { href } from '../lib/site';
+---
+<Base title="Search" description="Search every lesson and project page.">
+  <div class="page-head"><h1>Search</h1><p>Search every lesson and project page.</p></div>
+  <link href={href('/pagefind/pagefind-ui.css')} rel="stylesheet" />
+  <div id="search" class="search-box"></div>
+  <script is:inline define:vars={{ base: href('/pagefind/') }}>
+    const s = document.createElement('script');
+    s.src = base + 'pagefind-ui.js';
+    s.onload = () => new PagefindUI({ element: '#search', showSubResults: true, autofocus: true });
+    s.onerror = () => { document.getElementById('search').textContent = 'Search index is built at deploy time (npm run build).'; };
+    document.head.appendChild(s);
+  </script>
+</Base>

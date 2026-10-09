@@ -1,0 +1,55 @@
+---
+import Base from '../layouts/Base.astro';
+import Progress from '../components/Progress.astro';
+import { lessons, sections, lessonUrl, PROJECTS, href, SITE } from '../lib/site';
+const all = await lessons();
+const bySection = sections.map((s, i) => ({ ...s, num: i + 1, items: all.filter((l) => l.data.section === s.id) }));
+const labs = all.filter((l) => l.data.build.type !== 'none').length;
+---
+<Base title={SITE.name}>
+  <section class="hero">
+    <h1>Learn AI agents<br /><em>by building them.</em></h1>
+    <p>A free course on agents and agent harnesses: the loop, tools, context, memory, multi-agent patterns, safety, evals, and three real projects you build end to end.</p>
+    <a class="btn" href={lessonUrl(all[0]?.id ?? 'llm')}>Start here →</a>
+    <span class="progress-line" data-progress-count={all.length}></span>
+    <div class="stats">
+      <span><b>{all.length}</b> lessons</span>
+      <span><b>{labs}</b> hands-on labs</span>
+      <span><b>3</b> capstone projects</span>
+      <span><b>Free.</b> No login.</span>
+    </div>
+  </section>
+
+  {bySection.map((s) => (
+    <section class="section-block" id={s.id}>
+      <h2><span class="num">{String(s.num).padStart(2, '0')}</span>{s.title}<span class="count">{s.items.length} lessons</span></h2>
+      <p class="blurb">{s.blurb}</p>
+      <ol class="lesson-list">
+        {s.items.map((l) => (
+          <li>
+            <a href={lessonUrl(l.id)}>
+              <span class="n">{l.data.order}</span>
+              <span class="t">{l.data.title}<small>{l.data.tagline}</small></span>
+              <span class="tick" data-tick={l.id} aria-label="Not completed"></span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </section>
+  ))}
+
+  <section class="section-block" id="projects">
+    <h2><span class="num">09</span>Capstone Projects<span class="count">3 projects</span></h2>
+    <p class="blurb">Real Python code, end to end. Every part runs offline on a mock model, or on a real API key if you have one.</p>
+    <div class="cards">
+      {PROJECTS.map((p) => (
+        <a class="card" href={href(`/p/${p.slug}/`)}>
+          <span class="kicker">{p.kicker}</span>
+          <h3>{p.title}</h3>
+          <p>{p.blurb}</p>
+        </a>
+      ))}
+    </div>
+  </section>
+  <Progress />
+</Base>

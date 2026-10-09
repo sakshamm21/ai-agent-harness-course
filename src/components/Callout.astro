@@ -1,0 +1,7 @@
+---
+/** <Callout type="math" label="Let us check the math">...</Callout>  type: note | math | warn */
+interface Props { type?: 'note' | 'math' | 'warn'; label?: string }
+const { type = 'note', label } = Astro.props;
+const defaults = { note: 'Note', math: 'The math', warn: 'Watch out' };
+---
+<div class={`callout ${type}`}><span class="label">{label ?? defaults[type]}</span><slot /></div>

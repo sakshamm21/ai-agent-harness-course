@@ -1,0 +1,21 @@
+---
+import Base from '../layouts/Base.astro';
+import { SITE, href } from '../lib/site';
+---
+<Base title="About" description="About the Free Agent Harness course.">
+  <div class="page-head"><h1>About</h1></div>
+  <div class="prose">
+    <p>{SITE.name} is a free course for learning how AI agents work by building them: the loop, tools, context management, memory, multi-agent patterns, safety, evals, and three end-to-end projects.</p>
+    <p>Every lesson follows the same arc: a concrete problem with a number in it, why it happens, the fix, the math, and the tradeoff. Then you build it, either on the Agent Lab canvas or in real Python that runs in your browser.</p>
+    <h2>How the labs work</h2>
+    <p>The Agent Lab runs a deterministic simulation in your browser. The "model" in the lab is a scripted policy, not a real LLM: it chooses actions with probabilities that depend on what you wire up (tools, context strategy, guardrails, and so on). Seeds 1 to 20 make every run reproducible. Prices in the lab are illustrative "sim prices".</p>
+    <p>Code labs run real Python via <a href="https://pyodide.org">Pyodide</a>. They use a tiny toolkit, <code>agentkit_mini</code>, with a mock model so every lab works offline and free. You can switch on a real model with your own API key; it stays in your browser tab.</p>
+    <h2>Who wrote it</h2>
+    <p>Written by {SITE.author}. Product names are used only to describe publicly documented behaviour; where the course describes how a product probably works internally, it says so.</p>
+    <h2>Credit</h2>
+    <p>The format (short lessons that end on a tradeoff, each paired with a hands-on build page) is inspired by <a href="https://freesystemdesign.com/">freesystemdesign.com</a>. Section 5 follows the patterns in Anthropic's <a href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a>.</p>
+    <h2>Licence</h2>
+    <p>Lesson content is <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>. Code is MIT. Source on <a href={SITE.repo}>GitHub</a>. Found a mistake? Open an issue there.</p>
+    <p><a href={href('/')}>← All lessons</a></p>
+  </div>
+</Base>

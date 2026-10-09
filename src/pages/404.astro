@@ -1,0 +1,8 @@
+---
+import Base from '../layouts/Base.astro';
+import { href } from '../lib/site';
+---
+<Base title="Not found" noindex>
+  <div class="page-head"><h1>404</h1><p>This page fell out of the context window.</p></div>
+  <p><a class="btn" href={href('/')}>All lessons →</a></p>
+</Base>

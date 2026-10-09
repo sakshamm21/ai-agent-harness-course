@@ -1,0 +1,38 @@
+---
+import { render } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+import Callout from '../../../components/Callout.astro';
+import Flow from '../../../components/diagrams/Flow.astro';
+import Stack from '../../../components/diagrams/Stack.astro';
+import { PROJECTS, href, SITE } from '../../../lib/site';
+import { projectPages } from '../../../lib/projects';
+
+export function getStaticPaths() {
+  return PROJECTS.map((p) => ({ params: { slug: p.slug }, props: { project: p } }));
+}
+const { project } = Astro.props;
+const pages = await projectPages(project.slug);
+const overview = pages.find((p) => p.data.part === 0);
+const parts = pages.filter((p) => p.data.part > 0);
+const Content = overview ? (await render(overview)).Content : null;
+---
+<Base title={project.title} description={project.blurb}>
+  <nav class="lesson-nav"><a class="all" href={href('/p/')}>All projects</a></nav>
+  <header class="lesson-head">
+    <div class="kicker">{project.kicker}</div>
+    <h1>{project.title}</h1>
+    <p class="tagline">{overview?.data.tagline ?? project.blurb}</p>
+    <div class="byline"><span>by <a href={href('/about/')}>{SITE.author}</a></span><span>·</span><span>{parts.length} parts</span><span>·</span><a href={`${SITE.repo}/tree/main/projects/${project.slug}`}>Code on GitHub</a></div>
+  </header>
+  <div class="prose" data-pagefind-body>
+    {Content && <Content components={{ Callout, Flow, Stack }} />}
+  </div>
+  <section class="section-block">
+    <h2>Parts</h2>
+    <ol class="lesson-list">
+      {parts.map((p) => (
+        <li><a href={href(`/p/${project.slug}/${p.data.part}/`)}><span class="n">{p.data.part}</span><span class="t">{p.data.title}<small>{p.data.tagline}</small></span><span class="tick" data-tick={`p:${project.slug}/${p.data.part}`}></span></a></li>
+      ))}
+    </ol>
+  </section>
+</Base>

@@ -1,0 +1,35 @@
+---
+import Base from '../../../layouts/Base.astro';
+import LabApp from '../../../components/lab/LabApp';
+import CodeLab from '../../../components/codelab/CodeLab';
+import { lessons, href, lessonUrl, type Lesson } from '../../../lib/site';
+import { SCENARIOS } from '../../../lab/scenarios';
+import { CODELABS } from '../../../lib/codelabs';
+
+export async function getStaticPaths() {
+  const all = await lessons();
+  return all
+    .map((entry, i) => ({ entry, next: all[i + 1] }))
+    .filter(({ entry }) => entry.data.build.type !== 'none')
+    .map(({ entry, next }) => {
+      const id = entry.data.build.scenario ?? entry.id;
+      if (entry.data.build.type === 'lab' && !SCENARIOS[id]) throw new Error(`Lesson ${entry.id}: missing scenario ${id}.json`);
+      if (entry.data.build.type === 'code' && !CODELABS[id]) throw new Error(`Lesson ${entry.id}: missing codelab folder ${id}/`);
+      return { params: { slug: entry.id }, props: { entry, next } };
+    });
+}
+interface Props { entry: Lesson; next?: Lesson }
+const { entry, next } = Astro.props;
+const id = entry.data.build.scenario ?? entry.id;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<Base title={`Build: ${entry.data.title}`} wide description={`Hands-on lab for "${entry.data.title}".`}>
+  {entry.data.build.type === 'lab' ? (
+    <LabApp client:only="react" scenario={SCENARIOS[id]} lessonSlug={entry.id} lessonTitle={entry.data.title}
+      nextUrl={next ? lessonUrl(next.id) : href('/p/')} nextTitle={next?.data.title ?? 'Projects'} base={base} />
+  ) : (
+    <CodeLab client:only="react" lab={CODELABS[id]} lessonSlug={entry.id} lessonTitle={entry.data.title}
+      nextUrl={next ? lessonUrl(next.id) : href('/p/')} nextTitle={next?.data.title ?? 'Projects'} base={base} />
+  )}
+  <noscript><p>The lab runs in your browser and needs JavaScript.</p></noscript>
+</Base>

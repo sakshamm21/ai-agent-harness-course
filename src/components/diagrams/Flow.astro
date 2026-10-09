@@ -1,0 +1,35 @@
+---
+/**
+ * Boxes joined by arrows. Use in MDX without importing:
+ * <Flow steps={["User", {label: "Model", sub: "decides", kind: "hl"}, "Tools"]} loop caption="The agent loop" />
+ * kind: "hl" | "bad" | "good". `loop` draws a return arrow from the last box to the first.
+ */
+type Step = string | { label: string; sub?: string; kind?: 'hl' | 'bad' | 'good' };
+interface Props { steps: Step[]; loop?: boolean; caption?: string; loopLabel?: string }
+const { steps, loop = false, caption, loopLabel = '' } = Astro.props;
+const items = steps.map((s) => (typeof s === 'string' ? { label: s } : s));
+const W = 128, H = 54, GAP = 40;
+const width = items.length * W + (items.length - 1) * GAP + 8;
+const height = H + (loop ? 56 : 8);
+const x = (i: number) => 4 + i * (W + GAP);
+---
+<figure class="diagram">
+  <svg viewBox={`0 0 ${width} ${height}`} width={width} role="img" aria-label={caption ?? items.map((i) => i.label).join(' → ')}>
+    <defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrow" /></marker></defs>
+    {items.map((it, i) => (
+      <g>
+        <rect class={`dg-box ${it.kind ?? ''}`} x={x(i)} y={4} width={W} height={H} rx={9} />
+        <text class="dg-text" x={x(i) + W / 2} y={it.sub ? 27 : 36} text-anchor="middle">{it.label}</text>
+        {it.sub && <text class="dg-sub" x={x(i) + W / 2} y={44} text-anchor="middle">{it.sub}</text>}
+        {i < items.length - 1 && <line class="dg-line" x1={x(i) + W} y1={4 + H / 2} x2={x(i + 1) - 2} y2={4 + H / 2} marker-end="url(#fa)" />}
+      </g>
+    ))}
+    {loop && items.length > 1 && (
+      <g>
+        <path class="dg-line" d={`M ${x(items.length - 1) + W / 2} ${4 + H} V ${H + 34} H ${x(0) + W / 2} V ${H + 8}`} marker-end="url(#fa)" />
+        {loopLabel && <text class="dg-sub" x={width / 2} y={H + 50} text-anchor="middle">{loopLabel}</text>}
+      </g>
+    )}
+  </svg>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

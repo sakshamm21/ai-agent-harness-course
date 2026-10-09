@@ -1,0 +1,27 @@
+---
+import Base from '../layouts/Base.astro';
+import { lessons, lessonUrl } from '../lib/site';
+const all = await lessons();
+const map = new Map<string, { term: string; def: string; lessons: { id: string; title: string }[] }>();
+for (const l of all) for (const t of l.data.terms) {
+  const k = t.term.toLowerCase();
+  const e = map.get(k) ?? { term: t.term, def: t.def, lessons: [] };
+  e.lessons.push({ id: l.id, title: l.data.title });
+  map.set(k, e);
+}
+const terms = [...map.values()].sort((a, b) => a.term.localeCompare(b.term));
+const letters = [...new Set(terms.map((t) => t.term[0].toUpperCase()))];
+---
+<Base title="Glossary" description="Every term used in the Free Agent Harness course, with the lesson that teaches it.">
+  <div class="page-head"><h1>Glossary</h1><p>{terms.length} terms, built from the lessons. Each links to where it is taught.</p></div>
+  <p class="chips">{letters.map((c) => <a class="chip" href={`#l-${c}`}>{c}</a>)}</p>
+  <dl class="glossary">
+    {terms.map((t, i) => (
+      <>
+        {(i === 0 || terms[i - 1].term[0].toUpperCase() !== t.term[0].toUpperCase()) && <h2 id={`l-${t.term[0].toUpperCase()}`}>{t.term[0].toUpperCase()}</h2>}
+        <dt id={t.term.toLowerCase().replace(/[^a-z0-9]+/g, '-')}>{t.term}</dt>
+        <dd>{t.def} {t.lessons.map((l) => <a href={lessonUrl(l.id)}>→ {l.title}</a>)}</dd>
+      </>
+    ))}
+  </dl>
+</Base>

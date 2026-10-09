@@ -1,0 +1,12 @@
+---
+import { href, lessonUrl } from '../lib/site';
+interface Props { prev?: { id: string; data: { title: string } }; next?: { id: string; data: { title: string } } }
+const { prev, next } = Astro.props;
+---
+<nav class="lesson-nav" aria-label="Lesson navigation">
+  <a class="all" href={href('/')}>All lessons</a>
+  <span class="pn">
+    {prev && <a href={lessonUrl(prev.id)} rel="prev">← {prev.data.title}</a>}
+    {next ? <a href={lessonUrl(next.id)} rel="next">{next.data.title} →</a> : <a href={href('/p/')}>Projects →</a>}
+  </span>
+</nav>

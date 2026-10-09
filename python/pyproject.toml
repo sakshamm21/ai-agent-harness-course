@@ -1,0 +1,13 @@
+[project]
+name = "agentkit_mini"
+version = "0.1.0"
+description = "The tiny agent toolkit behind the Free Agent Harness code labs. No dependencies."
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["agentkit_mini"]

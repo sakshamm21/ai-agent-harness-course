@@ -1,0 +1,31 @@
+---
+interface Q { q: string; options: string[]; answer: number; why: string }
+interface Props { quiz: Q[] }
+const { quiz } = Astro.props;
+---
+<section class="quiz" aria-labelledby="quiz-h">
+  <h2 id="quiz-h">Quick check</h2>
+  {quiz.map((q, i) => (
+    <div class="q" data-answer={q.answer}>
+      <p>{i + 1}. {q.q}</p>
+      <div class="opts">
+        {q.options.map((o, j) => <button type="button" class="opt" data-i={j}>{o}</button>)}
+      </div>
+      <div class="why" role="status">{q.why}</div>
+    </div>
+  ))}
+</section>
+<script is:inline>
+  document.querySelectorAll('.quiz .q').forEach(function (q) {
+    q.addEventListener('click', function (e) {
+      var b = e.target.closest('button.opt'); if (!b) return;
+      var ans = q.getAttribute('data-answer');
+      q.querySelectorAll('button.opt').forEach(function (o) {
+        o.classList.remove('right', 'wrong');
+        if (o.getAttribute('data-i') === ans) o.classList.add('right');
+      });
+      if (b.getAttribute('data-i') !== ans) b.classList.add('wrong');
+      q.classList.add('answered');
+    });
+  });
+</script>

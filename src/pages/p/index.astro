@@ -1,0 +1,21 @@
+---
+import Base from '../../layouts/Base.astro';
+import { PROJECTS, href } from '../../lib/site';
+import { projectPages } from '../../lib/projects';
+const parts = await projectPages();
+---
+<Base title="Capstone Projects" description="Three real Python projects you build end to end: a coding agent harness, a support agent with RAG, and a multi-agent research assistant.">
+  <div class="page-head">
+    <h1>Capstone Projects</h1>
+    <p>Real code, end to end. Each project is a folder in the course repo with starter code, a reference solution and tests. Everything runs offline on a mock model; add an API key to run it for real.</p>
+  </div>
+  <div class="cards" style="margin-top:24px">
+    {PROJECTS.map((p) => (
+      <a class="card" href={href(`/p/${p.slug}/`)}>
+        <span class="kicker">{p.kicker} · {parts.filter((x) => x.data.project === p.slug && x.data.part > 0).length} parts</span>
+        <h3>{p.title}</h3>
+        <p>{p.blurb}</p>
+      </a>
+    ))}
+  </div>
+</Base>

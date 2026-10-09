@@ -1,0 +1,66 @@
+---
+import { render } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+import LessonNav from '../../../components/LessonNav.astro';
+import QuickCheck from '../../../components/QuickCheck.astro';
+import Progress from '../../../components/Progress.astro';
+import Callout from '../../../components/Callout.astro';
+import Flow from '../../../components/diagrams/Flow.astro';
+import Stack from '../../../components/diagrams/Stack.astro';
+import { lessons, sections, href, usedInLink, SITE, type Lesson } from '../../../lib/site';
+
+export async function getStaticPaths() {
+  const all = await lessons();
+  return all.map((entry, i) => ({ params: { slug: entry.id }, props: { entry, prev: all[i - 1], next: all[i + 1] } }));
+}
+interface Props { entry: Lesson; prev?: Lesson; next?: Lesson }
+const { entry, prev, next } = Astro.props;
+const { Content } = await render(entry);
+const d = entry.data;
+const section = sections.find((s) => s.id === d.section)!;
+const sectionNum = sections.indexOf(section) + 1;
+---
+<Base title={d.title} description={`${d.tagline} Lesson ${d.order} of the free AI agents course.`}>
+  <LessonNav prev={prev} next={next} />
+  <article data-pagefind-body>
+    <header class="lesson-head">
+      <div class="kicker">Section {sectionNum} · {section.title} · Lesson {d.order}</div>
+      <h1>{d.title}</h1>
+      <p class="tagline">{d.tagline}</p>
+      <div class="byline">
+        <span>by <a href={href('/about/')}>{SITE.author}</a></span>
+        <span>·</span><span>{d.readingMinutes} min read</span>
+        <span>·</span><span>Real world: {d.realWorld}</span>
+      </div>
+    </header>
+    <div class="prose">
+      <Content components={{ Callout, Flow, Stack }} />
+    </div>
+  </article>
+
+  {d.build.type !== 'none' && (
+    <div class="build-cta">
+      <div><strong>Now build it yourself</strong><p>{d.build.type === 'code' ? 'Write and run real Python in your browser. No install.' : 'Wire the parts on a canvas, run the scenario, and watch where it breaks.'}</p></div>
+      <a class="btn" href={href(`/c/${entry.id}/build/`)}>Build it →</a>
+    </div>
+  )}
+
+  {d.usedIn.length > 0 && (
+    <div class="chips">Used in:{d.usedIn.map((u) => { const l = usedInLink(u); return <a class="chip" href={l.url} title={l.title}>{l.label}</a>; })}</div>
+  )}
+
+  <QuickCheck quiz={d.quiz} />
+
+  {d.reading.length > 0 && (
+    <section class="reading prose">
+      <h2>Further reading</h2>
+      <ul>{d.reading.map((r) => <li><a href={r.url} rel="noopener">{r.title}</a></li>)}</ul>
+    </section>
+  )}
+
+  <div class="complete-row">
+    <button type="button" class="btn ghost" data-complete-toggle={entry.id} aria-pressed="false">Mark complete</button>
+  </div>
+  <LessonNav prev={prev} next={next} />
+  <Progress />
+</Base>

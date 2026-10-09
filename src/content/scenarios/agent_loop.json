@@ -1,0 +1,59 @@
+{
+  "id": "agent_loop",
+  "title": "The Agent Loop",
+  "brief": "Three bug reports come in. Each fix needs the model to read the file, edit it, and run the tests. Right now the model gets one call and no tools, so it guesses. Get at least 85% of fixes right in 8 turns or fewer on average.",
+  "palette": ["user", "model", "loop", "tool"],
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 260, "y": 120 } }
+    ],
+    "edges": [{ "source": "u", "target": "m" }]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 15 }, "position": { "x": 520, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads a file from the repo and returns its text. Use it before editing." }, "position": { "x": 780, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text." }, "position": { "x": 780, "y": 120 } },
+      { "id": "t3", "type": "tool", "data": { "name": "run_tests", "description": "Runs the test suite and returns failures." }, "position": { "x": 780, "y": 240 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Off-by-one in pagination", "prompt": "Page 2 of /orders repeats the last item of page 1. Fix it.", "needs": ["read_file", "edit_file", "run_tests"] },
+    { "id": "t2", "label": "Timezone bug", "prompt": "Daily report shows yesterday's date after 7pm. Fix it.", "needs": ["read_file", "edit_file", "run_tests"] },
+    { "id": "t3", "label": "Null email crash", "prompt": "Signup crashes when email is empty. Fix it.", "needs": ["read_file", "edit_file", "run_tests"] }
+  ],
+  "actions": {
+    "read": { "kind": "tool", "tool": "read_file", "text": "read_file(\"app/orders.py\")", "tokens": 1500 },
+    "edit": { "kind": "tool", "tool": "edit_file", "text": "edit_file(\"app/orders.py\", old, new)", "tokens": 200 },
+    "test": { "kind": "tool", "tool": "run_tests", "text": "run_tests()", "tokens": 600 },
+    "guess": { "kind": "answer", "correct": false, "text": "Without seeing the code, the bug is probably in the loop. Try changing < to <=." },
+    "lucky": { "kind": "answer", "correct": true, "text": "The fix is likely here (a lucky guess that happens to be right)." },
+    "done": { "kind": "answer", "correct": true, "text": "Fixed. I read the file, changed the offset calculation, and all 48 tests pass." }
+  },
+  "policy": {
+    "base": { "guess": 1, "lucky": 0.25, "read": 0, "edit": 0, "test": 0, "done": 0 },
+    "modifiers": [
+      { "when": { "tool": "read_file" }, "shift": { "read": 4 }, "scale": { "guess": 0.08, "lucky": 0.08 }, "note": "With a file reader the model looks before it answers." },
+      { "when": { "all": [{ "tool": "edit_file" }, { "called": "read_file" }] }, "shift": { "edit": 3 } },
+      { "when": { "all": [{ "tool": "run_tests" }, { "called": "edit_file" }] }, "shift": { "test": 3 } },
+      { "when": { "state": "ready" }, "set": { "done": 8, "guess": 0.2 } }
+    ]
+  },
+  "goals": [
+    { "id": "success", "label": "Fix at least 85% of bugs", "metric": "success_rate", "op": ">=", "value": 0.85 },
+    { "id": "turns", "label": "8 turns or fewer on average", "metric": "avg_turns", "op": "<=", "value": 8 }
+  ],
+  "hints": [
+    "The model cannot see the file. What would let it look?",
+    "Tools alone are not enough: something has to run the tool and send the result back. Add a Loop between the model and the tools.",
+    "Give it read_file, edit_file and run_tests (exact names), all wired to the loop."
+  ],
+  "explain": "The loop is the whole trick: call the model, run what it asks for, append the result, repeat. The model never touches the file; your code does."
+}

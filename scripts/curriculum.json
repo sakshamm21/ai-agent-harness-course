@@ -1,0 +1,326 @@
+[
+ {
+  "order": 1,
+  "slug": "llm",
+  "title": "What an LLM Actually Does",
+  "section": "foundations"
+ },
+ {
+  "order": 2,
+  "slug": "tokens",
+  "title": "Tokens and the Context Window",
+  "section": "foundations"
+ },
+ {
+  "order": 3,
+  "slug": "prompting",
+  "title": "System Prompts and Messages",
+  "section": "foundations"
+ },
+ {
+  "order": 4,
+  "slug": "structured",
+  "title": "Structured Output",
+  "section": "foundations"
+ },
+ {
+  "order": 5,
+  "slug": "cost",
+  "title": "Cost and Latency Math",
+  "section": "foundations"
+ },
+ {
+  "order": 6,
+  "slug": "chat_vs_agent",
+  "title": "Chatbot vs Workflow vs Agent",
+  "section": "foundations"
+ },
+ {
+  "order": 7,
+  "slug": "when_not",
+  "title": "When Not to Build an Agent",
+  "section": "foundations"
+ },
+ {
+  "order": 8,
+  "slug": "tools",
+  "title": "Function Calling",
+  "section": "tools"
+ },
+ {
+  "order": 9,
+  "slug": "agent_loop",
+  "title": "The Agent Loop",
+  "section": "tools"
+ },
+ {
+  "order": 10,
+  "slug": "react",
+  "title": "ReAct: Reason then Act",
+  "section": "tools"
+ },
+ {
+  "order": 11,
+  "slug": "tool_design",
+  "title": "Designing Good Tools",
+  "section": "tools"
+ },
+ {
+  "order": 12,
+  "slug": "tool_errors",
+  "title": "Tool Errors and Recovery",
+  "section": "tools"
+ },
+ {
+  "order": 13,
+  "slug": "parallel_tools",
+  "title": "Parallel Tool Calls",
+  "section": "tools"
+ },
+ {
+  "order": 14,
+  "slug": "mcp",
+  "title": "Model Context Protocol (MCP)",
+  "section": "tools"
+ },
+ {
+  "order": 15,
+  "slug": "harness",
+  "title": "What Is an Agent Harness",
+  "section": "harness"
+ },
+ {
+  "order": 16,
+  "slug": "prompt_assembly",
+  "title": "Assembling the Context",
+  "section": "harness"
+ },
+ {
+  "order": 17,
+  "slug": "context_mgmt",
+  "title": "Context Management and Compaction",
+  "section": "harness"
+ },
+ {
+  "order": 18,
+  "slug": "stop_conditions",
+  "title": "Stop Conditions and Budgets",
+  "section": "harness"
+ },
+ {
+  "order": 19,
+  "slug": "permissions",
+  "title": "Permissions and Sandboxing",
+  "section": "harness"
+ },
+ {
+  "order": 20,
+  "slug": "hooks",
+  "title": "Hooks and Lifecycle Events",
+  "section": "harness"
+ },
+ {
+  "order": 21,
+  "slug": "sessions",
+  "title": "Sessions, State and Resume",
+  "section": "harness"
+ },
+ {
+  "order": 22,
+  "slug": "streaming",
+  "title": "Streaming and UX",
+  "section": "harness"
+ },
+ {
+  "order": 23,
+  "slug": "subagents",
+  "title": "Subagents",
+  "section": "harness"
+ },
+ {
+  "order": 24,
+  "slug": "memory_types",
+  "title": "Kinds of Memory",
+  "section": "memory"
+ },
+ {
+  "order": 25,
+  "slug": "embeddings",
+  "title": "Embeddings and Similarity",
+  "section": "memory"
+ },
+ {
+  "order": 26,
+  "slug": "rag",
+  "title": "Retrieval-Augmented Generation",
+  "section": "memory"
+ },
+ {
+  "order": 27,
+  "slug": "chunking",
+  "title": "Chunking and Indexing",
+  "section": "memory"
+ },
+ {
+  "order": 28,
+  "slug": "agentic_search",
+  "title": "Agentic Search vs RAG",
+  "section": "memory"
+ },
+ {
+  "order": 29,
+  "slug": "memory_write",
+  "title": "Writing Memory Safely",
+  "section": "memory"
+ },
+ {
+  "order": 30,
+  "slug": "chaining",
+  "title": "Prompt Chaining",
+  "section": "patterns"
+ },
+ {
+  "order": 31,
+  "slug": "routing",
+  "title": "Routing",
+  "section": "patterns"
+ },
+ {
+  "order": 32,
+  "slug": "parallelization",
+  "title": "Parallelization and Voting",
+  "section": "patterns"
+ },
+ {
+  "order": 33,
+  "slug": "orchestrator",
+  "title": "Orchestrator\u2013Workers",
+  "section": "patterns"
+ },
+ {
+  "order": 34,
+  "slug": "evaluator_optimizer",
+  "title": "Evaluator\u2013Optimizer",
+  "section": "patterns"
+ },
+ {
+  "order": 35,
+  "slug": "planning",
+  "title": "Planning and Replanning",
+  "section": "patterns"
+ },
+ {
+  "order": 36,
+  "slug": "handoffs",
+  "title": "Handoffs and Shared State",
+  "section": "patterns"
+ },
+ {
+  "order": 37,
+  "slug": "guardrails",
+  "title": "Guardrails",
+  "section": "reliability"
+ },
+ {
+  "order": 38,
+  "slug": "prompt_injection",
+  "title": "Prompt Injection",
+  "section": "reliability"
+ },
+ {
+  "order": 39,
+  "slug": "hitl",
+  "title": "Human in the Loop",
+  "section": "reliability"
+ },
+ {
+  "order": 40,
+  "slug": "idempotency",
+  "title": "Retries and Idempotent Tools",
+  "section": "reliability"
+ },
+ {
+  "order": 41,
+  "slug": "timeouts",
+  "title": "Timeouts, Fallbacks and Model Failover",
+  "section": "reliability"
+ },
+ {
+  "order": 42,
+  "slug": "determinism",
+  "title": "Taming Nondeterminism",
+  "section": "reliability"
+ },
+ {
+  "order": 43,
+  "slug": "computer_use",
+  "title": "Browser and Computer-Use Agents",
+  "section": "reliability"
+ },
+ {
+  "order": 44,
+  "slug": "evals",
+  "title": "Why Evals Come First",
+  "section": "operate"
+ },
+ {
+  "order": 45,
+  "slug": "llm_judge",
+  "title": "LLM-as-Judge",
+  "section": "operate"
+ },
+ {
+  "order": 46,
+  "slug": "trajectory_evals",
+  "title": "Trajectory and Tool-Use Evals",
+  "section": "operate"
+ },
+ {
+  "order": 47,
+  "slug": "tracing",
+  "title": "Tracing and Observability",
+  "section": "operate"
+ },
+ {
+  "order": 48,
+  "slug": "caching",
+  "title": "Prompt Caching and Cost Control",
+  "section": "operate"
+ },
+ {
+  "order": 49,
+  "slug": "deploy",
+  "title": "Deploying an Agent",
+  "section": "operate"
+ },
+ {
+  "order": 50,
+  "slug": "method",
+  "title": "How to Design an Agent (6-step method)",
+  "section": "cases"
+ },
+ {
+  "order": 51,
+  "slug": "case_coding_agent",
+  "title": "Design a Coding Agent (like Claude Code)",
+  "section": "cases"
+ },
+ {
+  "order": 52,
+  "slug": "case_support_agent",
+  "title": "Design a Customer Support Agent (like Intercom Fin)",
+  "section": "cases"
+ },
+ {
+  "order": 53,
+  "slug": "case_research_agent",
+  "title": "Design a Deep Research Agent",
+  "section": "cases"
+ },
+ {
+  "order": 54,
+  "slug": "case_browser_agent",
+  "title": "Design a Browser Agent",
+  "section": "cases"
+ }
+]

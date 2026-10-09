@@ -1,0 +1,19 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Privacy" description="What this site stores and sends.">
+  <div class="page-head"><h1>Privacy</h1></div>
+  <div class="prose">
+    <p>There are no accounts, no logins and no tracking cookies.</p>
+    <h2>What stays in your browser</h2>
+    <ul>
+      <li><strong>Progress</strong> (which lessons you marked complete), your <strong>theme</strong>, your <strong>lab graphs</strong> and your <strong>code lab code</strong> are saved in your browser's localStorage. They never leave your device. Clear your site data to remove them.</li>
+      <li>If you paste an <strong>API key</strong> into a code lab, it is kept in sessionStorage for that tab only and sent directly from your browser to the model provider. It is never sent to this site.</li>
+    </ul>
+    <h2>What is loaded from elsewhere</h2>
+    <ul>
+      <li>Code labs download Python (Pyodide) from cdn.jsdelivr.net the first time you press Run.</li>
+      <li>If the site owner enables Cloudflare Web Analytics, it counts page views without cookies or personal data.</li>
+    </ul>
+  </div>
+</Base>

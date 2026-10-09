@@ -1,0 +1,23 @@
+.cl-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 18px; align-items: start; }
+.cl-instructions { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 4px 18px; font-size: 15.5px; position: sticky; top: 70px; max-height: calc(100vh - 90px); overflow-y: auto; }
+.cl-instructions h2 { font-size: 1.15rem; margin: 1.2rem 0 0.5rem; }
+.cl-editor { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--code-bg); }
+.cl-bar { display: flex; gap: 12px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--text-3); }
+.cl-bar .file { font-family: var(--mono); margin-right: auto; }
+.linkish { background: none; border: 0; color: var(--text-2); cursor: pointer; font: inherit; font-size: 13px; padding: 2px 4px; }
+.linkish:hover { color: var(--text); text-decoration: underline; }
+.cl-editor textarea { display: block; width: 100%; border: 0; background: transparent; color: var(--text); font: 13.5px/1.6 var(--mono); padding: 12px 14px; resize: vertical; tab-size: 4; white-space: pre; overflow-x: auto; outline: none; }
+.real-toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; color: var(--text-2); margin-left: auto; }
+.keybox input { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 7px; padding: 7px 9px; font: inherit; margin: 4px 0 8px; }
+.keybox p { margin: 0; font-size: 13.5px; color: var(--text-2); }
+.cl-note { color: var(--text-3); font-size: 13.5px; }
+.cl-output { background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; font: 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow-y: auto; margin: 10px 0; }
+.cl-output .err { color: var(--bad); display: block; margin-top: 6px; }
+.cl-checks { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 6px; font-size: 14.5px; }
+.cl-checks li { border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; background: var(--bg-2); }
+.cl-checks li.ok { border-color: var(--good); }
+.cl-checks li.ok span { color: var(--good); }
+.cl-checks li.no { border-color: var(--bad); }
+.cl-checks li.no span { color: var(--bad); }
+.cl-checks small { color: var(--text-3); }
+@media (max-width: 900px) { .cl-grid { grid-template-columns: 1fr; } .cl-instructions { position: static; max-height: none; } }

@@ -1,0 +1,34 @@
+---
+/**
+ * A stacked bar of context blocks, sized by tokens, with an optional window budget line.
+ * <Stack blocks={[{label: "System", tokens: 2000}, {label: "History", tokens: 9000, kind: "bad"}]} budget={8000} caption="..." />
+ */
+interface Block { label: string; tokens: number; kind?: 'hl' | 'bad' | 'good' }
+interface Props { blocks: Block[]; budget?: number; caption?: string; unit?: string }
+const { blocks, budget, caption, unit = 'tokens' } = Astro.props;
+const total = blocks.reduce((s, b) => s + b.tokens, 0);
+const scaleMax = Math.max(total, budget ?? 0) * 1.05;
+const W = 640, BAR = 44;
+const fmt = (n: number) => n.toLocaleString('en-US');
+let acc = 0;
+const segs = blocks.map((b) => { const s = { ...b, x: (acc / scaleMax) * W, w: (b.tokens / scaleMax) * W }; acc += b.tokens; return s; });
+---
+<figure class="diagram">
+  <svg viewBox={`0 0 ${W + 8} 112`} width={W + 8} role="img" aria-label={caption ?? `Context: ${blocks.map((b) => `${b.label} ${b.tokens}`).join(', ')}`}>
+    {segs.map((s) => (
+      <g>
+        <rect class={`dg-box ${s.kind ?? ''}`} x={4 + s.x} y={14} width={Math.max(2, s.w - 2)} height={BAR} rx={6} />
+        {s.w > 54 && <text class="dg-text" x={4 + s.x + s.w / 2} y={34} text-anchor="middle" style="font-size:12px">{s.label}</text>}
+        {s.w > 54 && <text class="dg-sub" x={4 + s.x + s.w / 2} y={50} text-anchor="middle">{fmt(s.tokens)}</text>}
+      </g>
+    ))}
+    {budget && (
+      <g>
+        <line x1={4 + (budget / scaleMax) * W} x2={4 + (budget / scaleMax) * W} y1={4} y2={70} stroke="var(--bad)" stroke-width="2" stroke-dasharray="4 3" />
+        <text class="dg-sub" x={Math.min(W - 60, 4 + (budget / scaleMax) * W)} y={86} text-anchor="middle" style="fill:var(--bad)">window {fmt(budget)}</text>
+      </g>
+    )}
+    <text class="dg-sub" x={4} y={104}>Total {fmt(total)} {unit}</text>
+  </svg>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

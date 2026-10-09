@@ -1,0 +1,71 @@
+---
+import '../styles/global.css';
+import { SITE, href } from '../lib/site';
+interface Props { title: string; description?: string; wide?: boolean; noindex?: boolean }
+const { title, description = 'A free, hands-on course for learning AI agents and agent harnesses, from the first API call to shipped projects.', wide = false, noindex = false } = Astro.props;
+const fullTitle = title === SITE.name ? `${SITE.name}: ${SITE.tagline}` : `${title} · ${SITE.name}`;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
+    <link rel="alternate" type="application/rss+xml" title={SITE.name} href={href('/rss.xml')} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta name="theme-color" content="#08090d" />
+    <script is:inline>
+      try { const t = localStorage.getItem('fah-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <a class="sr-only" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class={`${wide ? 'wrap-wide' : 'wrap'} bar`}>
+        <a class="brand" href={href('/')}>
+          <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#lg)"/><path d="M8 8.5h8M8 12h5M8 15.5h8" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>
+          {SITE.name}
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <a href={href('/')}>Lessons</a>
+          <a href={href('/p/')}>Projects</a>
+          <a class="hide-sm" href={href('/glossary/')}>Glossary</a>
+          <a class="hide-sm" href={href('/search/')}>Search</a>
+          <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">◐</button>
+        </nav>
+      </div>
+    </header>
+    <main id="main" class={wide ? 'wrap-wide' : 'wrap'}>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class={`${wide ? 'wrap-wide' : 'wrap'} cols`}>
+        <div>{SITE.name}. Free, no login, no tracking cookies.<br />Content CC BY-NC-SA 4.0 · Code MIT</div>
+        <nav aria-label="Footer">
+          <a href={href('/about/')}>About</a>
+          <a href={href('/privacy/')}>Privacy</a>
+          <a href={href('/glossary/')}>Glossary</a>
+          <a href={SITE.repo}>GitHub</a>
+          <a href={href('/rss.xml')}>RSS</a>
+        </nav>
+      </div>
+    </footer>
+    <script is:inline>
+      document.getElementById('theme-toggle')?.addEventListener('click', () => {
+        const el = document.documentElement;
+        const next = el.dataset.theme === 'light' ? 'dark' : 'light';
+        el.dataset.theme = next;
+        try { localStorage.setItem('fah-theme', next); } catch (e) {}
+      });
+    </script>
+  </body>
+</html>

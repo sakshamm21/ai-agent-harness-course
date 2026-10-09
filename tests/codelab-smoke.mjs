@@ -1,0 +1,17 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM });
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+const errors = [];
+page.on('pageerror', (e) => errors.push(String(e)));
+await page.goto('http://localhost:4321/c/tools/build/', { waitUntil: 'networkidle' });
+page.on('dialog', (d) => d.accept());
+await page.getByRole('button', { name: '✓ Check' }).click();
+await page.waitForSelector('.cl-checks', { state: 'attached', timeout: 90000 });
+console.log('output:', await page.locator('.cl-output').innerText().catch(() => ''));
+console.log('starter:', await page.locator('.cl-checks').innerText());
+await page.getByRole('button', { name: 'Show solution' }).click();
+await page.getByRole('button', { name: '✓ Check' }).click();
+await page.waitForSelector('.passed', { timeout: 30000 });
+console.log('solution passed; errors:', errors);
+await page.screenshot({ path: process.argv[2], fullPage: true });
+await browser.close();

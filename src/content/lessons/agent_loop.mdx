@@ -1,0 +1,114 @@
+---
+title: "The Agent Loop"
+section: "tools"
+order: 9
+tagline: "Call the model, run the tools, append the results, repeat until done."
+realWorld: "The core loop inside every coding agent"
+build:
+  type: "lab"
+  scenario: "agent_loop"
+terms:
+  - term: "agent loop"
+    def: "The cycle at the core of every agent: call the model, run any tools it asked for, append the results to the conversation, and call the model again until it stops asking."
+  - term: "turn"
+    def: "One model call inside the agent loop, plus the tool calls it requested."
+  - term: "stop reason"
+    def: "The field on a model response that says why it stopped: it finished (end_turn), it wants a tool (tool_use), or it ran out of output tokens (max_tokens)."
+usedIn: ["nanoharness/1"]
+readingMinutes: 6
+updated: 2026-10-09
+quiz:
+  - q: "In the agent loop, who actually runs the tool?"
+    options: ["The model, on the provider's servers", "Your code, after reading the model's tool call", "The user, by copying the command"]
+    answer: 1
+    why: "The model only emits a structured request. Your harness runs the function and sends the result back as a tool_result message."
+  - q: "What tells the loop that the agent is finished?"
+    options: ["The response has no tool calls (stop reason end_turn)", "The response is longer than 500 tokens", "The model says the word DONE"]
+    answer: 0
+    why: "When the model answers without requesting a tool, there is nothing left to run, so the loop returns the final text."
+  - q: "A task takes 6 turns and the context grows from 3k to 18k tokens. Roughly how many input tokens do you pay for?"
+    options: ["18k, the final context size", "About 63k, the sum of every turn's context", "3k, because only the first prompt is billed"]
+    answer: 1
+    why: "Every turn resends the whole conversation. You pay for 3k + 6k + 9k + 12k + 15k + 18k = 63k input tokens."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "Anthropic docs: Tool use with Claude"
+    url: "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview"
+---
+
+## You asked it to fix a bug. It answered with a guess.
+
+You paste a bug report into a chat: "Page 2 of `/orders` repeats the last item of page 1." The model replies with a confident fix. You try it. It is wrong.
+
+Run that ten times and about 7 of the 10 answers are wrong. The model is not bad at pagination. It simply never saw `orders.py`. It is answering a question about a file it has never read, so it writes the most likely code for a pagination bug in general.
+
+To fix *your* bug, it has to look at *your* code, change it, and check that the tests pass. That is three actions, and a single model call can take none of them.
+
+## The model can't act, but it can ask
+
+In [Function Calling](/c/tools/) you gave the model tools. A tool call is a request, not an action. The model returns something like this and then stops:
+
+```json
+{ "type": "tool_use", "name": "read_file", "input": { "path": "app/orders.py" } }
+```
+
+Nothing has happened yet. Your code has to see that request, run `read_file`, and hand the contents back. Only then can the model take the next step: now that it has seen line 42, it asks for `edit_file`.
+
+So one call is never enough. The model needs to ask, see the answer, and ask again.
+
+## Put a loop around it
+
+The agent loop is the smallest program that makes a model into an agent:
+
+```python
+messages = [{"role": "user", "content": task}]
+while True:
+    resp = model(messages, tools)
+    messages.append(resp.to_message())
+    if not resp.tool_calls:          # stop reason: end_turn
+        return resp.text
+    results = []
+    for call in resp.tool_calls:
+        output = TOOLS[call.name](**call.input)
+        results.append(tool_result(call.id, output))
+    messages.append({"role": "user", "content": results})
+```
+
+<Flow steps={["Task", { label: "Model", sub: "decides next step", kind: "hl" }, { label: "Your code", sub: "runs the tool" }, "Tool result"]} loop loopLabel="append the result, call the model again" caption="The agent loop. The model decides; your code acts." />
+
+Three things make it work:
+
+- **The transcript is the memory.** Each tool result goes back into `messages`, so the next call sees everything that happened so far.
+- **The model picks the next step.** You did not write "read, then edit, then test". The model chose that order from the task.
+- **No tool calls means done.** When the model answers in plain text, there is nothing left to run.
+
+## Let us check the math
+
+The loop resends the whole conversation on every turn. Say a bug fix takes 6 turns. It starts with 3,000 tokens (system prompt, tool schemas, the task), and each turn adds about 3,000 more (a file, a diff, test output).
+
+<Callout type="math" label="Let us check the math">
+Input tokens per turn: 3k, 6k, 9k, 12k, 15k, 18k.<br />
+Total input: **63k tokens**. Output is small, about 6 × 300 = 1.8k tokens.<br />
+At $3 per million input and $15 per million output: 63,000 × $3/M + 1,800 × $15/M ≈ **$0.19 + $0.03 = $0.22 per bug fix**.
+</Callout>
+
+Notice the shape. Cost grows with the *square* of the number of turns, because every turn pays for all the turns before it. A 12-turn task is not twice the cost of a 6-turn task. It is closer to four times.
+
+<Stack blocks={[{ label: "System + tools", tokens: 3000 }, { label: "read_file", tokens: 6000 }, { label: "edit_file", tokens: 1500 }, { label: "run_tests", tokens: 4500, kind: "hl" }, { label: "next turns…", tokens: 3000 }]} caption="What the model sees on turn 5. Every earlier turn rides along." />
+
+## The tradeoff: loops don't know when to stop
+
+A loop gives the model freedom to take as many steps as it needs. That freedom cuts both ways:
+
+- **Runaway turns.** A model that keeps calling `run_tests` on a test that will never pass loops forever. You need [stop conditions and budgets](/c/stop_conditions/): a max turn count, a max cost, and a clear done signal.
+- **Growing context.** Every turn adds tokens. On a long task the conversation outgrows the window, and the first thing to fall out is the task itself. That is [context management](/c/context_mgmt/).
+- **Repeated or wrong calls.** The loop runs whatever the model asks for, so tool names and descriptions matter ([Designing Good Tools](/c/tool_design/)), and some calls should need permission ([Permissions](/c/permissions/)).
+
+Each of those is a lesson in this course, and each is a piece of the harness you will build.
+
+## In the real world
+
+Every coding agent runs a version of this loop. Claude Code, Codex CLI and OpenHands differ in their tools, prompts and safety rules, but strip those away and you find the same cycle: call the model, run the tool calls, append the results, repeat. In the Claude API you can see it directly: a response with `stop_reason: "tool_use"` means "run these and call me back", and `"end_turn"` means "I'm done".
+
+You will write this loop yourself, about 40 lines, in part 1 of the nanoharness project.
