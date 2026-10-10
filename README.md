@@ -39,8 +39,15 @@ Lessons, Agent Labs and code labs all work in `npm run dev`. Search needs a buil
 npm run build && npm run preview      # http://localhost:4321, search included
 ```
 
-Your progress, lab graphs and code lab code are saved in your browser. To move them to another browser or
-computer, use **Your progress** in the footer (download a file, import it on the other side).
+Your progress is tracked automatically: lessons you mark complete, labs and code labs you pass, and capstone
+parts you finish are ticked off on the home and project pages, along with your lab graphs and code lab code.
+It is saved in your browser for `http://localhost:4321`, so it survives restarting the server or the computer.
+Two things to know:
+
+- Always open the same address. `localhost:4321` and `127.0.0.1:4321` (or another port, if 4321 was busy) are
+  different sites to the browser and keep separate progress.
+- Clearing your browser's site data erases it. To back it up or move it to another browser or computer, use
+  **Your progress** in the footer: download a file, import it on the other side.
 
 Capstone projects are plain Python in `projects/`; each has a README with its own steps, for example:
 

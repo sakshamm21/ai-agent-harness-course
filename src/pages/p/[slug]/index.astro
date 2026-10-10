@@ -4,6 +4,7 @@ import Base from '../../../layouts/Base.astro';
 import Callout from '../../../components/Callout.astro';
 import Flow from '../../../components/diagrams/Flow.astro';
 import Stack from '../../../components/diagrams/Stack.astro';
+import Progress from '../../../components/Progress.astro';
 import { PROJECTS, href, SITE } from '../../../lib/site';
 import { projectPages } from '../../../lib/projects';
 
@@ -35,4 +36,5 @@ const Content = overview ? (await render(overview)).Content : null;
       ))}
     </ol>
   </section>
+  <Progress />
 </Base>
