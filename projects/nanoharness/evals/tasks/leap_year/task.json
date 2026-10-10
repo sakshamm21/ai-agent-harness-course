@@ -1,0 +1,11 @@
+{
+  "prompt": "is_leap(2000) is False, but 2000 was a leap year. Fix the calendar code.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "calendar_util.py",
+      "old": "year % 4 == 0 and year % 100 != 0",
+      "new": "year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)"
+    }
+  ]
+}

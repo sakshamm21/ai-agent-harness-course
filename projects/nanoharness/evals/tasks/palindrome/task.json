@@ -1,0 +1,11 @@
+{
+  "prompt": "is_palindrome('Never odd or even') should be True. Fix the check.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "pal.py",
+      "old": "text.replace(\" \", \"\")",
+      "new": "text.replace(\" \", \"\").lower()"
+    }
+  ]
+}

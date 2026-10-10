@@ -1,0 +1,90 @@
+---
+title: "Subagents"
+project: "nanoharness"
+part: 9
+tagline: "A task tool that runs a child loop with a fresh context and returns only its report."
+goal: "A task tool the main agent can call to hand off a reading-heavy job: the child gets the same tools and rules but none of the conversation, and only its short report comes back."
+lessons: ["subagents"]
+test: "IMPL=starter python3 -m pytest tests/test_part09_subagents.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+"Find every place the date parser is called" can take twenty `grep` and `read_file` calls. In one loop, all of that output stays in the main transcript and is resent on every later turn, long after the agent stopped needing it.
+
+A subagent is a second copy of your loop, with a fresh, empty transcript. The main agent calls a `task` tool with a self-contained prompt. The child does the reading, then replies with a paragraph. Only that paragraph goes into the main transcript.
+
+<Flow steps={[{ label: "Main agent", sub: "calls task" }, { label: "Child Agent", sub: "fresh transcript", kind: "hl" }, { label: "Tools", sub: "grep, read_file" }, { label: "Report", sub: "one paragraph", kind: "good" }]} caption="The child reads 20 files. The parent's context grows by one paragraph." />
+
+You write one function, `run_subagent` in `subagent.py`. `make_task_tool` (the tool's schema and description) is provided, and the CLI adds it with `agent.tools.add(make_task_tool(agent))`.
+
+## Steps
+
+### 1. Build the child
+
+The child is a plain `Agent` from part 1. What you choose to pass it is the whole design:
+
+```python
+from .loop import Agent  # imported here to avoid a circular import
+
+child = Agent(parent.subagent_model or parent.model, parent.tools.without("task"),
+              system=SUBAGENT_PROMPT + "\n\n" + parent.system, permissions=parent.permissions,
+              hooks=parent.hooks, max_turns=parent.subagent_max_turns, on_event=parent.on_event,
+              depth=parent.depth + 1)
+```
+
+- **Tools, minus `task`.** The child can read, edit and run commands, but it can't start its own subagents, so there is no runaway recursion.
+- **The parent's permissions and hooks.** A subagent is not a way around the rules. If you declined `rm` for the parent, the child gets the same answer.
+- **The system prompt, plus a preface.** The child follows the same `AGENTS.md`, and `SUBAGENT_PROMPT` tells it that only its final reply will be seen.
+- **No `messages`, no `session`.** That is the "fresh context".
+- **Its own turn budget**, 15 by default, and optionally a cheaper `subagent_model` for search work.
+
+### 2. Run it and return the report
+
+Run the prompt, charge the child's tokens to the parent, and return the report with a short header so the main agent knows where it came from:
+
+```python
+result = child.run(prompt)
+parent.child_usage = parent.child_usage + result.usage
+text = result.final_text or f"(the subagent stopped after {result.turns} turns without a final report)"
+return f"[subagent: {description}; {result.turns} turns]\n{text}"
+```
+
+When the child runs out of turns, `final_text` is empty. Return a note instead of an empty string, so the main agent knows the job did not finish and can try a narrower one.
+
+`child_usage` matters for part 10. The child's tokens are real spend, and the eval runner adds them to the total.
+
+### 3. Write a prompt that stands alone
+
+The child can't see the conversation. The `task` tool's description says so, because the model's first instinct is to write prompts like "now check the other file". Read the provided description:
+
+```python
+"Hand a focused, self-contained job to a subagent with a fresh context, e.g. 'find where X is "
+"defined and how it is used'. It has your tools and returns only a short report. Use it for "
+"searches and reading that would otherwise fill your context. The prompt must stand alone: "
+"the subagent cannot see this conversation."
+```
+
+`task` is in `READ_ONLY` in `permissions.py`, so calling it is never asked. Each tool call the child makes is still checked one by one.
+
+<Callout type="math" label="Let us check the math">
+A search reads 20 files of about 2,000 tokens each: 40,000 tokens.<br />
+Done in the main loop, those 40,000 tokens ride along on every later turn. Ten more turns cost about **400,000 extra input tokens**.<br />
+Done in a subagent, the main loop gets a 200-token report. Ten more turns cost about **2,000**. The child still pays for its own reading once, but the parent stops paying for it on every turn.
+</Callout>
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part09_subagents.py
+```
+
+You should see `3 passed`. The first test plants a 2,000-line file, lets the child read it, and checks that the child's first request was only its own prompt, that its system prompt starts with `SUBAGENT_PROMPT` and includes the parent's rules, that none of the file reached the parent, and that the child had no `task` tool. The others check that a denied call is denied for the child too, and that a child out of turns still returns a note.
+
+## What you just learned
+
+- A subagent is the same loop with a different context: fresh messages, the same rules, a narrower job. That is the pattern in [Subagents](/c/subagents/).
+- The point is context isolation, not parallelism. The parent pays for a paragraph instead of every file the child read.
+- Inheriting permissions and hooks keeps one policy for the whole system. Dropping `task` from the child's tools is the simplest recursion limit there is.
+- Subagents cost tokens too. Count them (`child_usage`) or your cost numbers will be wrong.

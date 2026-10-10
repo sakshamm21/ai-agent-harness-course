@@ -1,0 +1,11 @@
+{
+  "prompt": "count_words() reports 1 for every word, even repeated ones. Fix the counting.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "wc.py",
+      "old": "counts[word] = 1",
+      "new": "counts[word] = counts.get(word, 0) + 1"
+    }
+  ]
+}

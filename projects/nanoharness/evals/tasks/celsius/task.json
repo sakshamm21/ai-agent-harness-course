@@ -1,0 +1,11 @@
+{
+  "prompt": "c_to_f(100) should be 212. Fix the temperature conversion.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "temps.py",
+      "old": "c * 9 / 5 - 32",
+      "new": "c * 9 / 5 + 32"
+    }
+  ]
+}

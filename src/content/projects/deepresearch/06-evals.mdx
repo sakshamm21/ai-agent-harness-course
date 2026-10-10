@@ -1,0 +1,105 @@
+---
+title: "Evals"
+project: "deepresearch"
+part: 6
+tagline: "Ten questions with reference facts: measure fact recall and citation precision, and prove the verifier earns its cost."
+goal: "run_evals() researches all 10 eval questions and prints a scorecard of fact recall, citation precision, tokens and cost per question."
+lessons: ["evals"]
+test: "IMPL=starter python3 -m pytest tests/test_part06_evals.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+You have a pipeline with five agents and a dozen knobs: how many sub-questions, how many workers, how many verify rounds, which model plays which role. Every change you make to a prompt or a default will make some reports better and some worse. Without numbers, you find out which by reading reports and guessing.
+
+`data/evals.jsonl` holds 10 questions. Each comes with 3 or 4 reference facts, and each fact with the strings that prove a report stated it:
+
+```json
+{"id": "q01", "question": "When did the Velmora Tunnel open? How long is it? How much did it cost?",
+ "facts": [{"fact": "The Velmora Tunnel opened in June 2019.", "match": ["2019"]},
+           {"fact": "It is 31.4 kilometres long.", "match": ["31.4"]},
+           {"fact": "It cost 6.2 billion crowns.", "match": ["6.2 billion"]}]}
+```
+
+A research report can fail in two ways, so you measure two things. **Fact recall** asks whether it found the answers: the share of reference facts the report states. **Citation precision** asks whether you can trust what it cites: the share of citations whose page really backs the sentence. A report can have perfect recall and cite the wrong page for half of it. That was the pipeline before part 4.
+
+<Flow steps={["10 questions", { label: "research()", sub: "parts 1 to 5" }, { label: "Score", sub: "recall + precision", kind: "hl" }, "Scorecard"]} caption="Run every question through the whole pipeline, then grade the report." />
+
+You write `fact_recall`, `citation_precision` and `run_evals` in `evals.py`. `load_evals` and `format_scorecard` are given.
+
+## Steps
+
+1. **Score fact recall.** A fact is found when every one of its match strings appears in the report body, case-insensitive. Cut the Sources list off first: a source titled "Velmora Tunnel final bill reaches 6.2 billion crowns" is not the report stating the cost.
+
+   ```python
+   def fact_recall(report: str, facts: list[dict]) -> tuple[float, list[str]]:
+       body = _norm(report.split("\n## Sources", 1)[0])
+       missed = [f["fact"] for f in facts if not all(_norm(m) in body for m in f["match"])]
+       return (1 - len(missed) / len(facts) if facts else 0.0), missed
+   ```
+
+   Return the missed facts too. A score tells you that something got worse; the list tells you what.
+
+2. **Score citation precision.** `parse_report` (from part 5) reads a finished report back into sentences and the doc ids they cite. Each (sentence, doc) pair is one citation. Judge each against the full text of its document. A report with no citations scores 0, not 1: citing nothing is not precise.
+
+   ```python
+   def citation_precision(report: str, corpus: Corpus,
+                          judge: Callable[[str, str], bool] = supports) -> tuple[float, int]:
+       pairs = [(text, i) for text, ids in parse_report(report)[0] for i in ids]
+       if not pairs:
+           return 0.0, 0
+       ok = sum(1 for text, i in pairs if i in corpus.docs and judge(text, corpus.docs[i].text))
+       return ok / len(pairs), len(pairs)
+   ```
+
+   The default judge is `textutil.supports`: true when one sentence of the page holds at least 75% of the claim's content words. It is deterministic and free, so the eval gives the same number every run. Pass a model-backed `judge` for paraphrased claims, and check it against a few cases you graded by hand before you trust it.
+
+3. **Run the set.** Research each question with the same models and corpus, score the report, keep one row per question. Pass the research options through, so you can eval any configuration: `verify=False`, a smaller cap, fewer workers.
+
+   ```python
+   corpus = corpus or Corpus.load()
+   rows = []
+   for ev in evals or load_evals():
+       res = research(ev["question"], models=models, corpus=corpus, verify=verify, **research_kwargs)
+       rec, missed = fact_recall(res.report, ev["facts"])
+       prec, n = citation_precision(res.report, corpus)
+       rows.append(EvalRow(ev["id"], ev["question"], rec, prec, len(ev["facts"]) - len(missed),
+                           len(ev["facts"]), n, res.cost_usd, res.tokens, missed))
+   return Scorecard(rows)
+   ```
+
+   `Scorecard.recall` pools facts across all questions, and `Scorecard.precision` weights each question by its number of citations, so a question with 9 citations counts for more than one with 4.
+
+4. **Read the scorecard.** Run it with and without the verifier:
+
+   ```bash
+   PYTHONPATH=solution python3 -m deepresearch --eval
+   PYTHONPATH=solution python3 -m deepresearch --eval --no-verify
+   ```
+
+   ```
+   id     recall cite prec cites  tokens     cost  question
+   q01      100%      100%     7  12,010 $ 0.0209  When did the Velmora Tunnel ope...
+   ...
+   all      100%      100%    62 101,847 $ 0.1787        (with the verifier)
+   all      100%       58%    62  67,186 $ 0.1301        (--no-verify)
+   ```
+
+   Recall is the same both ways: the verifier does not find new facts. Precision goes from 58% to 100% for $0.05 more across ten questions. That is the case for part 4, in one line. Now when you change a prompt, run this first and compare.
+
+## Run the test
+
+```bash
+cd projects/deepresearch
+IMPL=starter python3 -m pytest tests/test_part06_evals.py
+```
+
+8 tests. Two check the eval set itself: 10 questions, and every match string really is in the corpus, so no fact is impossible to find. A hand-written report checks the scorers: 2 of 3 facts found, a fact that only appears in the Sources list not counted, and precision exactly 0.5 because `vt-01` does not say what the tunnel cost. The last two run the whole set on the mock: recall at least 80% and precision at least 95%, and the verifier must raise precision by more than 20 points without costing more than 10 points of recall.
+
+## What you just learned
+
+- If you cannot measure it, every change is a guess. That is [Why Evals Come First](/c/evals/), and here it settles whether the verifier is worth 37% more spend.
+- Measure each way a system can fail. Recall and precision catch different bugs, and a single score would hide one behind the other.
+- Cheap, deterministic graders first. String matches and word overlap give the same number every run; save model judges for what they cannot check.
+- An eval is a fixed set. Keep the questions, the facts and the corpus stable, or the numbers stop meaning anything.

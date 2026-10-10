@@ -1,0 +1,16 @@
+{
+  "prompt": "Items added to one cart show up in other carts. Fix the bug in cart.py.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "cart.py",
+      "old": "def add_item(item, cart=[]):",
+      "new": "def add_item(item, cart=None):"
+    },
+    {
+      "path": "cart.py",
+      "old": "    cart.append(item)",
+      "new": "    cart = [] if cart is None else cart\n    cart.append(item)"
+    }
+  ]
+}

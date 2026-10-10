@@ -1,0 +1,107 @@
+---
+title: "Orchestrator–Workers"
+section: "patterns"
+order: 33
+tagline: "A lead agent plans and hands out subtasks."
+realWorld: "Multi-agent deep research systems"
+build:
+  type: "lab"
+  scenario: "orchestrator"
+terms:
+  - term: "orchestrator"
+    def: "The lead agent in an orchestrator-workers system: it decides at run time how to split a task, hands each part to a worker, and merges what comes back."
+  - term: "worker"
+    def: "An agent that runs one subtask in its own fresh context and returns a short result to the orchestrator, not its whole transcript."
+  - term: "task brief"
+    def: "The instructions an orchestrator gives one worker: the objective, what to return, which sources or tools to use, and where its part ends."
+usedIn: ["deepresearch/1"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "What separates orchestrator-workers from the sectioning form of parallelization?"
+    options: ["Workers always use a larger model", "The orchestrator decides the subtasks at run time instead of your code fixing them in advance", "Orchestrator-workers never runs in parallel"]
+    answer: 1
+    why: "In sectioning, you write the split into the code. An orchestrator reads the input and decides how many parts there are and what each one is."
+  - q: "A single agent reads 12 search results of 3,500 tokens each, one after another. Roughly how big is its context at the end?"
+    options: ["About 3,500 tokens", "About 44,000 tokens", "About 255,000 tokens"]
+    answer: 1
+    why: "Every page stays in the transcript: 2,000 to start plus 12 × 3,500 = 44,000. The 255,000 is the total input you pay for across all 12 turns."
+  - q: "Two workers came back with the same findings and one part of the question is missing. What most likely went wrong?"
+    options: ["The workers used too small a model", "The orchestrator's briefs were vague and did not say where each part ends", "The workers ran in parallel"]
+    answer: 1
+    why: "Workers only know what their brief tells them. A brief with a clear objective and boundary keeps them from duplicating work or leaving gaps."
+reading:
+  - title: "Anthropic: How we built our multi-agent research system"
+    url: "https://www.anthropic.com/engineering/multi-agent-research-system"
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## One researcher, four questions, two answered
+
+Your research agent gets this: "Should we enter the German heat pump market in 2027? Cover demand, subsidies, installer capacity and competitors." It has one tool, `web_search`, and a loop. It searches demand, reads five pages, searches demand again, then subsidies.
+
+By turn 6 its context holds about 20,000 tokens of raw web pages. It writes a fine section on demand and subsidies, then gives installer capacity and competitors one line each: "more research needed." In the lab, about 7 reports in 10 come back like that.
+
+## One context is doing two jobs
+
+The agent is trying to be a manager and a researcher in the same window. As a researcher it needs deep, messy context: whole pages, dead ends, numbers to compare. As a manager it needs a clean view: four parts, which are done, what is missing.
+
+Those needs fight. Every page it reads for part 1 is still in the transcript while it works on part 4. The longer it goes, the more each turn costs and the more the early instructions get buried ([Context Management and Compaction](/c/context_mgmt/)). So it does what a tired person does: it wraps up early.
+
+You could hard-code the split ("always search demand, subsidies, capacity, competitors"). That is [sectioning](/c/parallelization/), and it works when every input has the same shape. Research questions do not. A database comparison has different parts from a drug review, and you cannot know them until you read the question.
+
+## Let a lead plan, and give each part its own worker
+
+[Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) calls this **orchestrator-workers**. A lead model (the orchestrator) reads the task, decides how to split it, and hands each part to a worker. Each worker is a [subagent](/c/subagents/): it runs its own loop in a fresh context and returns a short result. The lead merges those results.
+
+<Flow steps={["Question", { label: "Orchestrator", sub: "plans the split", kind: "hl" }, { label: "4 workers", sub: "own context each, in parallel" }, { label: "Orchestrator", sub: "merges briefs", kind: "hl" }, "Report"]} caption="The lead only plans and merges. Each worker spends a fresh window on one part and returns a 300-word brief." />
+
+```python
+plan = lead(f"Split into independent parts. For each: objective, "
+            f"what to return, where the part ends.\n{question}")
+briefs = await asyncio.gather(*[
+    run_worker(part, tools=[web_search], tier="small", max_turns=6)
+    for part in plan.parts
+])
+report = lead(f"Merge these findings into one cited report. "
+              f"Flag gaps and conflicts.\n{briefs}")
+```
+
+Three details make or break it:
+
+- **The brief is the whole interface.** A worker knows only what the lead tells it. "Research subsidies" invites overlap. "Find 2027 federal and state subsidy rules for residential heat pumps; return amounts, eligibility and sources; do not cover installers" does not.
+- **Workers return summaries, not transcripts.** The lead never sees the 10,000 tokens a worker read, only the brief it wrote.
+- **The lead checks the merge.** Missing parts and conflicting numbers are the lead's job to catch, because only it sees all four results.
+
+## Let us check the math
+
+Sim prices (illustrative): medium $3/$15, small $1/$5 per million input/output tokens. Each search returns about 3,500 tokens, and the question needs about 12 searches in total.
+
+<Callout type="math" label="Let us check the math">
+**Single agent (medium):** starts at 2,000 tokens, 12 searches in a row.<br />
+Final context: 2,000 + 12 × 3,500 = **44,000 tokens**.<br />
+Input billed: 12 × 2,000 + 3,500 × (0 + 1 + ... + 11) = 24,000 + 231,000 = **255,000 tokens**.<br />
+255,000 × $3/M + 3,600 out × $15/M = $0.765 + $0.054 ≈ **$0.82**.<br /><br />
+**Orchestrator + 4 workers:** each worker (small) does 3 searches and a write-up.<br />
+Worker input: 800 + 4,300 + 7,800 + 11,300 = 24,200 tokens, output 1,600.<br />
+Per worker: $0.024 + $0.008 = $0.032. Four workers: **$0.13**.<br />
+Lead (medium): plan (2,000 in, 500 out) + merge (4,100 in, 1,200 out) = 6,100 × $3/M + 1,700 × $15/M ≈ **$0.044**.<br />
+Total ≈ **$0.17**, and the lead's context never passes about 5,300 tokens.
+</Callout>
+
+The saving comes from the shape, not from magic. One long context pays for every old page on every turn. Four short contexts each pay for only their own three pages. Latency drops too: four workers in parallel take about as long as one.
+
+## The tradeoff: more agents, more ways to go wrong
+
+Orchestration buys coverage and clean contexts. It costs you control:
+
+- **Token use can explode.** Here each worker did 3 searches. Let workers decide how deep to go and they may do 15 each. Give each brief a turn and cost cap ([Stop Conditions and Budgets](/c/stop_conditions/)), and scale the number of workers to the question: one for a fact lookup, four or more for a broad comparison.
+- **Bad briefs fail silently.** Two workers on the same subtopic and no one on part 3 looks like a finished report. Ask the lead to list which part each brief covers, and check coverage before the merge ([Evaluator–Optimizer](/c/evaluator_optimizer/)).
+- **Debugging is harder.** A wrong report could come from the plan, one worker, or the merge. Trace every worker as its own span with its brief and result ([Tracing and Observability](/c/tracing/)).
+
+Use it when the parts are truly independent and the job is broad. A task where every step needs the last step's result is a [chain](/c/chaining/) or a single agent.
+
+## In the real world
+
+Anthropic described its Research feature this way: a lead agent (Claude Opus 4) plans, then starts subagents (Claude Sonnet 4) that search in parallel and return condensed findings. On its internal research eval, the multi-agent setup beat a single Opus 4 agent by 90.2%. It also used about 15 times the tokens of a chat, which is why Anthropic says it fits valuable, broad tasks and not every question. You will build the planning half of this in part 1 of the deepresearch project.

@@ -1,0 +1,97 @@
+---
+title: "40 graded conversations"
+project: "supportbot"
+part: 7
+tagline: "Exact checks for routes, tool calls and citations; an LLM judge for whether the answer says the right thing."
+goal: "python3 -m supportbot eval prints 40/40, and a bot that never calls tools scores 0% on the exact checks."
+lessons: ["evals", "llm_judge"]
+test: "IMPL=starter python3 -m pytest tests/test_part07_evals.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+You now have a bot with six moving parts. Change the router prompt and refunds might break. Change the chunk size and citations might drift. You need to know within a minute, not after a customer complains.
+
+`data/evals.jsonl` holds 40 conversations: 20 policy questions, 6 order-status checks, 8 refunds (small, over the limit, partial, not delivered, too large, multi-turn), 4 "other" cases, and 2 runs against the poisoned index. Each one says what must happen:
+
+```json
+{"id": "refund-small", "turns": ["I'd like a refund for order NW-1004"],
+ "expect": {"route": "refund",
+            "tool_calls": [{"name": "lookup_order", "args": {"order_id": "NW-1004"}},
+                           {"name": "issue_refund", "args": {"order_id": "NW-1004", "amount": 49}}],
+            "cites": [], "must_mention": ["$49.00", "refunded"], "must_not_mention": []}}
+```
+
+Two kinds of grading, because there are two kinds of correct. Which tools ran, with which arguments, is exact: check it with code. Whether the reply explains the refund clearly is fuzzy: ask a judge model.
+
+## Steps
+
+1. **Check tool calls exactly.** Compare the names in order, then each expected argument. `args` is a subset, so the free-text `reason` is not checked. Blocked calls do not count: they never ran.
+
+```python
+def check_tool_calls(expected, actual):
+    ran = [c for c in actual if not c.get("blocked")]
+    problems = []
+    if [e["name"] for e in expected] != [c["name"] for c in ran]:
+        problems.append(f"tool calls {[c['name'] for c in ran]}, expected {[e['name'] for e in expected]}")
+        return problems
+    for e, c in zip(expected, ran):
+        if not _args_match(e.get("args", {}), c["input"]):
+            problems.append(f"{e['name']} args {c['input']}, expected {e.get('args')}")
+    return problems
+```
+
+An extra call fails the case too. A bot that escalates every refund "to be safe" is wrong, and this check says so.
+
+2. **Write the judge prompt.** The judge gets the question, the answer and a rubric, and must reply with JSON. Keep the rubric concrete: "must mention: 30 days" is gradable, "is helpful" is not.
+
+```python
+JUDGE_SYSTEM = f"""{JUDGE_MARK} for an outdoor gear store.
+You get the customer's QUESTION, the bot's ANSWER and a RUBRIC. Check each rubric line against the
+answer. Paraphrases count; contradictions and missing points do not. Reply with JSON only:
+{{"pass": true or false, "score": 0.0 to 1.0, "reason": "one sentence"}}"""
+```
+
+3. **Parse the verdict defensively.** Judges add chatter around their JSON, and sometimes forget it. Take the first JSON object. No verdict means the case fails, with a reason you can read, never a crash halfway through the suite.
+
+```python
+def parse_judgment(text):
+    m = re.search(r"\{.*\}", text, re.S)
+    try:
+        v = json.loads(m.group(0)) if m else {}
+    except ValueError:
+        v = {}
+    if "pass" not in v:
+        return {"pass": False, "score": 0.0, "reason": f"judge reply was not a verdict: {text[:80]!r}"}
+    return {"pass": bool(v["pass"]), "score": float(v.get("score", 1.0 if v["pass"] else 0.0)),
+            "reason": str(v.get("reason", ""))}
+```
+
+4. **Run each case in isolation.** `run_case` (given) builds a fresh in-memory store and a fresh agent for every case, and plays every turn. One case's refund must not change the next case's order.
+
+5. **Run the suite.** `run_suite` builds each index once (plain, or with the poisoned folder), runs every case, applies the exact checks and the judge, and reports both pass rates separately. When a case fails, you want to know which half failed.
+
+```bash
+cd solution && python3 -m supportbot eval
+# refund-needs-approval              ok     ok
+# injection-refund-route             ok     ok
+# ...
+# 40/40 passed  (exact 100%, judge 100%)
+```
+
+6. **Prove the eval can fail.** An eval that always passes measures nothing. The last test swaps in a model that never calls tools and checks the exact pass rate drops to 0%. Try breaking things yourself: set `MIN_SCORE` to 0.6, or give the `product_question` route `issue_refund`, and see which cases go red.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part07_evals.py
+```
+
+With a real model, run `python3 -m supportbot eval` with `ANTHROPIC_API_KEY` set. Expect a few judge failures on wording at first, and read the reasons before you touch a prompt. The judge is a model too, so spot-check its verdicts.
+
+## What you just learned
+
+- Write the eval set before you tune anything: it is the only way to know a change helped. See [Why Evals Come First](/c/evals/).
+- Grade what is exact with code (routes, tool names, arguments, citations) and only what is fuzzy with a judge. See [LLM-as-Judge](/c/llm_judge/).
+- A judge needs a concrete rubric, a strict output format, and a parser that turns a bad reply into a failure instead of a crash.

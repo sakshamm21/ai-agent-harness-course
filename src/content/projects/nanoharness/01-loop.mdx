@@ -1,0 +1,111 @@
+---
+title: "The loop"
+project: "nanoharness"
+part: 1
+tagline: "Call the model, run the tools it asks for, append the results, repeat."
+goal: "An Agent class that runs a scripted model to the end of a task: tool calls run, errors go back to the model, and it stops when the model is done or out of turns."
+lessons: ["agent_loop", "harness"]
+test: "IMPL=starter python3 -m pytest tests/test_part01_loop.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+The loop is the whole agent. Everything in parts 2 to 10 plugs into it. In this part you write three functions:
+
+- `ToolRegistry.call` in `tools.py`: run one tool by name and turn any crash into an error string.
+- `Agent.run` in `loop.py`: the loop itself.
+- `Agent.execute` in `loop.py`: run one tool call and wrap its output as a `tool_result` block.
+
+You do not need a real model or real tools yet. The tests use `MockModel`, which plays back a script of responses, and toy tools like `add(a, b)`. Open `starter/nanoharness/loop.py`. Every function that raises `NotImplementedError("Part 1: ...")` is yours, and its docstring is the spec.
+
+<Flow steps={["Prompt", { label: "model.complete", sub: "one turn", kind: "hl" }, { label: "execute", sub: "each tool call" }, "tool_result"]} loop loopLabel="append the results, call the model again" caption="Agent.run. No tool calls in the response means the task is done." />
+
+## Steps
+
+### 1. Make the registry never raise
+
+The model will call tools that don't exist, with arguments that are wrong. If your loop crashes on the first bad call, the agent is useless. So `ToolRegistry.call` returns a pair, `(output, is_error)`, and never raises:
+
+```python
+def call(self, name: str, args: dict) -> tuple[str, bool]:
+    tool = self.tools.get(name)
+    if tool is None:
+        return f"Unknown tool '{name}'. Available tools: {', '.join(self.tools)}", True
+    try:
+        out = tool.fn(**args)
+    except Exception as e:  # report errors to the model, don't crash the loop
+        return f"{type(e).__name__}: {e}", True
+    return (out if isinstance(out, str) else json.dumps(out)), False
+```
+
+Notice the unknown-tool message lists the real tools. The model reads that string on its next turn, so the error is also the fix.
+
+### 2. Write the loop
+
+`Agent.run` appends the prompt, then calls the model up to `max_turns` times. Each response goes into the transcript with `resp.to_message()`. If it asked for no tools, you are done. Otherwise run every call and send all the results back in **one** user message:
+
+```python
+self.append({"role": "user", "content": prompt})
+usage, calls = Usage(), []
+for turn in range(1, self.max_turns + 1):
+    usage = usage + self.maybe_compact()
+    resp = self.model.complete(self.messages, tools=self.tools.schemas(), system=self.system)
+    usage = usage + resp.usage
+    self.append(resp.to_message())
+    self.on_event({"type": "model", "turn": turn, "text": resp.text,
+                   "tool_calls": [c.name for c in resp.tool_calls]})
+    if not resp.tool_calls:
+        self.on_event({"type": "done", "turn": turn, "text": resp.text})
+        return RunResult(self.messages, resp.text, turn, usage, resp.stop_reason, calls)
+    results = [self.execute(c, calls) for c in resp.tool_calls]
+    self.append({"role": "user", "content": results})  # all results in one message
+return RunResult(self.messages, "", self.max_turns, usage, "max_turns", calls)
+```
+
+Use `self.append`, not `self.messages.append`. In part 8 `append` also writes each message to the session file. `self.maybe_compact()` is already written for you. It does nothing until part 5 gives the agent a context manager.
+
+### 3. Execute one call, with the gates in place
+
+`execute` is where parts 3 and 7 will plug in. Write the gates now, guarded by `is not None`, so later parts need no change to the loop. A denied or blocked call never reaches the tool:
+
+```python
+name, args = call.name, call.input
+if self.permissions is not None:
+    ok, reason = self.permissions.decide(name, args)
+    if not ok:
+        return self._finish(call, f"Permission denied ({reason}). Do not retry this call; "
+                                  "tell the user what you needed instead.", True, log)
+if self.hooks is not None:
+    reason = self.hooks.run_pre(name, args)
+    if reason:
+        return self._finish(call, f"Blocked by hook: {reason}", True, log)
+out, is_error = self.tools.call(name, args)
+if self.hooks is not None:
+    out = self.hooks.run_post(name, args, out, is_error)
+return self._finish(call, out, is_error, log)
+```
+
+`_finish` is provided: it logs the call, emits a `tool` event for the CLI to print, and builds the `tool_result` block with the matching `tool_use_id`.
+
+### 4. Check the transcript shape
+
+After one tool call and one answer, the roles must be `user, assistant, user, assistant`. The API rejects anything else: every `tool_use` needs a `tool_result` with the same id in the very next user message. The tests check this, including two calls in one turn coming back in one message, in order.
+
+## Run the test
+
+From `projects/nanoharness/`:
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part01_loop.py
+```
+
+You should see `7 passed`. The tests cover unknown tools and crashing tools, a single call, parallel calls, errors that go back to the model, a model that never stops (`stop_reason == "max_turns"`), usage that adds up across turns, and a second `run` that continues the same conversation.
+
+## What you just learned
+
+- The model decides and your code acts. The loop is the [agent loop](/c/agent_loop/) from the lesson, about 15 lines.
+- The transcript is the memory: every tool result goes back into `messages` and is resent on the next turn, which is why cost grows with the number of turns.
+- Errors are data. A tool that raises becomes an `is_error` result the model can read and recover from, not a crash.
+- `max_turns` is your first [stop condition](/c/stop_conditions/). Without it a confused model loops forever.
+- Everything else, permissions, hooks, compaction, sessions, is the [harness](/c/harness/) around this loop. You just left a socket for each of them.

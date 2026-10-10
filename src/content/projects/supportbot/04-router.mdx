@@ -1,0 +1,103 @@
+---
+title: "Route, then loop"
+project: "supportbot"
+part: 4
+tagline: "A small model sorts each message into one of four lanes, and each lane's agent loop sees only the tools it needs."
+goal: "\"I'd like a refund for order NW-1004\" routes to refund and runs lookup_order then issue_refund, while \"Do gift cards expire?\" routes to product_question and cannot even see the refund tool."
+lessons: ["routing"]
+test: "IMPL=starter python3 -m pytest tests/test_part04_router.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Customers write about four kinds of thing: they want money back, they want to know where an order is, they have a question the help center answers, or something else (a complaint, a request for a person, small talk). Each kind needs different instructions and, more importantly, different tools.
+
+A router makes that decision first, with a small, fast model (`claude-haiku-5-5` by default). Then the agent loop runs with the route's tools only. A product question never sees `issue_refund`, so no amount of clever wording in that conversation can make it refund. That is least privilege, and it costs one cheap call.
+
+Then you write the agent loop itself: call the model, run the tools it asks for, send the results back, repeat until it answers.
+
+## Steps
+
+1. **Write the router prompt.** List the labels with one line each and ask for the label only. A short reply is cheap and easy to parse.
+
+```python
+ROUTER_SYSTEM = f"""{ROUTER_MARK} for Northwind Outfitters, an outdoor gear store.
+Read the customer's message and reply with exactly one label:
+refund            the customer wants money back for an order
+order_status      where an order is, when it arrives, what its status means
+product_question  a question the help center answers: products, sizing, returns policy, shipping, payments, accounts
+other             asks for a person, a complaint, small talk, or anything else
+Reply with the label only, no punctuation."""
+```
+
+2. **Parse strictly, fall back to rules.** Accept `"refund"`, `" Refund."` and `"order status"`. Reject `"I think this is a refund"`: a label buried in a sentence is a sign the model did not follow the format. When the model's answer is not a label, use keyword rules and record that you did.
+
+```python
+def parse_label(text):
+    t = text.strip().lower().strip(".!\"'` ").replace(" ", "_").replace("-", "_")
+    return t if t in ROUTES else None
+
+def route(text, model=None):
+    if model is not None:
+        resp = model.complete([{"role": "user", "content": text}], system=ROUTER_SYSTEM,
+                              temperature=0.0, max_tokens=8)
+        label = parse_label(resp.text)
+        if label:
+            return Route(label, "model", resp.text)
+        return Route(rule_route(text), "rules", resp.text)
+    return Route(rule_route(text), "rules")
+```
+
+3. **Give each route its tools.** This table is the security decision of the whole part.
+
+```python
+TOOLS_BY_ROUTE = {
+    "refund": ["lookup_order", "issue_refund", "escalate_to_human"],
+    "order_status": ["lookup_order", "escalate_to_human"],
+    "product_question": ["escalate_to_human"],
+    "other": ["escalate_to_human"],
+}
+```
+
+4. **Route follow-ups with context.** "It's NW-1010" has no intent on its own. `routing_text` (given) joins a short follow-up to the customer's previous message before routing.
+
+5. **Write the loop in `SupportAgent.handle`.** Route, retrieve, then loop up to `max_turns`. Pass only this route's tool schemas. When the model asks for a tool, check it is offered, run it through `run_tool`, and send the result back as a `tool_result` block. When it answers without a tool call, you are done.
+
+```python
+for turn in range(1, self.max_turns + 1):
+    resp = self.model.complete(messages, tools=tools, system=system, temperature=0.0)
+    messages.append(resp.to_message())
+    if not resp.tool_calls:
+        final = resp.text
+        break
+    results = []
+    for call in resp.tool_calls:
+        ok, why = security.authorize_tool_call(call.name, call.input, ctx) if self.trust_boundary \
+            else (call.name in allowed, "ok" if call.name in allowed else "tool not offered")
+        if not ok:
+            content, is_error = f"Blocked: {why}. Do not retry this call.", True
+        else:
+            res = run_tool(self.store, call.name, call.input, conv, refund_gate=gate)
+            content, is_error = res.content, res.is_error
+        results.append({"type": "tool_result", "tool_use_id": call.id, "content": content, "is_error": is_error})
+    messages.append({"role": "user", "content": results})
+```
+
+This is a shortened version: the real one also emits an event at each step (part 8 turns those into a trace) and records every call on the `Reply`. The two switches, `guardrails` and `trust_boundary`, plug in parts 5 and 6. The part 4 tests turn both off, so you can build in order.
+
+6. **Stop at the limit.** If the loop runs out of turns, reply with `FALLBACK` and emit a `max_turns` event. A support bot that loops forever on a broken tool is worse than one that says sorry and hands over.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part04_router.py
+```
+
+The tests check six labelled messages, strict parsing, the rules fallback, that a model which always asks for `issue_refund` is refused on a product question, the turn limit, and a two-turn conversation where the order number arrives second.
+
+## What you just learned
+
+- Routing is classification with a cheap model, done once, before the expensive work. It picks the prompt and the tools. See [Routing](/c/routing/).
+- Parse the router's output strictly and keep a deterministic fallback. Record which one decided, so you can measure how often the model misses the format.
+- Per-route tool lists are least privilege: the safest tool call is the one the model cannot make.

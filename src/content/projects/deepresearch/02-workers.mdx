@@ -1,0 +1,105 @@
+---
+title: "Workers and search"
+project: "deepresearch"
+part: 2
+tagline: "A worker agent with search and fetch_page that returns claims tied to the pages it read."
+goal: "run_worker() researches one sub-question over the offline corpus and returns cited claims, keeping only citations to pages it actually fetched."
+lessons: ["agentic_search", "tools"]
+test: "IMPL=starter python3 -m pytest tests/test_part02_workers.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+A worker gets one sub-question, like "How long is the Velmora Tunnel?", and nothing else. It is an ordinary agent loop with two tools. It searches, reads the one to three pages that look right, and replies with JSON claims, each tied to the doc ids it came from.
+
+The corpus is 80 short fictional documents in `data/corpus/`: news stories, reports and wiki pages about a tunnel, a wind farm, a battery, a lighthouse and a few other things that do not exist. Fictional on purpose: a model cannot answer from memory, so every fact in a report has to come from a page.
+
+<Flow steps={["Sub-question", { label: "search", sub: "BM25, top 5" }, { label: "fetch_page", sub: "1 to 3 pages" }, { label: "Claims", sub: "text + doc ids", kind: "hl" }]} caption="One worker: search, read, then reply with cited claims." />
+
+`Corpus` already builds a BM25 index (term frequencies, document lengths, IDF) and scores one document with `score()`. You write `search` and `fetch` on it, then the worker's tools, the claim parser and `run_worker` in `worker.py`.
+
+## Steps
+
+1. **Rank the documents.** Score every document, keep scores above zero, sort by score, and break ties by id. Without the tie-break, two documents with the same score can swap places between runs, and your tests flake.
+
+   ```python
+   def search(self, query: str, k: int = 5) -> list[dict]:
+       scored = [(self.score(query, i), i) for i in self.docs]
+       hits = sorted((x for x in scored if x[0] > 0), key=lambda x: (-x[0], x[1]))[:k]
+       return [self._hit(i, query) for _, i in hits]
+   ```
+
+   Each hit is an id, a title, a URL and a one-sentence snippet, not the whole page. The model decides what to open from that.
+
+2. **Fetch one page.** By id or by its `corpus://` URL. An unknown id raises `KeyError` with a message written for the model, because the loop sends that message back to it as a tool error.
+
+   ```python
+   def fetch(self, ref: str) -> Doc:
+       ref = ref.strip()
+       doc = self.docs.get(ref) or self.by_url.get(ref)
+       if doc is None:
+           raise KeyError(f"no document {ref!r}; use an id from search results")
+       return doc
+   ```
+
+3. **Make the tools.** The `@tool` decorator (given, in `tools.py`) reads a function's name, type hints and docstring and builds the schema the model sees. So the docstring is the tool description: say what comes back and give an example query. Clamp `k` so a model asking for 500 results gets 10.
+
+   ```python
+   @tool
+   def search(query: str, k: int = 5) -> list:
+       """Search the document collection. Returns up to k hits with id, title, url and a snippet.
+       Use short keyword queries, like "velmora tunnel length"."""
+       return corpus.search(query, k=max(1, min(int(k), 10)))
+
+   @tool
+   def fetch_page(doc_id: str) -> dict:
+       """Fetch the full text of one document by its id (like "vt-01") or its corpus:// url."""
+       d = corpus.fetch(doc_id)
+       return {"id": d.id, "title": d.title, "source": d.source, "date": d.date, "url": d.url, "text": d.text}
+   ```
+
+4. **Parse the claims, and keep only what was read.** The worker's final reply should be a claims object. Accept a bare list too, skip empty claims, and drop every source the worker never fetched. A worker that cites a page it never opened is guessing from a search snippet or from memory. A claim left with no source is dropped.
+
+   ```python
+   read = set(read_ids)
+   out: list[Claim] = []
+   for c in data.get("claims", []):
+       if not isinstance(c, dict) or not str(c.get("text", "")).strip():
+           continue
+       srcs = c.get("sources", [])
+       srcs = [srcs] if isinstance(srcs, str) else srcs
+       kept = list(dict.fromkeys(s for s in srcs if s in read))
+       if kept:
+           out.append(Claim(str(c["text"]).strip(), kept))
+   return out
+   ```
+
+5. **Run the worker.** Call `run_loop` with the two tools. Then read the record of tool calls: the ids of successful `fetch_page` calls are the pages this worker read. A failed fetch does not count. Do not catch model errors here. In part 3 a model call can raise `BudgetExceeded`, and the code that runs the workers decides what that means.
+
+   ```python
+   run = run_loop(model, make_tools(corpus), worker_prompt(sub_question), system=WORKER_SYSTEM,
+                  max_turns=max_turns)
+   read_ids = list(dict.fromkeys(c["output"]["id"] for c in run.tool_calls
+                                 if c["name"] == "fetch_page" and not c["error"]))
+   claims = parse_claims(run.final_text, read_ids)
+   return WorkerResult(sub_question, "ok" if claims else "empty", claims, read_ids,
+                       run.usage.input_tokens, run.usage.output_tokens,
+                       "" if claims else f"no cited claims (stop: {run.stop_reason})")
+   ```
+
+## Run the test
+
+```bash
+cd projects/deepresearch
+IMPL=starter python3 -m pytest tests/test_part02_workers.py
+```
+
+11 tests. They check that "velmora tunnel length" ranks the right page first, that search is deterministic and returns nothing for unknown words, that fetch works by id and by URL, and that the tool schemas carry a description. The worker tests use scripted models: one cites a page it never fetched (the citation must go), one fetches an id that does not exist (the worker must survive it).
+
+## What you just learned
+
+- Letting the agent search, choose and open pages itself is [Agentic Search vs RAG](/c/agentic_search/). The snippet decides what to open; the full page decides what to claim.
+- A tool is a typed function plus a description the model reads. That is [Function Calling](/c/tools/), and the decorator writes the schema from your code.
+- Tool errors go back to the model as text, so write them for the model: say what went wrong and what to use instead.
+- Provenance is data. Recording which pages a worker read lets you reject citations it could not have checked.

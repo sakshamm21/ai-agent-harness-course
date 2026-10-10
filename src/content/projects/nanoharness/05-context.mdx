@@ -1,0 +1,98 @@
+---
+title: "Context and compaction"
+project: "nanoharness"
+part: 5
+tagline: "Count tokens, and summarize the transcript when it reaches 70% of the window."
+goal: "A ContextManager that estimates the size of every request and, between turns, replaces a long transcript with a summary the agent can keep working from."
+lessons: ["tokens", "context_mgmt"]
+test: "IMPL=starter python3 -m pytest tests/test_part05_context.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Every turn resends the whole transcript. Read ten files, run the tests five times, and a long task outgrows the context window. The API then rejects the request, and the run is over.
+
+In `context.py` you write a `ContextManager` with four methods:
+
+- `count_tokens(text)`: a cheap estimate, about 4 characters per token.
+- `count_messages(messages, system, tools)`: the estimated size of a whole request.
+- `should_compact(...)`: true at 70% of the window.
+- `compact(messages)`: ask the model for a summary and return a transcript holding only that summary.
+
+`Agent.maybe_compact()` in `loop.py` is already written. It runs at the top of every turn, so compaction happens *between* rounds and never splits a `tool_use` from its `tool_result`.
+
+## Steps
+
+### 1. Estimate tokens
+
+You don't need a tokenizer. A request is mostly English and code, and 4 characters per token is close enough to decide *when* to compact. Round up so an empty string is 0 and one character is 1:
+
+```python
+def count_tokens(text: str) -> int:
+    return (len(text) + 3) // 4
+```
+
+### 2. Count the whole request
+
+The model sees the system prompt, the tool schemas and every message, so count all three. String content counts as text. Block lists (tool calls, tool results) count as their JSON. Add 4 per message for the role and framing:
+
+```python
+def count_messages(messages: list[dict], system: str = "", tools: list[dict] | None = None) -> int:
+    n = count_tokens(system) + sum(count_tokens(json.dumps(t)) for t in tools or [])
+    for m in messages:
+        c = m["content"]
+        n += 4 + (count_tokens(c) if isinstance(c, str) else sum(count_tokens(json.dumps(b)) for b in c))
+    return n
+```
+
+Tool schemas are easy to forget. nanoharness's seven schemas come to about 600 tokens, sent on every turn.
+
+### 3. Decide when
+
+Compact at 70%, not 100%. The next model response and the tool results it asks for still have to fit, and one `read_file` can add 5,000 tokens at once:
+
+```python
+def should_compact(self, messages: list[dict], system: str = "", tools: list[dict] | None = None) -> bool:
+    return len(messages) > 1 and count_messages(messages, system, tools) >= self.threshold * self.window
+```
+
+The `len(messages) > 1` guard stops an endless loop. A single huge prompt can't be made smaller by summarizing it into one message.
+
+<Callout type="math" label="Let us check the math">
+The mock model's window is 16,000 tokens, so compaction starts at 0.7 × 16,000 = **11,200 tokens**.<br />
+After a compaction the transcript is one summary of about 200 tokens. Add the system prompt (about 200 tokens on the demo repo) and the tool schemas (about 600), and the next request is about **1,000 tokens**: roughly 10,000 tokens of headroom bought for the price of one summary call.
+</Callout>
+
+### 4. Summarize, then start fresh
+
+Render the transcript as plain text (`render_transcript` is provided, and cuts each block to 2,000 characters), send it to the summarizer with `SUMMARY_PROMPT`, and return a one-message transcript:
+
+```python
+def compact(self, messages: list[dict]) -> list[dict]:
+    prompt = SUMMARY_PROMPT.format(transcript=render_transcript(messages))
+    resp = self.summarizer.complete([{"role": "user", "content": prompt}], tools=None, system="")
+    self.compactions += 1
+    self.usage = resp.usage
+    return [{"role": "user", "content": "This session was compacted. Summary of the work so far:\n\n"
+             f"{resp.text.strip()}\n\nContinue the task from here."}]
+```
+
+The summary prompt asks for the user's task *word for word*, the files touched, the commands run and the next step. Those are the things an agent needs and loses first when old turns fall out. `self.usage` lets the agent bill the summary call. The agent sets `summarizer` to its own model if you don't pass one.
+
+This is "simple compaction": nothing old is kept, so nothing old can go stale. Fancier schemes keep the last few turns verbatim. They are cheaper on the next turn and harder to get right, because the kept turns must not start with a dangling `tool_result`.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part05_context.py
+```
+
+You should see `5 passed`. The tests check the estimate, that system, tools and blocks are counted, that compaction starts at exactly 700 tokens of a 1,000-token window, that `compact` hands the old transcript to the summarizer and returns one message, and an end-to-end run where a tool returns 3,000 characters per call, the agent compacts, keeps going from the summary, and never sends a request over the window.
+
+## What you just learned
+
+- The window is a hard limit on the *whole request*, system prompt and tool schemas included, as in [Tokens and the Context Window](/c/tokens/). A rough count is enough to know when you are close.
+- Compaction trades detail for room. The summary keeps the task and the state, and drops the raw file contents the agent can read again. That is the core move in [Context Management and Compaction](/c/context_mgmt/).
+- Compact early and between turns. At 70% there is still room for the next response, and between turns there is never a tool call waiting for its result.
+- A summary costs one extra model call. Without it, a long task doesn't get more expensive, it just fails.

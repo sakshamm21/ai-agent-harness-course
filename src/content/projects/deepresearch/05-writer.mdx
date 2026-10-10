@@ -1,0 +1,119 @@
+---
+title: "The report writer"
+project: "deepresearch"
+part: 5
+tagline: "A structured handoff in, Markdown with numbered citations and a Sources list out."
+goal: "write_report() hands the writer only the verified claims and gaps, then turns its doc-id citations into [1], [2] with a Sources list that can only point at documents a worker read."
+lessons: ["handoffs", "structured"]
+test: "IMPL=starter python3 -m pytest tests/test_part05_writer.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+By now each sub-question has a `WorkerResult` with verified claims, or a status that says why it has none. The last agent turns that into something a person reads: a title, one section per sub-question, a bullet per claim, a citation after every bullet, and a numbered list of sources at the end.
+
+Two choices make this writer hard to fool. First, it gets a clean handoff, not the workers' transcripts. Three workers with six turns each produce tens of thousands of tokens of search results and page text. The writer needs a few hundred: the claims, their doc ids and the gaps. Less input is cheaper and gives the writer nothing to invent from.
+
+Second, the writer cites by doc id, like `[vt-03]`, and code does the numbering. The model never writes `[2]`, so a number can never point at the wrong source or at one nobody read.
+
+<Flow steps={[{ label: "Results", sub: "verified claims" }, { label: "Handoff", sub: "JSON, no transcripts", kind: "hl" }, { label: "Writer", sub: "cites [doc-id]" }, { label: "Numbering", sub: "code, not model" }, "Report"]} caption="The model writes prose; code owns the citations." />
+
+You write three functions in `writer.py`. `parse_report`, which reads a finished report back, is given: part 6 uses it.
+
+## Steps
+
+1. **Build the handoff.** A section for every `ok` result with claims, a gap for everything else, and the title of every cited source, each id once in order of first use. This dictionary is the writer's entire view of the research.
+
+   ```python
+   def build_handoff(question: str, results: list[WorkerResult], corpus: Corpus) -> dict:
+       sections, gaps, used = [], [], []
+       for r in results:
+           if r.ok and r.claims:
+               sections.append({"sub_question": r.sub_question, "claims": [c.to_dict() for c in r.claims]})
+               used += [s for c in r.claims for s in c.sources]
+           else:
+               gaps.append(r.sub_question)
+       sources = {i: corpus.fetch(i).title for i in dict.fromkeys(used) if i in corpus.docs}
+       return {"question": question, "sections": sections, "gaps": gaps, "sources": sources}
+   ```
+
+   For the Velmora question it looks like this (shortened):
+
+   ```json
+   {"question": "When did the Velmora Tunnel open? ...",
+    "sections": [{"sub_question": "When did the Velmora Tunnel open?",
+                  "claims": [{"text": "The Velmora Tunnel opened ... on 14 June 2019 ...", "sources": ["vt-01"]}]}],
+    "gaps": [],
+    "sources": {"vt-01": "Velmora Tunnel opens to passenger trains"}}
+   ```
+
+2. **Number the citations.** Find every `[id]` or `[id, id]` with the `CITE` regex (given). Give each allowed id a number the first time it appears. Remove ids that are not in the handoff: if the writer invents `[kw-01]` for a tunnel report, it disappears. Then append the Sources list.
+
+   ```python
+   def sub(m: re.Match) -> str:
+       ids = [i.strip() for i in m.group(1).split(",")]
+       nums = []
+       for i in ids:
+           if i in allowed and i in corpus.docs:
+               numbers.setdefault(i, len(numbers) + 1)
+               nums.append(numbers[i])
+       return "[" + ", ".join(str(n) for n in sorted(set(nums))) + "]" if nums else ""
+
+   body = CITE.sub(sub, markdown)
+   body = re.sub(r"[ \t]+([.,;:])", r"\1", body).rstrip()
+   lines = ["", "", "## Sources", ""]
+   for i, n in sorted(numbers.items(), key=lambda x: x[1]):
+       d = corpus.fetch(i)
+       lines.append(f"{n}. {d.title}. {d.source}, {d.date}. <{d.url}> ({d.id})")
+   return body + ("\n".join(lines) if numbers else "") + "\n"
+   ```
+
+   The second `re.sub` tidies `claim [kw-01].` into `claim.` after a removed cite. The `(vt-03)` at the end of each source line is what `parse_report` reads to map numbers back to ids.
+
+3. **Write the report.** One call with `WRITER_SYSTEM` and the handoff as JSON. If no section has findings, skip the model: write a short report yourself that lists the gaps. A model asked to write a report from nothing will write one.
+
+   ```python
+   handoff = build_handoff(question, results, corpus)
+   if not handoff["sections"]:
+       md = f"# {question}\n\nNo sub-question produced verified findings, so there is nothing to report.\n"
+       if handoff["gaps"]:
+           md += "\n## Gaps\n\n" + "\n".join(f"- Not answered: {g}" for g in handoff["gaps"]) + "\n"
+   else:
+       md = model.complete([{"role": "user", "content": writer_prompt(handoff)}], system=WRITER_SYSTEM,
+                           max_tokens=3000).text
+   ```
+
+4. **Say when it is partial.** If the cost cap from part 3 stopped research, put a note right under the title, where a reader sees it before any claim. Then number the citations.
+
+   ```python
+   if partial:
+       note = "> Partial report: the cost cap stopped research before every sub-question was answered."
+       head, sep, rest = md.partition("\n")
+       md = f"{head}\n\n{note}\n{rest}" if head.startswith("# ") else f"{note}\n\n{md}"
+   return number_citations(md, corpus, set(handoff["sources"]))
+   ```
+
+5. **Run it end to end.** Every part is now in place:
+
+   ```bash
+   PYTHONPATH=starter python3 -m deepresearch "How tall is the Harrow Point lighthouse?"
+   ```
+
+   You get a report that states the lighthouse is 41 metres tall, with a number after the claim and the source it points to at the bottom.
+
+## Run the test
+
+```bash
+cd projects/deepresearch
+IMPL=starter python3 -m pytest tests/test_part05_writer.py
+```
+
+8 tests. One spies on the writer's input and fails if it contains a `tool_result`: the writer must see the handoff, not the transcripts. Others check numbering in order of first use, that ids outside the handoff vanish, that a partial report keeps its title on the first line and says it is partial, and that a run with no findings still returns a report with its gaps and no Sources section. The last one runs `python3 -m deepresearch` as a subprocess on the mock.
+
+## What you just learned
+
+- Pass a summary, not the transcript. What the next agent needs is less than what the last one saw. That is [Handoffs and Shared State](/c/handoffs/).
+- A JSON handoff is a contract between agents, and the same idea as [Structured Output](/c/structured/): a shape both sides agree on.
+- Let the model write prose and let code own anything that must be exact, like citation numbers and source lists.
+- An honest report says what it could not answer. Gaps and the partial note are part of the output, not an error.

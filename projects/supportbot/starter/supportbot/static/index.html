@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>supportbot</title>
+<style>
+  :root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e2e2dc; --accent:#2f6f4f;
+          --ok:#2f6f4f; --warn:#a86b00; --err:#b3261e; --bot:#eef3ef; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --panel:#1f1f1d; --text:#ecece8; --muted:#a3a39c; --line:#33332f; --accent:#7cc4a0;
+            --ok:#7cc4a0; --warn:#e3b04b; --err:#f2877e; --bot:#22302a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, sans-serif; }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; }
+  header h1 { font-size:17px; margin:0; } header span { color:var(--muted); font-size:13px; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); gap:16px; padding:16px; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0,1fr); } }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; }
+  h2 { font-size:14px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  #log { height:420px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px; }
+  .msg { padding:8px 10px; border-radius:8px; max-width:90%; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .user { align-self:flex-end; background:var(--accent); color:var(--panel); }
+  .bot { align-self:flex-start; background:var(--bot); }
+  .meta { font-size:12px; color:var(--muted); margin-top:4px; }
+  .live { font-size:12px; color:var(--muted); align-self:flex-start; }
+  form { display:flex; gap:8px; margin-top:8px; }
+  input { flex:1; min-width:0; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); font:inherit; }
+  button { padding:8px 12px; border:1px solid var(--accent); border-radius:6px; background:var(--accent); color:var(--panel); font:inherit; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--accent); }
+  .row { display:grid; grid-template-columns: 64px 130px minmax(0,1fr) 64px; gap:8px; padding:4px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .row .t, .row .d { color:var(--muted); font-variant-numeric: tabular-nums; text-align:right; }
+  .row .ty { font-weight:600; } .row .lb { overflow-wrap:anywhere; }
+  .ok .ty { color:var(--ok); } .warn .ty { color:var(--warn); } .error .ty { color:var(--err); }
+  #traces button { display:block; width:100%; text-align:left; margin:0 0 6px; background:transparent; color:var(--text); border-color:var(--line); }
+  #summary { font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .appr { display:flex; gap:8px; align-items:center; font-size:13px; margin-bottom:6px; flex-wrap:wrap; }
+  .examples button { margin:4px 4px 0 0; font-size:12px; padding:4px 8px; }
+</style>
+</head>
+<body>
+<header><h1>supportbot</h1><span>Northwind Outfitters support agent, with its traces</span></header>
+<main>
+  <section>
+    <h2>Chat</h2>
+    <div id="log"></div>
+    <form id="f"><input id="q" autocomplete="off" placeholder="Ask about an order (NW-1001 to NW-1030) or a policy"><button>Send</button></form>
+    <div class="examples" id="examples"></div>
+    <h2 style="margin-top:16px">Refunds waiting for approval</h2>
+    <div id="approvals"><span class="meta">None.</span></div>
+  </section>
+  <section>
+    <h2>Trace</h2>
+    <div id="summary">Send a message, or pick a past conversation below.</div>
+    <div id="timeline"></div>
+    <h2 style="margin-top:16px">Past conversations</h2>
+    <div id="traces"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let conv = null;
+const examples = ["How long do I have to return something?", "Where is my order NW-1003?",
+  "I'd like a refund for order NW-1004", "Please refund NW-1002, the jacket leaks",
+  "Can I get a refund on opened items for order NW-1004?", "I want to talk to a human"];
+for (const e of examples) {
+  const b = document.createElement("button"); b.className = "ghost"; b.type = "button"; b.textContent = e;
+  b.onclick = () => { $("q").value = e; $("f").requestSubmit(); }; $("examples").append(b);
+}
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+function say(cls, text, meta) {
+  const m = el("div", "msg " + cls, text);
+  if (meta) m.append(el("div", "meta", meta));
+  $("log").append(m); $("log").scrollTop = $("log").scrollHeight; return m;
+}
+function renderTrace(t) {
+  const s = t.summary;
+  $("summary").textContent = `${t.conversation_id}: ${s.turns} turn(s), ${s.model_calls} model calls, ` +
+    `${s.tool_calls} tool calls, ${s.blocked} blocked, ${s.input_tokens + s.output_tokens} tokens, ${s.duration_ms} ms`;
+  const box = $("timeline"); box.replaceChildren();
+  for (const r of t.timeline) {
+    const row = el("div", "row " + r.status);
+    row.append(el("span", "t", `+${r.t_ms}ms`), el("span", "ty", r.type), el("span", "lb", r.label),
+               el("span", "d", r.duration_ms ? `${r.duration_ms}ms` : ""));
+    box.append(row);
+  }
+}
+async function showTrace(id) { const r = await fetch(`/api/traces/${id}`); if (r.ok) renderTrace(await r.json()); }
+async function loadTraces() {
+  const list = await (await fetch("/api/traces")).json(); const box = $("traces"); box.replaceChildren();
+  for (const t of list.slice(0, 20)) {
+    const b = el("button", null, `${t.conversation_id}  ${t.first_message}`); b.type = "button";
+    b.onclick = () => showTrace(t.conversation_id); box.append(b);
+  }
+}
+async function loadApprovals() {
+  const list = await (await fetch("/api/approvals")).json(); const box = $("approvals"); box.replaceChildren();
+  if (!list.length) { box.append(el("span", "meta", "None.")); return; }
+  for (const a of list) {
+    const row = el("div", "appr", `${a.approval_id}: $${a.amount.toFixed(2)} on ${a.order_id}`);
+    for (const d of ["approve", "reject"]) {
+      const b = el("button", d === "reject" ? "ghost" : null, d); b.type = "button";
+      b.onclick = async () => { await fetch(`/api/approvals/${a.approval_id}`, {method: "POST",
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({decision: d})}); loadApprovals(); };
+      row.append(b);
+    }
+    box.append(row);
+  }
+}
+$("f").onsubmit = async (ev) => {
+  ev.preventDefault(); const text = $("q").value.trim(); if (!text) return; $("q").value = "";
+  say("user", text); const live = el("div", "live", "thinking..."); $("log").append(live);
+  // Stream events as Server-Sent Events over a POST, read with fetch.
+  const r = await fetch("/api/chat?stream=1", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({message: text, conversation_id: conv})});
+  const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
+  while (true) {
+    const {value, done} = await reader.read(); if (done) break;
+    buf += dec.decode(value, {stream: true}); let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (!line.startsWith("data: ")) continue; const e = JSON.parse(line.slice(6));
+      if (e.type === "done") {
+        conv = e.conversation_id; live.remove();
+        const tools = e.tool_calls.map(c => c.blocked ? `${c.name} (blocked)` : c.name).join(", ");
+        say("bot", e.text, `route: ${e.route}` + (tools ? ` | tools: ${tools}` : ""));
+      } else if (e.type === "error") { live.textContent = e.error; }
+      else { live.textContent = `${e.type}...`; }
+    }
+  }
+  if (conv) showTrace(conv); loadTraces(); loadApprovals();
+};
+loadTraces(); loadApprovals();
+</script>
+</body>
+</html>

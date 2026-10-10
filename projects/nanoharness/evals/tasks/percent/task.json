@@ -1,0 +1,11 @@
+{
+  "prompt": "percent(1, 4) returns 0 instead of 25.0. Fix it.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "stats.py",
+      "old": "part // whole * 100",
+      "new": "part / whole * 100"
+    }
+  ]
+}

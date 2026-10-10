@@ -1,0 +1,155 @@
+"""The command line: wire every part into one Agent and run it.
+
+    nanoharness --init-demo /tmp/nh-demo          # a tiny repo with one bug
+    cd /tmp/nh-demo && nanoharness --mock "fix the bug in calc.py"
+    nanoharness "add a --verbose flag"            # real model (needs ANTHROPIC_API_KEY)
+    nanoharness --resume "now add a test"         # continue the latest session
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+from .context import ContextManager
+from .hooks import Hooks, load_config
+from .instructions import build_system_prompt, load_instructions
+from .loop import Agent
+from .model import DEFAULT_MODEL, AnthropicModel, Model, cost, fixer_mock
+from .permissions import Permissions, subject_of
+from .sandbox import Sandbox
+from .session import Session, find_session
+from .subagent import make_task_tool
+from .tools import ToolRegistry, bash_tool, file_tools
+
+DEMO_FILES = {
+    "calc.py": 'def average(numbers):\n    """The mean of a non-empty list of numbers."""\n'
+               '    return sum(numbers) / (len(numbers) + 1)\n',
+    "test_calc.py": "from calc import average\n\n\ndef test_average():\n    assert average([2, 4, 6]) == 4\n",
+    "AGENTS.md": "# Project notes\n- Run the tests with `python3 -m pytest -q`.\n- Keep fixes minimal.\n",
+}
+DEMO_FIXES = [{"path": "calc.py", "old": "(len(numbers) + 1)", "new": "len(numbers)"}]
+
+
+def init_demo(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
+    for name, text in DEMO_FILES.items():
+        with open(os.path.join(path, name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+
+def mock_fixes(workdir: str) -> list[dict]:
+    """The scripted mock's fixes: .nanoharness/mock.json if present, else the demo fix if it applies."""
+    custom = os.path.join(workdir, ".nanoharness", "mock.json")
+    if os.path.isfile(custom):
+        with open(custom, encoding="utf-8") as f:
+            return json.load(f)
+    fixes = []
+    for fx in DEMO_FIXES:
+        p = os.path.join(workdir, fx["path"])
+        if os.path.isfile(p) and fx["old"] in open(p, encoding="utf-8").read():
+            fixes.append(fx)
+    return fixes
+
+
+def build_agent(workdir: str, model: Model, *, yes: bool = False, config_path: str | None = None,
+                docker: str | None = None, max_turns: int = 30, session: Session | None = None,
+                messages: list[dict] | None = None, on_event=None, prompt=None) -> Agent:
+    cfg = load_config(workdir, config_path)                                  # Part 7
+    sandbox = Sandbox(workdir, timeout=cfg.get("bash_timeout", 60), docker_image=docker)  # Part 4
+    tools = ToolRegistry(file_tools(workdir) + [bash_tool(sandbox)])          # Part 2
+    perm_kw = {"yes": yes} if prompt is None else {"yes": yes, "prompt": prompt}
+    permissions = Permissions.from_config(cfg, **perm_kw)                    # Part 3
+    system = build_system_prompt(workdir, load_instructions(workdir))        # Part 6
+    context = ContextManager(window=cfg.get("context_window", model.context_window))  # Part 5
+    agent = Agent(model, tools, system, permissions, Hooks.from_config(cfg, workdir), context,
+                  session, max_turns, on_event, messages)                    # Parts 1, 8
+    agent.tools.add(make_task_tool(agent))                                   # Part 9
+    return agent
+
+
+def printer(quiet: bool):
+    def on_event(e: dict) -> None:
+        if quiet:
+            return
+        indent = "    " * e.get("depth", 0)
+        if e["type"] == "model" and e["text"] and e["tool_calls"]:
+            print(f"{indent}{e['text']}", file=sys.stderr)
+        elif e["type"] == "tool":
+            mark = "!" if e["is_error"] else ">"
+            first = (e["output"].strip().splitlines() or [""])[-1 if e["name"] == "bash" else 0]
+            print(f"{indent}{mark} {e['name']}({subject_of(e['name'], e['input'])[:80]})  {first[:100]}",
+                  file=sys.stderr)
+        elif e["type"] == "compact":
+            print(f"[compacted {e['before']} messages into {e['after']}]", file=sys.stderr)
+    return on_event
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="nanoharness", description="A small coding agent harness.")
+    ap.add_argument("prompt", nargs="*", help="the task; omit it for an interactive session")
+    ap.add_argument("--mock", action="store_true", help="use the scripted offline model (no API key)")
+    ap.add_argument("--model", default=os.environ.get("NANOHARNESS_MODEL", DEFAULT_MODEL))
+    ap.add_argument("-y", "--yes", action="store_true", help="approve writes and commands without asking")
+    ap.add_argument("-C", "--cwd", default=None, help="working directory (default: current)")
+    ap.add_argument("--resume", action="store_true", help="continue the latest session (or --session ID)")
+    ap.add_argument("--session", default=None, metavar="ID", help="the session to resume")
+    ap.add_argument("--docker", default=None, metavar="IMAGE", help="run bash inside this Docker image")
+    ap.add_argument("--max-turns", type=int, default=30)
+    ap.add_argument("--config", default=None, help="config file (default: nanoharness.json in the workdir)")
+    ap.add_argument("--init-demo", default=None, metavar="DIR", help="create a tiny buggy repo and exit")
+    ap.add_argument("-q", "--quiet", action="store_true")
+    args = ap.parse_args(argv)
+
+    if args.init_demo:
+        init_demo(args.init_demo)
+        print(f"Demo repo in {args.init_demo}. Try:\n  cd {args.init_demo} && "
+              "python3 -m nanoharness --mock \"fix the bug in calc.py\"")
+        return 0
+    workdir = os.path.realpath(args.cwd or os.getcwd())
+    if args.mock:
+        model: Model = fixer_mock(mock_fixes(workdir))
+        price_as = DEFAULT_MODEL
+    elif os.environ.get("ANTHROPIC_API_KEY"):
+        model, price_as = AnthropicModel(args.model), args.model
+    else:
+        print("No ANTHROPIC_API_KEY set. Use --mock to run offline.", file=sys.stderr)
+        return 2
+
+    messages = None
+    if args.resume or args.session:
+        session = find_session(workdir, args.session)
+        if session is None:
+            print(f"No session to resume in {workdir}.", file=sys.stderr)
+            return 2
+        messages = session.load()                                            # Part 8
+        print(f"[resumed {session.id}: {len(messages)} messages]", file=sys.stderr)
+    else:
+        session = Session.create(workdir, getattr(model, "model", model.name))
+    agent = build_agent(workdir, model, yes=args.yes, config_path=args.config, docker=args.docker,
+                        max_turns=args.max_turns, session=session, messages=messages,
+                        on_event=printer(args.quiet))
+
+    prompts = [" ".join(args.prompt)] if args.prompt else None
+    while True:
+        if prompts is None:
+            try:
+                text = input("nanoharness> ").strip()
+            except EOFError:
+                break
+            if text in ("exit", "quit"):
+                break
+            if not text:
+                continue
+        elif prompts:
+            text = prompts.pop()
+        else:
+            break
+        result = agent.run(text)
+        print(result.final_text or f"[stopped: {result.stop_reason} after {result.turns} turns]")
+        u = result.usage + agent.child_usage
+        print(f"[{result.turns} turns, {u.input_tokens + u.output_tokens} tokens, "
+              f"${cost(u.input_tokens, u.output_tokens, price_as):.4f} as {price_as}, session {session.id}]",
+              file=sys.stderr)
+    return 0

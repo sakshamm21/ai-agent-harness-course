@@ -47,7 +47,7 @@ Over 60 tickets, 15% fail outright, and a ticket takes 40 seconds on average ins
 
 ## Waiting is not a plan
 
-An agent is a chain of calls: the model, then a tool, then the model again. Each link can be slow or down, and each turn of the loop multiplies the exposure. A 3-turn ticket makes 3 model calls; a 30% failure rate on each is a near certainty of hitting at least one.
+An agent is a chain of calls: the model, then a tool, then the model again. Each link can be slow or down, and each turn of the loop multiplies the exposure. A 3-turn ticket makes 3 model calls; with 30% of calls failing, the chance of hitting at least one failure is 1 − 0.7³ ≈ 66%, two tickets in three.
 
 Three things go wrong at once:
 

@@ -1,0 +1,106 @@
+---
+title: "The orchestrator"
+project: "deepresearch"
+part: 1
+tagline: "A lead agent that plans sub-questions, hands them out, and replans the ones that fail."
+goal: "orchestrate() turns one compound question into standalone sub-questions, runs them, and gives failed ones a second try with new wording."
+lessons: ["orchestrator", "planning"]
+test: "IMPL=starter python3 -m pytest tests/test_part01_orchestrator.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+The question "When did the Velmora Tunnel open? How long is it? How much did it cost?" is three questions. A single search for all of it finds pages that half-match each part. Three searches, one per part, each find the page that answers it.
+
+The orchestrator is the agent that does the splitting. It calls a planner model once, gets back a JSON array of sub-questions, and hands that list to whatever runs the workers. When results come back, it looks at their status. A worker that found nothing gets one replacement sub-question, worded differently. A worker that ran out of money does not.
+
+The orchestrator never searches and never reads a page. That is the point of the pattern: its context holds the question, the plan and the results, and stays small no matter how much the workers read.
+
+<Flow steps={["Question", { label: "plan()", sub: "1 model call", kind: "hl" }, { label: "run_workers", sub: "parts 2 + 3" }, { label: "replan()", sub: "failed ones only" }]} caption="Plan once, run, then replan only what failed." />
+
+You write four functions in `orchestrator.py`. The prompts are in `prompts.py` already.
+
+## Steps
+
+1. **Parse the plan.** Models wrap JSON in fences, add a sentence before it, or return an object instead of an array. `parse_plan` takes whatever came back, finds the list, and cleans it: strip each item, drop case-insensitive duplicates, cap the length. `extract_json` (given, in `textutil.py`) handles the fences and the chatter.
+
+   ```python
+   def parse_plan(text: str, max_subquestions: int) -> list[str]:
+       data = extract_json(text)
+       if isinstance(data, dict):  # tolerate {"sub_questions": [...]}
+           data = next((v for v in data.values() if isinstance(v, list)), None)
+       if not isinstance(data, list):
+           return []
+       seen: dict[str, str] = {}
+       for item in data:
+           q = str(item).strip() if isinstance(item, (str, int, float)) else ""
+           if q and q.lower() not in seen:
+               seen[q.lower()] = q
+       return list(seen.values())[:max_subquestions]
+   ```
+
+2. **Ask the planner.** One call with `PLANNER_SYSTEM`. Read the prompt: it tells the model that each sub-question must stand alone and repeat the names it needs, never "it". A worker only sees its own sub-question, so "How long is it?" would send it searching for nothing. If the plan is unusable, fall back to the original question: one worker on the whole question beats none.
+
+   ```python
+   def plan(question: str, model: Model, max_subquestions: int = 4) -> list[str]:
+       resp = model.complete([{"role": "user", "content": plan_prompt(question, max_subquestions)}],
+                             system=PLANNER_SYSTEM)
+       return parse_plan(resp.text, max_subquestions) or [question]
+   ```
+
+3. **Replan the failures.** `replan` sends the failed sub-questions and the answered ones to a replanner, and keeps only new wording. If the model returns a failed question word for word, it would fail the same way again, so filter it out.
+
+   ```python
+   def replan(question: str, failed: list[str], answered: list[str], model: Model,
+              max_subquestions: int = 4) -> list[str]:
+       if not failed:
+           return []
+       resp = model.complete([{"role": "user", "content": replan_prompt(question, failed, answered, max_subquestions)}],
+                             system=REPLANNER_SYSTEM)
+       old = {q.lower() for q in failed + answered}
+       return [q for q in parse_plan(resp.text, max_subquestions) if q.lower() not in old]
+   ```
+
+4. **Decide what is worth a retry.** A result has a status: `ok`, `empty`, `failed`, `budget` or `skipped`. Only two of those are worth new wording. `budget` and `skipped` mean the cost cap (part 3) was hit, and asking again would only spend more.
+
+   ```python
+   REPLAN_STATUSES = {"failed", "empty"}
+   ```
+
+5. **Orchestrate.** Plan, run, then up to `max_replans` times: find the failures, replan them, and swap their results for the new ones. A failure with no replacement stays in the list, so the writer (part 5) can report it as a gap instead of hiding it. `run_workers` is passed in, so this function does not care whether workers run one by one or in parallel.
+
+   ```python
+   subs = plan(question, model, max_subquestions)
+   emit({"type": "plan", "sub_questions": subs})
+   asked = list(subs)
+   results = run_workers(subs)
+   for _ in range(max_replans):
+       failed = [r for r in results if r.status in REPLAN_STATUSES]
+       if not failed:
+           break
+       answered = [r.sub_question for r in results if r.ok]
+       new = replan(question, [r.sub_question for r in failed], answered, model, len(failed))
+       emit({"type": "replan", "failed": [r.sub_question for r in failed], "new": new})
+       if not new:
+           break
+       asked += new
+       results = [r for r in results if r.status not in REPLAN_STATUSES] + run_workers(new)
+   return asked, results
+   ```
+
+## Run the test
+
+```bash
+cd projects/deepresearch
+IMPL=starter python3 -m pytest tests/test_part01_orchestrator.py
+```
+
+15 tests. The parser tests feed it fenced JSON, chatter, objects and garbage. The orchestration tests use fake workers that fail on purpose, so you can check that a failure triggers exactly one replan round, that the replacement is new wording, and that a `budget` stop does not trigger one at all ("out of money is not a reason to spend more").
+
+## What you just learned
+
+- A lead agent that plans and never reads is [Orchestrator–Workers](/c/orchestrator/). Its context stays small because the workers absorb the reading.
+- A plan is a guess. Checking results and replanning only what failed is [Planning and Replanning](/c/planning/).
+- Sub-questions are a handoff: each one must make sense to an agent that has seen nothing else.
+- Not every failure deserves a retry. Retry what new wording can fix, and stop on what money cannot.

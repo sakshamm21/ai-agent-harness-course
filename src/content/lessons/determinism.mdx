@@ -49,7 +49,7 @@ A model does not compute one answer. At each token it produces a probability for
 
 An agent turns that small randomness into big differences. If the first turn picks "grep for callers" in one run and "just edit the file" in another, the two runs see different tool results and never meet again. Small per-step error rates also compound: 98% per step over 10 steps is 0.98¹⁰ ≈ **82%** for the whole task.
 
-Turning the temperature to 0 helps, but it does not make the agent deterministic. Anthropic's API documentation notes that even at temperature 0 results will not be fully identical, because of how requests are batched and computed on the provider's side. And temperature 0 only makes the model pick its *most likely* step every time. If the most likely step is a mistake, you now make that mistake consistently.
+Turning the temperature to 0 helps, but it does not make the agent deterministic. Anthropic's API documentation notes that even at temperature 0 results will not be fully deterministic. Part of the cause sits on the provider's side, where batching and floating-point arithmetic on shared hardware can shift a probability slightly. And temperature 0 only makes the model pick its *most likely* step every time. If the most likely step is a mistake, you now make that mistake consistently.
 
 ## Shrink the spread, then check what is left
 

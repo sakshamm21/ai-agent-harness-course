@@ -1,0 +1,11 @@
+{
+  "prompt": "The leaderboard shows the lowest scores instead of the highest. Fix top_scores().",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "board.py",
+      "old": "sorted(scores)[:k]",
+      "new": "sorted(scores, reverse=True)[:k]"
+    }
+  ]
+}

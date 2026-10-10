@@ -1,0 +1,11 @@
+{
+  "prompt": "slugify() should join words with hyphens, but the URL tests fail. Fix it.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "text.py",
+      "old": "\"_\".join",
+      "new": "\"-\".join"
+    }
+  ]
+}

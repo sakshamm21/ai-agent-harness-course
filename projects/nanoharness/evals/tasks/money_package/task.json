@@ -1,0 +1,11 @@
+{
+  "prompt": "Converting $1.25 to cents gives 12 instead of 125. The tests are in tests/. Fix the bug.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "shop/money.py",
+      "old": "int(dollars * 10)",
+      "new": "round(dollars * 100)"
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+---
+title: "Tools"
+project: "nanoharness"
+part: 2
+tagline: "Five file tools the model can call, locked to the working directory."
+goal: "read_file, write_file, edit_file, list_dir and grep, each returning a string, each refusing paths outside the working directory, each failing with a message the model can act on."
+lessons: ["tools", "tool_design", "tool_errors"]
+test: "IMPL=starter python3 -m pytest tests/test_part02_tools.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+A coding agent needs to look around, read code, change it and search it. In `tools.py` you write:
+
+| Tool | What it does |
+|---|---|
+| `read_file` | Numbered lines, paged with `offset` and `limit` |
+| `write_file` | Create or overwrite a file, making parent folders |
+| `edit_file` | Replace an exact string that occurs once |
+| `list_dir` | Sorted entries, folders end with `/`, noise skipped |
+| `grep` | Regex search that returns `path:line: text` |
+
+The sixth tool, `bash`, comes in part 4. All five share one helper, `resolve_path`, which keeps the agent inside its working directory. The tool descriptions and JSON schemas in `file_tools()` are already written. Read them: they are the only documentation the model gets.
+
+## Steps
+
+### 1. Lock every path to the working directory
+
+Resolve the path, follow symlinks, then check it is still under the root. Check *after* `realpath`, or `../../etc/passwd` and a symlink to `/` both slip through:
+
+```python
+def resolve_path(root: str, path: str) -> str:
+    root_real = os.path.realpath(root)
+    full = os.path.realpath(os.path.join(root_real, os.path.expanduser(path)))
+    if full != root_real and not full.startswith(root_real + os.sep):
+        raise PermissionError(f"{path} is outside the working directory {root_real}")
+    return full
+```
+
+The `+ os.sep` matters. Without it, a root of `/tmp/repo` would accept `/tmp/repo-secrets`.
+
+### 2. Number the lines in `read_file`
+
+The model needs line numbers to talk about code, and a hint when a file is cut off:
+
+```python
+full = resolve_path(root, path)
+with open(full, encoding="utf-8", errors="replace") as f:
+    lines = f.read().splitlines()
+start = max(1, offset)
+chunk = lines[start - 1:start - 1 + limit]
+out = "\n".join(f"{n:>5}\t{line}" for n, line in enumerate(chunk, start))
+rest = len(lines) - (start - 1 + len(chunk))
+if rest > 0:
+    out += f"\n[... {rest} more lines; use offset={start + len(chunk)} ...]"
+return out or "(empty file)"
+```
+
+The truncation note tells the model exactly which `offset` to ask for next. A tool that silently drops line 2,001 produces an agent that never finds the bug on line 2,400.
+
+### 3. Make `edit_file` exact and unique
+
+Edits are an exact string replace, the same design Claude Code uses. No line numbers (they shift after every edit) and no diffs (models get the format wrong). The two failure cases each get a message that says how to fix the call:
+
+```python
+n = text.count(old_string)
+if not old_string or n == 0:
+    raise ValueError(f"old_string not found in {path}. Read the file and copy the exact text, "
+                     "including indentation, without the line-number prefix.")
+if n > 1 and not replace_all:
+    raise ValueError(f"old_string appears {n} times in {path}. Include more surrounding lines "
+                     "to make it unique, or set replace_all to true.")
+with open(full, "w", encoding="utf-8") as f:
+    f.write(text.replace(old_string, new_string))
+return f"Edited {path}: replaced {n if replace_all else 1} occurrence(s)."
+```
+
+"Without the line-number prefix" is there because the most common mistake is copying `   12\t` from `read_file` output into `old_string`.
+
+### 4. Write `write_file`, `list_dir` and `grep`
+
+These are short. `list_dir` skips `IGNORED_DIRS` (`.git`, `__pycache__`, `node_modules` and friends) so one listing doesn't cost thousands of tokens. `grep` walks the tree, prints paths relative to the root, skips binary files, and stops at `max_matches`:
+
+```python
+for fp in files:
+    try:
+        with open(fp, encoding="utf-8") as f:
+            for n, line in enumerate(f, 1):
+                if rx.search(line):
+                    hits.append(f"{os.path.relpath(fp, root_real)}:{n}: {line.rstrip()}")
+                    if len(hits) >= max_matches:
+                        return "\n".join(hits) + f"\n[stopped at {max_matches} matches]"
+    except (UnicodeDecodeError, OSError):
+        continue  # binary or unreadable file
+return "\n".join(hits) or "No matches."
+```
+
+Return `"No matches."` rather than an empty string. An empty result looks like a broken tool, and models retry it.
+
+### 5. Raise, don't return, errors
+
+Every tool raises on failure (`PermissionError`, `FileNotFoundError`, `ValueError`). The registry from part 1 turns that into `ValueError: old_string appears 2 times...` with `is_error` set. You write the error once, in the tool, and the loop delivers it.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part02_tools.py
+```
+
+You should see `7 passed`. The tests try to escape the root with `..`, an absolute path and a symlink, page through a long file, edit with a missing and an ambiguous `old_string`, check that `list_dir` hides `.git`, and call every tool through the registry to see the errors come back as strings.
+
+## What you just learned
+
+- A tool is a name, a description, a JSON schema and a function, as in [Function Calling](/c/tools/). The description is a prompt: it is how the model learns the line-number trap.
+- Good tools are small, return text the model can use, and say what to do next. That is [Designing Good Tools](/c/tool_design/) in practice: paging hints, `No matches.`, a receipt after every write.
+- Error messages are instructions. Each one in `edit_file` names the fix, which is the core idea of [Tool Errors and Recovery](/c/tool_errors/).
+- `resolve_path` is your first safety boundary. File tools can't leave the working directory. `bash` still can, and part 4 deals with that.

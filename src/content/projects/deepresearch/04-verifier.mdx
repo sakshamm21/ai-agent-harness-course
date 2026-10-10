@@ -1,0 +1,127 @@
+---
+title: "The citation verifier"
+project: "deepresearch"
+part: 4
+tagline: "An evaluator checks each claim against the page it cites; an optimizer fixes the citation or drops the claim."
+goal: "verify_and_revise() checks every (claim, source) pair, sends rejections back to a reviser, and after a round limit drops whatever still fails."
+lessons: ["evaluator_optimizer"]
+test: "IMPL=starter python3 -m pytest tests/test_part04_verifier.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Run the Velmora question with `--no-verify` and look at the last bullet, from the worker that researched the tunnel's cost:
+
+```
+- The Velmora Tunnel is 31.4 kilometres long, of which 24.1 kilometres run beneath the Halden Strait [3].
+...
+3. Velmora Tunnel final bill reaches 6.2 billion crowns. Esker Business Review, 2020-02-11. ... (vt-03)
+```
+
+The claim is true. The citation is not: `vt-03` is the audit of the tunnel's cost and never mentions its length. The worker read two pages and cited the first one for everything. Real models do this too, anchoring on the first source they read. Part 2 already threw out citations to pages the worker never opened. This part catches the subtler mistake: a page it did open that does not say what it is cited for.
+
+The fix is the evaluator–optimizer pattern. An evaluator (the verifier) reads one claim and the one page it cites and says supported or not. An optimizer (the reviser) gets the rejections and the pages the worker read, and re-cites each rejected claim to a page that does state it, or drops it. Check again. Stop when everything passes or the round limit runs out, then drop what still fails.
+
+<Flow steps={["Worker claims", { label: "Verifier", sub: "claim vs its page", kind: "hl" }, { label: "Reviser", sub: "re-cite or drop" }]} loop loopLabel="until every citation passes, or max_rounds" caption="The evaluator–optimizer loop over one worker's claims." />
+
+You write five functions in `verifier.py`. `research.py` runs this on every `ok` worker result, inside the same thread as the worker, before the writer sees anything.
+
+## Steps
+
+1. **Verify one citation.** One call per (claim, page) pair, with `VERIFIER_SYSTEM`. Read its wording: paraphrase is fine, but a claim that adds numbers, names or causes the page does not give is unsupported. An unreadable reply counts as unsupported, not supported. When the checker breaks, fail closed.
+
+   ```python
+   def verify_claim(claim: str, doc: dict, model: Model) -> Verdict:
+       resp = model.complete([{"role": "user", "content": verify_prompt(claim, doc)}], system=VERIFIER_SYSTEM)
+       data = extract_json(resp.text)
+       if not isinstance(data, dict) or "supported" not in data:
+           return Verdict(False, "verifier reply was not valid JSON")
+       ok = data["supported"]
+       ok = ok if isinstance(ok, bool) else str(ok).strip().lower() == "true"
+       return Verdict(ok, str(data.get("reason", "")))
+   ```
+
+2. **Check every pair.** A claim with two sources is two checks: one source can back it while the other does not. A source id that does not exist fails without a model call.
+
+   ```python
+   for c in claims:
+       for src in c.sources:
+           try:
+               doc = corpus.fetch(src).to_dict()
+           except KeyError:
+               failures.append(Failure(c.text, src, "cited document does not exist"))
+               continue
+           v = verify_claim(c.text, doc, model)
+           if not v.supported:
+               failures.append(Failure(c.text, src, v.reason))
+   return failures
+   ```
+
+3. **Drop what fails.** Remove the failed citations. A claim with no citation left goes too, and its text is recorded so you can see what was lost.
+
+   ```python
+   bad = {(f.claim, f.source) for f in failures}
+   kept, dropped = [], []
+   for c in claims:
+       srcs = [s for s in c.sources if (c.text, s) not in bad]
+       if srcs:
+           kept.append(Claim(c.text, srcs))
+       else:
+           dropped.append(c.text)
+   return kept, dropped
+   ```
+
+4. **Send the rejections back.** The reviser sees the draft claims, the verifier's reasons, and the pages the worker read, and nothing else. Parse its reply with `parse_claims` from part 2 and the worker's `read_ids`, so the reviser cannot cite a page nobody read either. If the reply has no JSON at all, keep the claims as they were and let the next check decide.
+
+   ```python
+   pages = [corpus.fetch(i).to_dict() for i in result.read_ids if i in corpus.docs]
+   prompt = revise_prompt(result.sub_question, [c.to_dict() for c in claims],
+                          [{"claim": f.claim, "source": f.source, "reason": f.reason} for f in failures], pages)
+   resp = model.complete([{"role": "user", "content": prompt}], system=REVISER_SYSTEM)
+   revised = parse_claims(resp.text, result.read_ids)
+   return revised if extract_json(resp.text) is not None else claims
+   ```
+
+5. **Loop with a round limit.** Check, and if anything failed, revise and check again. On the last round do not revise: nothing would check the revision. Drop instead. Record each round's failure count so you can see the loop working.
+
+   ```python
+   for rnd in range(1, max_rounds + 1):
+       failures = check_claims(claims, corpus, verifier)
+       report.rounds = rnd
+       report.checked += sum(len(c.sources) for c in claims)
+       report.failures_per_round.append(len(failures))
+       if not failures:
+           break
+       if rnd == max_rounds:
+           claims, report.dropped = drop_failures(claims, failures)
+           break
+       claims = revise(result, claims, failures, corpus, reviser)
+   status = "ok" if claims else "empty"
+   return replace(result, claims=claims, status=status), report
+   ```
+
+   With `--trace` each sub-question now prints `"failures_per_round": [1, 0]`: one bad citation in round 1, none after the revision.
+
+<Callout type="math" label="Let us check the math">
+The 10 eval questions on the mock, from part 6:<br />
+Without the verifier: 67,186 tokens, $0.130, citation precision **58%**.<br />
+With it: 101,847 tokens, $0.179, citation precision **100%**.<br />
+About 52% more tokens but only 37% more money, because the verifier and reviser run on the small tier. For a research report, a wrong citation costs more than $0.005 a question.
+</Callout>
+
+## Run the test
+
+```bash
+cd projects/deepresearch
+IMPL=starter python3 -m pytest tests/test_part04_verifier.py
+```
+
+9 tests. The key one gives the verifier a worker result with the mock's habit, both claims cited to `vt-02`, and expects `failures_per_round == [1, 0]` with each claim on its right page. Another uses a stubborn reviser that never fixes anything, and checks that it is called exactly once with `max_rounds=2` ("revise between checks, never after the last one") and that the bad claim is dropped. A sneaky reviser that cites a page the worker never read ends with no claims at all.
+
+## What you just learned
+
+- One model drafts, another critiques, and you loop until it passes or the rounds run out. That is [Evaluator–Optimizer](/c/evaluator_optimizer/).
+- Make the evaluator's job small. "Does this page state this claim?" is a question a cheap model answers well. "Is this report accurate?" is not.
+- Fail closed: a verifier reply you cannot read is a rejection.
+- Always cap the rounds, and never revise after the last check. An unchecked revision is a new guess.

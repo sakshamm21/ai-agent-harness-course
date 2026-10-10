@@ -1,0 +1,90 @@
+---
+title: "Answer with citations"
+project: "supportbot"
+part: 2
+tagline: "Retrieve, put the documents before the question, and check every [article-id] the model cites."
+goal: "answer(\"Do gift cards expire?\") says they never expire, cites [gift-cards], and strips any id the model made up."
+lessons: ["rag"]
+test: "IMPL=starter python3 -m pytest tests/test_part02_rag.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+A model asked "do gift cards expire?" with no context will answer from whatever it saw in training about gift cards in general. Your store's policy might be different. Retrieval-augmented generation fixes that: find the relevant articles, paste them into the prompt, and tell the model to answer only from them and to cite the article id after each sentence.
+
+A citation is only worth something if you check it. In this part the bot drops any `[id]` that was not among the retrieved documents before the customer sees it, and records it so you can count how often the model invents sources.
+
+## Steps
+
+1. **Retrieve one chunk per article.** A long article can fill the whole top 3 with its own chunks. Search wider, keep the best chunk from each article, and drop anything under `MIN_SCORE` (0.2). The score gap you saw in part 1 is why that number works.
+
+```python
+def retrieve(index, question, k=3, min_score=MIN_SCORE):
+    best: dict[str, dict] = {}
+    for hit in index.search(question, k=k * 4):
+        if hit["score"] >= min_score and hit["article_id"] not in best:
+            best[hit["article_id"]] = hit
+    return list(best.values())[:k]
+```
+
+2. **Build the prompt.** The rules go in the system prompt. The documents go in the user message, each in a `<document id="...">` tag, and the question comes after them. Models answer better when the material comes before the question.
+
+```python
+RAG_SYSTEM = """You are the support assistant for Northwind Outfitters, an outdoor gear store.
+Answer using only the documents provided. After every sentence that uses a document, cite it
+with its id in square brackets, like [returns-window]. If the documents do not answer the
+question, say you could not find it in the help center. Never invent an article id.
+Keep answers to two or three short sentences."""
+
+def build_messages(question, hits):
+    content = f"<documents>\n{format_documents(hits)}\n</documents>\n\nQuestion: {question}"
+    return RAG_SYSTEM, [{"role": "user", "content": content}]
+```
+
+3. **Extract and check citations.** `extract_citations` finds every `[some-id]` in order, without repeats. `check_citations` splits them into ids that were retrieved (valid) and ids that were not (invalid), and removes the invalid ones from the text.
+
+```python
+def check_citations(text, hits):
+    allowed = {h["article_id"] for h in hits}
+    cited = extract_citations(text)
+    valid = [c for c in cited if c in allowed]
+    invalid = [c for c in cited if c not in allowed]
+    for c in invalid:
+        text = text.replace(f" [{c}]", "").replace(f"[{c}]", "")
+    return text, valid, invalid
+```
+
+4. **Put it together, and do not guess.** If nothing scores above the threshold, there is nothing to ground an answer in. Return the not-found message without calling the model at all. That saves a call and removes the chance of a confident wrong answer.
+
+```python
+def answer(question, index, model, k=3):
+    hits = retrieve(index, question, k=k)
+    if not hits:
+        return RagAnswer(NOT_FOUND, hits=[])
+    system, messages = build_messages(question, hits)
+    resp = model.complete(messages, system=system, temperature=0.0)
+    text, valid, invalid = check_citations(resp.text.strip(), hits)
+    return RagAnswer(text or NOT_FOUND, valid, invalid, hits)
+```
+
+5. **Try it.** The mock model answers by picking the sentences from the documents that best match the question and citing where each came from:
+
+```python
+>>> answer("Do gift cards expire?", index, MockModel()).text
+'Northwind gift cards come in amounts from $10 to $500 and never expire. [gift-cards] ...'
+```
+
+The test also uses a scripted model that cites `[free-tents]`, an article that does not exist. Your `check_citations` has to catch it.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part02_rag.py
+```
+
+## What you just learned
+
+- RAG grounds the answer in your documents: retrieve, place them before the question, and instruct the model to use only them. See [Retrieval-Augmented Generation](/c/rag/).
+- A citation is a claim the model makes. Checking it against what was retrieved costs one set lookup and catches invented sources every time.
+- "Nothing relevant was found" is a result. Handling it in code, before the model call, is cheaper and safer than asking the model to admit it.

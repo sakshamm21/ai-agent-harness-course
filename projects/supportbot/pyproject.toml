@@ -1,0 +1,24 @@
+[project]
+name = "supportbot"
+version = "0.1.0"
+description = "Capstone 2 of Free Agent Harness: a customer support agent with RAG, tools, guardrails, evals and traces."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []          # runtime is the standard library only
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+supportbot = "supportbot.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+where = ["solution"]       # change to "starter" to install your own version
+
+[tool.setuptools.package-data]
+supportbot = ["static/*.html"]

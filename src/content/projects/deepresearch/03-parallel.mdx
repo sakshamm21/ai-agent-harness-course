@@ -1,0 +1,109 @@
+---
+title: "Parallel workers and a cost cap"
+project: "deepresearch"
+part: 3
+tagline: "Run the workers at the same time, charge every call to one shared budget, and stop cleanly when it runs out."
+goal: "run_parallel() fans workers out on a thread pool under a thread-safe Budget; when the cap is hit, workers stop or are skipped and research() still returns a partial report."
+lessons: ["parallel_tools", "parallelization", "stop_conditions"]
+test: "IMPL=starter python3 -m pytest tests/test_part03_parallel.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+The three Velmora sub-questions do not depend on each other, so there is no reason to research them one after another. With a real model each worker spends most of its time waiting on the network. Run them on a thread pool and the question takes about as long as its slowest worker, not the sum of all three.
+
+Parallel agents spend money in parallel too. Four workers, each free to search and fetch for six turns, can burn through a budget faster than you can read the log. So every model call goes through one shared meter, and once the cap is spent, workers stop at their next call. Whatever finished is kept. A partial report beats a crash, and it beats a bill.
+
+<Flow steps={["Sub-questions", { label: "Thread pool", sub: "max_workers" }, { label: "BudgetedModel", sub: "check, call, charge", kind: "hl" }, { label: "Results", sub: "ok / budget / skipped" }]} caption="Every worker call is checked against and charged to one Budget." />
+
+You write `Budget.charge`, `Budget.exhausted`, `BudgetedModel.complete` and `run_parallel` in `parallel.py`. `research.py` (given) wires them together.
+
+## Steps
+
+1. **Meter tokens and dollars under a lock.** Several threads charge the same budget. `self.usd += ...` is a read, an add and a write, and two threads can interleave them and lose a charge. A lock makes each charge one step.
+
+   ```python
+   def charge(self, input_tokens: int, output_tokens: int, tier: str = "medium") -> None:
+       with self._lock:
+           self.tokens += input_tokens + output_tokens
+           self.usd += cost(input_tokens, output_tokens, tier)
+           self.calls += 1
+   ```
+
+   `cost()` (given, in `tokens.py`) uses illustrative per-tier prices: small $1 / $5 and medium $3 / $15 per million input / output tokens.
+
+2. **Know when it is spent.** Either cap can trip it. A cap of `None` never does.
+
+   ```python
+   @property
+   def exhausted(self) -> bool:
+       with self._lock:
+           return ((self.max_usd is not None and self.usd >= self.max_usd)
+                   or (self.max_tokens is not None and self.tokens >= self.max_tokens))
+   ```
+
+3. **Wrap the model.** `BudgetedModel` looks like any other model, so the worker from part 2 does not change. A hard wrapper refuses a call once the budget is spent. A soft wrapper only records. Workers get the hard one. The planner, verifier and writer get soft ones, so a run that hits the cap still checks what it found and writes it up.
+
+   ```python
+   def complete(self, messages, tools=None, system=None, temperature=0.0, max_tokens=1500) -> Response:
+       if self.hard and self.budget.exhausted:
+           raise BudgetExceeded(self.budget.summary())
+       resp = self.inner.complete(messages, tools=tools, system=system, temperature=temperature,
+                                  max_tokens=max_tokens)
+       self.budget.charge(resp.usage.input_tokens, resp.usage.output_tokens, self.tier)
+       return resp
+   ```
+
+4. **Fan out, and never let an error escape.** `pool.map` keeps results in input order. Each worker is wrapped so its failure becomes a status, not an exception: `BudgetExceeded` is `budget`, anything else is `failed`, and a worker whose turn comes after the money is gone is `skipped` without being called. One broken worker must not sink the other three.
+
+   ```python
+   def one(q: str) -> WorkerResult:
+       if budget is not None and budget.exhausted:
+           return WorkerResult(q, "skipped", error="budget spent before this worker started")
+       try:
+           return worker(q)
+       except BudgetExceeded as e:
+           return WorkerResult(q, "budget", error=f"stopped by cost cap: {e}")
+       except Exception as e:  # one broken worker must not sink the others
+           return WorkerResult(q, "failed", error=f"{type(e).__name__}: {e}")
+
+   if not sub_questions:
+       return []
+   with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(sub_questions)))) as pool:
+       return list(pool.map(one, sub_questions))
+   ```
+
+   Now the statuses from part 1 make sense. The orchestrator replans `failed` and `empty`, and leaves `budget` and `skipped` alone.
+
+5. **Try the cap.** With the solution on the path:
+
+   ```bash
+   PYTHONPATH=solution python3 -m deepresearch --max-usd 0.005 \
+     "When did the Velmora Tunnel open? How long is it? How much did it cost?"
+   ```
+
+   The summary line reads `3 sub-questions [ok, skipped, skipped]` and ends in `PARTIAL`. The report says so under its title and lists the two unanswered sub-questions as gaps.
+
+<Callout type="math" label="Let us check the math">
+One mock worker on the small tier: about 2,000 input and 130 output tokens.<br />
+2,000 × $1/M + 130 × $5/M ≈ **$0.0026 per worker**, so three workers cost about $0.008.<br />
+The full run, with the planner, verifier and writer, costs **$0.021**. The default cap of $0.50 covers about 24 such questions.<br />
+With `--max-usd 0.005` the run spends $0.0083. The cap is checked before each worker call, so calls already in flight finish, and the soft roles keep going to write the report. A cap is a stop line, not a ceiling: set it below the most you are willing to spend.
+</Callout>
+
+## Run the test
+
+```bash
+cd projects/deepresearch
+IMPL=starter python3 -m pytest tests/test_part03_parallel.py
+```
+
+10 tests. One charges a budget from 8 threads 1,000 times each and checks that no charge was lost. One uses a barrier that only opens if 3 workers run at the same moment, so a sequential loop fails it. Two run the whole pipeline: with `max_usd=0.003` the report must be partial and cost under $0.02, and with $1.00 all three sub-questions must come back `ok`.
+
+## What you just learned
+
+- Independent subtasks can run at once. That is [Parallelization and Voting](/c/parallelization/), here applied to whole agents, the same idea as [Parallel Tool Calls](/c/parallel_tools/) one level up.
+- Parallel agents need a shared budget, checked before every call, and a clean way to stop. That is [Stop Conditions and Budgets](/c/stop_conditions/).
+- Hard caps on the workers, soft caps on the roles that finish the job: spending stops, but the user still gets an answer.
+- Turn errors into statuses at the boundary, so one failure is a fact the orchestrator can act on.

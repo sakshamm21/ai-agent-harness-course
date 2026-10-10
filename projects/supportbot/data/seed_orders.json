@@ -1,0 +1,752 @@
+[
+ {
+  "order_id": "NW-1001",
+  "customer_name": "Ava Thompson",
+  "email": "ava.thompson@example.com",
+  "phone": "(206) 555-0147",
+  "card_last4": "5037",
+  "items": [
+   {
+    "sku": "BAG-30L",
+    "name": "Daypack 30L",
+    "qty": 1,
+    "price": 89.0
+   }
+  ],
+  "total": 89.0,
+  "status": "delivered",
+  "placed_at": "2026-09-01",
+  "carrier": "UPS",
+  "tracking": "1Z999AA126919",
+  "eta": null,
+  "delivered_at": "2026-09-05",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1002",
+  "customer_name": "Liam Chen",
+  "email": "liam.chen@example.com",
+  "phone": "(415) 555-0132",
+  "card_last4": "5074",
+  "items": [
+   {
+    "sku": "JKT-RAIN",
+    "name": "Cascade Rain Jacket",
+    "qty": 1,
+    "price": 149.0
+   }
+  ],
+  "total": 149.0,
+  "status": "delivered",
+  "placed_at": "2026-09-02",
+  "carrier": "USPS",
+  "tracking": "940011134838",
+  "eta": null,
+  "delivered_at": "2026-09-06",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1003",
+  "customer_name": "Sofia Garcia",
+  "email": "sofia.garcia@example.com",
+  "phone": "(312) 555-0199",
+  "card_last4": "5111",
+  "items": [
+   {
+    "sku": "FLC-01",
+    "name": "Ridge Fleece",
+    "qty": 1,
+    "price": 69.0
+   },
+   {
+    "sku": "SCK-3PK",
+    "name": "Merino Hiking Socks (3 pack)",
+    "qty": 1,
+    "price": 24.0
+   }
+  ],
+  "total": 93.0,
+  "status": "shipped",
+  "placed_at": "2026-09-03",
+  "carrier": "FedEx",
+  "tracking": "771242757",
+  "eta": "2026-10-12",
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1004",
+  "customer_name": "Noah Patel",
+  "email": "noah.patel@example.com",
+  "phone": "(646) 555-0110",
+  "card_last4": "5148",
+  "items": [
+   {
+    "sku": "STV-01",
+    "name": "Pocket Camp Stove",
+    "qty": 1,
+    "price": 49.0
+   }
+  ],
+  "total": 49.0,
+  "status": "delivered",
+  "placed_at": "2026-09-04",
+  "carrier": "UPS",
+  "tracking": "1Z999AA150676",
+  "eta": null,
+  "delivered_at": "2026-09-08",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1005",
+  "customer_name": "Mia Johnson",
+  "email": "mia.johnson@example.com",
+  "phone": "(503) 555-0175",
+  "card_last4": "5185",
+  "items": [
+   {
+    "sku": "SCK-3PK",
+    "name": "Merino Hiking Socks (3 pack)",
+    "qty": 1,
+    "price": 24.0
+   },
+   {
+    "sku": "HAT-SUN",
+    "name": "Wide Brim Sun Hat",
+    "qty": 1,
+    "price": 28.0
+   }
+  ],
+  "total": 52.0,
+  "status": "delivered",
+  "placed_at": "2026-09-05",
+  "carrier": "USPS",
+  "tracking": "940011158595",
+  "eta": null,
+  "delivered_at": "2026-09-09",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1006",
+  "customer_name": "Ethan Brooks",
+  "email": "ethan.brooks@example.com",
+  "phone": "(720) 555-0123",
+  "card_last4": "5222",
+  "items": [
+   {
+    "sku": "TNT-2P",
+    "name": "Basecamp 2-Person Tent",
+    "qty": 1,
+    "price": 289.0
+   }
+  ],
+  "total": 289.0,
+  "status": "processing",
+  "placed_at": "2026-10-08",
+  "carrier": null,
+  "tracking": null,
+  "eta": null,
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1007",
+  "customer_name": "Isla Murphy",
+  "email": "isla.murphy@example.com",
+  "phone": "(617) 555-0188",
+  "card_last4": "5259",
+  "items": [
+   {
+    "sku": "BT-HIKE",
+    "name": "Trailhead Hiking Boots",
+    "qty": 1,
+    "price": 179.0
+   }
+  ],
+  "total": 179.0,
+  "status": "delivered",
+  "placed_at": "2026-09-07",
+  "carrier": "UPS",
+  "tracking": "1Z999AA174433",
+  "eta": null,
+  "delivered_at": "2026-09-11",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1008",
+  "customer_name": "Lucas Rossi",
+  "email": "lucas.rossi@example.com",
+  "phone": "(305) 555-0164",
+  "card_last4": "5296",
+  "items": [
+   {
+    "sku": "BTL-1L",
+    "name": "Insulated Bottle 1L",
+    "qty": 1,
+    "price": 32.0
+   }
+  ],
+  "total": 32.0,
+  "status": "refunded",
+  "placed_at": "2026-09-08",
+  "carrier": "USPS",
+  "tracking": "940011182352",
+  "eta": null,
+  "delivered_at": "2026-09-12",
+  "refunded_amount": 32.0
+ },
+ {
+  "order_id": "NW-1009",
+  "customer_name": "Zoe Kim",
+  "email": "zoe.kim@example.com",
+  "phone": "(213) 555-0101",
+  "card_last4": "5333",
+  "items": [
+   {
+    "sku": "PNT-HIKE",
+    "name": "Switchback Hiking Pants",
+    "qty": 1,
+    "price": 79.0
+   }
+  ],
+  "total": 79.0,
+  "status": "delivered",
+  "placed_at": "2026-09-09",
+  "carrier": "FedEx",
+  "tracking": "771290271",
+  "eta": null,
+  "delivered_at": "2026-09-13",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1010",
+  "customer_name": "Omar Haddad",
+  "email": "omar.haddad@example.com",
+  "phone": "(512) 555-0156",
+  "card_last4": "5370",
+  "items": [
+   {
+    "sku": "GLV-01",
+    "name": "Windproof Gloves",
+    "qty": 1,
+    "price": 35.0
+   },
+   {
+    "sku": "LMP-HD",
+    "name": "Headlamp 300",
+    "qty": 1,
+    "price": 39.0
+   }
+  ],
+  "total": 74.0,
+  "status": "shipped",
+  "placed_at": "2026-09-10",
+  "carrier": "UPS",
+  "tracking": "1Z999AA198190",
+  "eta": "2026-10-11",
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1011",
+  "customer_name": "Ava Thompson",
+  "email": "ava.thompson@example.com",
+  "phone": "(206) 555-0147",
+  "card_last4": "5407",
+  "items": [
+   {
+    "sku": "JKT-DOWN",
+    "name": "Summit Down Jacket",
+    "qty": 1,
+    "price": 229.0
+   }
+  ],
+  "total": 229.0,
+  "status": "cancelled",
+  "placed_at": "2026-09-11",
+  "carrier": null,
+  "tracking": null,
+  "eta": null,
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1012",
+  "customer_name": "Liam Chen",
+  "email": "liam.chen@example.com",
+  "phone": "(415) 555-0132",
+  "card_last4": "5444",
+  "items": [
+   {
+    "sku": "STV-01",
+    "name": "Pocket Camp Stove",
+    "qty": 1,
+    "price": 49.0
+   },
+   {
+    "sku": "BTL-1L",
+    "name": "Insulated Bottle 1L",
+    "qty": 1,
+    "price": 32.0
+   }
+  ],
+  "total": 81.0,
+  "status": "delivered",
+  "placed_at": "2026-09-12",
+  "carrier": "FedEx",
+  "tracking": "771214028",
+  "eta": null,
+  "delivered_at": "2026-09-16",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1013",
+  "customer_name": "Sofia Garcia",
+  "email": "sofia.garcia@example.com",
+  "phone": "(312) 555-0199",
+  "card_last4": "5481",
+  "items": [
+   {
+    "sku": "SLP-20",
+    "name": "20F Sleeping Bag",
+    "qty": 1,
+    "price": 199.0
+   }
+  ],
+  "total": 199.0,
+  "status": "delivered",
+  "placed_at": "2026-09-13",
+  "carrier": "UPS",
+  "tracking": "1Z999AA121947",
+  "eta": null,
+  "delivered_at": "2026-09-17",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1014",
+  "customer_name": "Noah Patel",
+  "email": "noah.patel@example.com",
+  "phone": "(646) 555-0110",
+  "card_last4": "5518",
+  "items": [
+   {
+    "sku": "HAT-SUN",
+    "name": "Wide Brim Sun Hat",
+    "qty": 1,
+    "price": 28.0
+   }
+  ],
+  "total": 28.0,
+  "status": "processing",
+  "placed_at": "2026-10-08",
+  "carrier": null,
+  "tracking": null,
+  "eta": null,
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1015",
+  "customer_name": "Mia Johnson",
+  "email": "mia.johnson@example.com",
+  "phone": "(503) 555-0175",
+  "card_last4": "5555",
+  "items": [
+   {
+    "sku": "LMP-HD",
+    "name": "Headlamp 300",
+    "qty": 1,
+    "price": 39.0
+   }
+  ],
+  "total": 39.0,
+  "status": "delivered",
+  "placed_at": "2026-09-15",
+  "carrier": "FedEx",
+  "tracking": "771237785",
+  "eta": null,
+  "delivered_at": "2026-09-19",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1016",
+  "customer_name": "Ethan Brooks",
+  "email": "ethan.brooks@example.com",
+  "phone": "(720) 555-0123",
+  "card_last4": "5592",
+  "items": [
+   {
+    "sku": "FLC-01",
+    "name": "Ridge Fleece",
+    "qty": 1,
+    "price": 69.0
+   }
+  ],
+  "total": 69.0,
+  "status": "shipped",
+  "placed_at": "2026-09-16",
+  "carrier": "UPS",
+  "tracking": "1Z999AA145704",
+  "eta": "2026-10-17",
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1017",
+  "customer_name": "Isla Murphy",
+  "email": "isla.murphy@example.com",
+  "phone": "(617) 555-0188",
+  "card_last4": "5629",
+  "items": [
+   {
+    "sku": "BAG-30L",
+    "name": "Daypack 30L",
+    "qty": 1,
+    "price": 89.0
+   },
+   {
+    "sku": "BTL-1L",
+    "name": "Insulated Bottle 1L",
+    "qty": 1,
+    "price": 32.0
+   }
+  ],
+  "total": 121.0,
+  "status": "delivered",
+  "placed_at": "2026-09-17",
+  "carrier": "USPS",
+  "tracking": "940011153623",
+  "eta": null,
+  "delivered_at": "2026-09-21",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1018",
+  "customer_name": "Lucas Rossi",
+  "email": "lucas.rossi@example.com",
+  "phone": "(305) 555-0164",
+  "card_last4": "5666",
+  "items": [
+   {
+    "sku": "SCK-3PK",
+    "name": "Merino Hiking Socks (3 pack)",
+    "qty": 1,
+    "price": 24.0
+   }
+  ],
+  "total": 24.0,
+  "status": "delivered",
+  "placed_at": "2026-09-18",
+  "carrier": "FedEx",
+  "tracking": "771261542",
+  "eta": null,
+  "delivered_at": "2026-09-22",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1019",
+  "customer_name": "Zoe Kim",
+  "email": "zoe.kim@example.com",
+  "phone": "(213) 555-0101",
+  "card_last4": "5703",
+  "items": [
+   {
+    "sku": "TNT-2P",
+    "name": "Basecamp 2-Person Tent",
+    "qty": 1,
+    "price": 289.0
+   },
+   {
+    "sku": "LMP-HD",
+    "name": "Headlamp 300",
+    "qty": 1,
+    "price": 39.0
+   }
+  ],
+  "total": 328.0,
+  "status": "shipped",
+  "placed_at": "2026-09-19",
+  "carrier": "UPS",
+  "tracking": "1Z999AA169461",
+  "eta": "2026-10-12",
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1020",
+  "customer_name": "Omar Haddad",
+  "email": "omar.haddad@example.com",
+  "phone": "(512) 555-0156",
+  "card_last4": "5740",
+  "items": [
+   {
+    "sku": "GLV-01",
+    "name": "Windproof Gloves",
+    "qty": 1,
+    "price": 35.0
+   }
+  ],
+  "total": 35.0,
+  "status": "delivered",
+  "placed_at": "2026-09-20",
+  "carrier": "USPS",
+  "tracking": "940011177380",
+  "eta": null,
+  "delivered_at": "2026-09-24",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1021",
+  "customer_name": "Ava Thompson",
+  "email": "ava.thompson@example.com",
+  "phone": "(206) 555-0147",
+  "card_last4": "5777",
+  "items": [
+   {
+    "sku": "PNT-HIKE",
+    "name": "Switchback Hiking Pants",
+    "qty": 1,
+    "price": 79.0
+   },
+   {
+    "sku": "SCK-3PK",
+    "name": "Merino Hiking Socks (3 pack)",
+    "qty": 1,
+    "price": 24.0
+   }
+  ],
+  "total": 103.0,
+  "status": "processing",
+  "placed_at": "2026-10-08",
+  "carrier": null,
+  "tracking": null,
+  "eta": null,
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1022",
+  "customer_name": "Liam Chen",
+  "email": "liam.chen@example.com",
+  "phone": "(415) 555-0132",
+  "card_last4": "5814",
+  "items": [
+   {
+    "sku": "JKT-RAIN",
+    "name": "Cascade Rain Jacket",
+    "qty": 1,
+    "price": 149.0
+   }
+  ],
+  "total": 149.0,
+  "status": "shipped",
+  "placed_at": "2026-09-02",
+  "carrier": "UPS",
+  "tracking": "1Z999AA193218",
+  "eta": "2026-10-15",
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1023",
+  "customer_name": "Sofia Garcia",
+  "email": "sofia.garcia@example.com",
+  "phone": "(312) 555-0199",
+  "card_last4": "5851",
+  "items": [
+   {
+    "sku": "BTL-1L",
+    "name": "Insulated Bottle 1L",
+    "qty": 1,
+    "price": 32.0
+   },
+   {
+    "sku": "HAT-SUN",
+    "name": "Wide Brim Sun Hat",
+    "qty": 1,
+    "price": 28.0
+   }
+  ],
+  "total": 60.0,
+  "status": "delivered",
+  "placed_at": "2026-09-03",
+  "carrier": "USPS",
+  "tracking": "940011101137",
+  "eta": null,
+  "delivered_at": "2026-09-07",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1024",
+  "customer_name": "Noah Patel",
+  "email": "noah.patel@example.com",
+  "phone": "(646) 555-0110",
+  "card_last4": "5888",
+  "items": [
+   {
+    "sku": "BT-HIKE",
+    "name": "Trailhead Hiking Boots",
+    "qty": 1,
+    "price": 179.0
+   },
+   {
+    "sku": "SCK-3PK",
+    "name": "Merino Hiking Socks (3 pack)",
+    "qty": 1,
+    "price": 24.0
+   }
+  ],
+  "total": 203.0,
+  "status": "delivered",
+  "placed_at": "2026-09-04",
+  "carrier": "FedEx",
+  "tracking": "771209056",
+  "eta": null,
+  "delivered_at": "2026-09-08",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1025",
+  "customer_name": "Mia Johnson",
+  "email": "mia.johnson@example.com",
+  "phone": "(503) 555-0175",
+  "card_last4": "5925",
+  "items": [
+   {
+    "sku": "FLC-01",
+    "name": "Ridge Fleece",
+    "qty": 1,
+    "price": 69.0
+   }
+  ],
+  "total": 69.0,
+  "status": "refunded",
+  "placed_at": "2026-09-05",
+  "carrier": "UPS",
+  "tracking": "1Z999AA116975",
+  "eta": null,
+  "delivered_at": "2026-09-09",
+  "refunded_amount": 69.0
+ },
+ {
+  "order_id": "NW-1026",
+  "customer_name": "Ethan Brooks",
+  "email": "ethan.brooks@example.com",
+  "phone": "(720) 555-0123",
+  "card_last4": "5962",
+  "items": [
+   {
+    "sku": "STV-01",
+    "name": "Pocket Camp Stove",
+    "qty": 1,
+    "price": 49.0
+   }
+  ],
+  "total": 49.0,
+  "status": "shipped",
+  "placed_at": "2026-09-06",
+  "carrier": "USPS",
+  "tracking": "940011124894",
+  "eta": "2026-10-11",
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1027",
+  "customer_name": "Isla Murphy",
+  "email": "isla.murphy@example.com",
+  "phone": "(617) 555-0188",
+  "card_last4": "5999",
+  "items": [
+   {
+    "sku": "LMP-HD",
+    "name": "Headlamp 300",
+    "qty": 1,
+    "price": 39.0
+   },
+   {
+    "sku": "GLV-01",
+    "name": "Windproof Gloves",
+    "qty": 1,
+    "price": 35.0
+   }
+  ],
+  "total": 74.0,
+  "status": "delivered",
+  "placed_at": "2026-09-07",
+  "carrier": "FedEx",
+  "tracking": "771232813",
+  "eta": null,
+  "delivered_at": "2026-09-11",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1028",
+  "customer_name": "Lucas Rossi",
+  "email": "lucas.rossi@example.com",
+  "phone": "(305) 555-0164",
+  "card_last4": "6036",
+  "items": [
+   {
+    "sku": "SLP-20",
+    "name": "20F Sleeping Bag",
+    "qty": 1,
+    "price": 199.0
+   }
+  ],
+  "total": 199.0,
+  "status": "processing",
+  "placed_at": "2026-10-08",
+  "carrier": null,
+  "tracking": null,
+  "eta": null,
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1029",
+  "customer_name": "Zoe Kim",
+  "email": "zoe.kim@example.com",
+  "phone": "(213) 555-0101",
+  "card_last4": "6073",
+  "items": [
+   {
+    "sku": "HAT-SUN",
+    "name": "Wide Brim Sun Hat",
+    "qty": 1,
+    "price": 28.0
+   }
+  ],
+  "total": 28.0,
+  "status": "delivered",
+  "placed_at": "2026-09-09",
+  "carrier": "USPS",
+  "tracking": "940011148651",
+  "eta": null,
+  "delivered_at": "2026-09-13",
+  "refunded_amount": 0.0
+ },
+ {
+  "order_id": "NW-1030",
+  "customer_name": "Omar Haddad",
+  "email": "omar.haddad@example.com",
+  "phone": "(512) 555-0156",
+  "card_last4": "6110",
+  "items": [
+   {
+    "sku": "BAG-30L",
+    "name": "Daypack 30L",
+    "qty": 1,
+    "price": 89.0
+   }
+  ],
+  "total": 89.0,
+  "status": "cancelled",
+  "placed_at": "2026-09-10",
+  "carrier": null,
+  "tracking": null,
+  "eta": null,
+  "delivered_at": null,
+  "refunded_amount": 0.0
+ }
+]

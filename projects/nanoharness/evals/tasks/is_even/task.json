@@ -1,0 +1,11 @@
+{
+  "prompt": "The parity helper says 4 is odd. Find the bug and fix it.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "parity.py",
+      "old": "n % 2 == 1",
+      "new": "n % 2 == 0"
+    }
+  ]
+}

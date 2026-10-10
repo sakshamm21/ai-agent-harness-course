@@ -1,0 +1,113 @@
+---
+title: "Sessions and resume"
+project: "nanoharness"
+part: 8
+tagline: "Save every message as one JSON line, and pick up where you left off with --resume."
+goal: "An append-only JSONL transcript for every run, a loader that replays it (compactions included), and a repair step so a session that crashed mid-tool-call can still be resumed."
+lessons: ["sessions"]
+test: "IMPL=starter python3 -m pytest tests/test_part08_sessions.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Close the terminal and your agent forgets everything. That is fine for a one-line fix and painful for an afternoon of work. In `session.py` you write the file that lets `nanoharness --resume "now add a test"` continue the last conversation exactly where it stopped.
+
+Each run writes `.nanoharness/sessions/<id>.jsonl` in the working directory, one event per line:
+
+```
+{"type": "meta", "id": "20261010-102230-1500d4", "created": 1791627750.1, "model": "mock", "workdir": "..."}
+{"type": "message", "message": {"role": "user", "content": "fix the bug in calc.py"}}
+{"type": "message", "message": {"role": "assistant", "content": [...]}}
+{"type": "compact", "messages": [...]}
+```
+
+You write `Session.write`, `Session.load` and `repair_transcript`. The wiring is done: `Agent.append` from part 1 calls `session.append` for every message, and `maybe_compact` calls `session.record_compaction`.
+
+## Steps
+
+### 1. Append one line and flush
+
+Open in append mode, write one JSON line, flush. Never rewrite the file. If the process dies, you lose at most the line being written, and every line before it is safe on disk:
+
+```python
+def write(self, event: dict) -> None:
+    with open(self.path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+        f.flush()
+```
+
+`ensure_ascii=False` keeps the file readable when the code has non-ASCII characters in it. You will read these files by hand when you debug a run.
+
+### 2. Replay the file
+
+Loading is a replay. A `message` event appends; a `compact` event *replaces* the whole list, because after a compaction the model only ever saw the summary. Skip a line that isn't valid JSON: that is the half-written last line of a crashed run.
+
+```python
+messages: list[dict] = []
+with open(self.path, encoding="utf-8") as f:
+    for line in f:
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # half-written last line
+        if ev.get("type") == "message":
+            messages.append(ev["message"])
+        elif ev.get("type") == "compact":
+            messages = list(ev["messages"])
+return repair_transcript(messages)
+```
+
+The result is exactly the transcript the model saw last, not the full history. The full history is still in the file for you to read.
+
+### 3. Repair a dangling tool call
+
+Suppose you hit Ctrl-C while `pytest` runs. The file ends with an assistant message holding a `tool_use`, and no `tool_result`. Send that to the API and it is rejected: every `tool_use` needs a matching result. So close each open call with an error result that says what happened:
+
+```python
+def repair_transcript(messages: list[dict]) -> list[dict]:
+    if messages and messages[-1]["role"] == "assistant" and isinstance(messages[-1]["content"], list):
+        pending = [b for b in messages[-1]["content"] if b.get("type") == "tool_use"]
+        if pending:
+            messages = messages + [{"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": b["id"], "is_error": True,
+                 "content": "Interrupted: the session ended before this tool ran."} for b in pending]}]
+    return messages
+```
+
+Build a new list (`messages + [...]`) instead of appending to the one you were given. The test checks that the input is left alone.
+
+### 4. Resume from the CLI
+
+`find_session` (provided) returns the session you name with `--session ID`, or the most recently modified one. The CLI loads it and passes the messages into a new `Agent`, which keeps appending to the same file:
+
+```python
+if args.resume or args.session:
+    session = find_session(workdir, args.session)
+    if session is None:
+        print(f"No session to resume in {workdir}.", file=sys.stderr)
+        return 2
+    messages = session.load()                                            # Part 8
+    print(f"[resumed {session.id}: {len(messages)} messages]", file=sys.stderr)
+else:
+    session = Session.create(workdir, getattr(model, "model", model.name))
+```
+
+The resumed run sends the old transcript with the new prompt at the end, so the model sees the whole conversation.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part08_sessions.py
+```
+
+You should see `4 passed`. The tests check one JSON line per event (non-ASCII intact), replay with a compaction in the middle and a broken last line, the repair of two dangling calls, and a full round trip: run, find the session, resume it with a new prompt, and check the model saw the old messages first.
+
+Then try it on the demo repo: fix the bug, then run `--mock --resume "run tests again"`. The CLI prints `[resumed <id>: 10 messages]`.
+
+## What you just learned
+
+- A session is the transcript plus enough metadata to rebuild it. Append-only JSONL is the simplest format that survives a crash, as in [Sessions, State and Resume](/c/sessions/).
+- Resume means "replay to the state the model last saw". Compaction events make that the summary, not the whole history.
+- A transcript has rules the API enforces. Repairing it on load (close every open `tool_use`) is cheaper than debugging a rejected request after a crash.
+- The same file is your log. When a run goes wrong, read the JSONL first.

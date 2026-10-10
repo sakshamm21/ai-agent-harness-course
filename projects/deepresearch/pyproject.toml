@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepresearch"
+version = "0.1.0"
+description = "A multi-agent research assistant, built in 6 parts (Free Agent Harness capstone)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []  # standard library only
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+deepresearch = "deepresearch.__main__:main"
+
+# `pip install -e .` installs the reference solution. To install your own work instead,
+# change "solution" to "starter" below. Use -e: the corpus is read from ../data next to the package
+# (or set DEEPRESEARCH_DATA to the data folder).
+[tool.setuptools.packages.find]
+where = ["solution"]
+include = ["deepresearch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"

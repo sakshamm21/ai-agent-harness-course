@@ -1,0 +1,11 @@
+{
+  "prompt": "first_n(items, n) in listutil.py returns one item too few. Fix it so the tests pass.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "listutil.py",
+      "old": "items[:n - 1]",
+      "new": "items[:n]"
+    }
+  ]
+}

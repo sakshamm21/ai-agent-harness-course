@@ -1,0 +1,97 @@
+---
+title: "Project instructions"
+project: "nanoharness"
+part: 6
+tagline: "Load AGENTS.md from the repo and build the system prompt once per session."
+goal: "A system prompt assembled from a base prompt, an environment section and the repo's AGENTS.md, so the agent follows each project's own rules without being told every time."
+lessons: ["prompt_assembly", "prompting"]
+test: "IMPL=starter python3 -m pytest tests/test_part06_instructions.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Every repo has rules nobody writes in the code. "Run the tests with `make test`, not `pytest`." "Never edit files in `generated/`." "Keep fixes minimal." A new teammate learns them from a README. Your agent learns them from `AGENTS.md`, a plain Markdown file in the repo root that many coding agents now read.
+
+In `instructions.py` you write two functions:
+
+- `load_instructions(workdir)`: find `AGENTS.md` (or `CLAUDE.md`) and read it, capped at 20,000 characters.
+- `build_system_prompt(workdir, instructions, extra)`: put the pieces together in a fixed order.
+
+The CLI calls them once when a session starts. The demo repo from the overview ships an `AGENTS.md`, so you can see it at work.
+
+## Steps
+
+### 1. Find and read the instructions file
+
+Look for each name in `INSTRUCTION_FILES` in order. The first one that exists wins, so a repo with both files gets `AGENTS.md`. Cap the length: an instructions file that grew to 200 KB would cost 50,000 tokens on every single turn.
+
+```python
+INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")  # first one found wins
+MAX_INSTRUCTIONS = 20_000  # characters
+
+def load_instructions(workdir: str) -> str | None:
+    for name in INSTRUCTION_FILES:
+        path = os.path.join(workdir, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            if len(text) > MAX_INSTRUCTIONS:
+                text = text[:MAX_INSTRUCTIONS] + "\n[... instructions truncated ...]"
+            return text
+    return None
+```
+
+Return `None`, not `""`, when there is no file. The next function uses that to leave the section out.
+
+### 2. Assemble the system prompt in a fixed order
+
+Three sections, separated by a blank line: what the agent is and how it should work (`BASE_PROMPT`), where it is running (the `env` section), and the project's own rules. Each section is wrapped in a tag so the model can tell where one source ends and the next begins:
+
+```python
+def build_system_prompt(workdir: str, instructions: str | None = None, extra: str = "") -> str:
+    parts = [BASE_PROMPT, f"<env>\nWorking directory: {workdir}\nPlatform: {platform.system()}\n</env>"]
+    if instructions:
+        parts.append(f'<project_instructions source="AGENTS.md">\n{instructions.strip()}\n</project_instructions>')
+    if extra:
+        parts.append(extra)
+    return "\n\n".join(parts)
+```
+
+The order goes from general to specific. The base prompt says "run the tests to check your work". `AGENTS.md` then says *which* command runs the tests, and that more specific rule comes later, where the model tends to treat it as the one that applies.
+
+### 3. Read the base prompt you are shipping
+
+`BASE_PROMPT` is provided. It is short on purpose, and every line is there to stop a failure you would otherwise see:
+
+```python
+BASE_PROMPT = """You are nanoharness, a coding agent working in a local repository.
+You act through tools: read files before editing them, make small exact edits with edit_file,
+and run the tests with bash to check your work. Never guess file contents.
+When the task is done (or you are blocked), stop calling tools and reply with a short summary
+of what you changed and how you verified it. If a tool call is denied, do not retry it; explain
+what you needed instead."""
+```
+
+"Read files before editing them" prevents `edit_file` calls with invented `old_string`s. "Stop calling tools and reply" is the done signal your loop from part 1 waits for.
+
+### 4. Freeze it for the session
+
+Build the prompt once and pass it to `Agent(system=...)`. Don't rebuild it on every turn, even if `AGENTS.md` changes on disk mid-run. A system prompt that changes between turns throws away the prompt cache (every turn pays full price again) and leaves the model unsure which version of the rules applies.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part06_instructions.py
+```
+
+You should see `4 passed`. The tests check that `AGENTS.md` beats `CLAUDE.md` and a missing file gives `None`, that an oversized file is cut with the truncation note, the exact layout and order of the three sections, and that the instructions reach the model through the agent.
+
+Then try it: add `- Never edit test files.` to the demo's `AGENTS.md` and run with a real model. Ask it to "make the tests pass any way you can".
+
+## What you just learned
+
+- The system prompt is assembled, not written once by hand: base behaviour, environment, then project rules. That is [Assembling the Context](/c/prompt_assembly/) in about 15 lines.
+- The system prompt holds rules that apply to every turn, and the messages hold the task. Putting the repo's rules in the system prompt is the split from [System Prompts and Messages](/c/prompting/).
+- Every token in the system prompt is paid on every turn, so instruction files get a size cap.
+- A stable prefix (system prompt, then tools) is what makes prompt caching work. Freezing the prompt for the session keeps it stable.

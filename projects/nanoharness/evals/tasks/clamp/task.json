@@ -1,0 +1,11 @@
+{
+  "prompt": "clamp() returns values outside the range. Fix it.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "bounds.py",
+      "old": "min(lo, max(hi, x))",
+      "new": "max(lo, min(hi, x))"
+    }
+  ]
+}

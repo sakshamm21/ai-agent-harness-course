@@ -1,0 +1,107 @@
+---
+title: "Order tools on SQLite"
+project: "supportbot"
+part: 3
+tagline: "lookup_order, issue_refund and escalate_to_human, with idempotency keys and errors the model can act on."
+goal: "Calling issue_refund twice with the same arguments in the same conversation refunds once, and every bad call comes back as a readable error instead of a crash."
+lessons: ["tools", "idempotency", "tool_errors"]
+test: "IMPL=starter python3 -m pytest tests/test_part03_tools.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Answering questions is half of support. The other half is doing things: finding an order, refunding it, handing the case to a person. Part 3 builds those three tools on a fake store in SQLite, seeded with 30 orders from `data/seed_orders.json` (NW-1001 to NW-1030, a mix of delivered, shipped, processing, refunded and cancelled).
+
+Two properties matter more than the happy path:
+
+- **A refund happens exactly once.** Networks time out and agents retry. If the second `issue_refund` pays again, you have lost money. An idempotency key makes the retry harmless.
+- **Errors are messages, not exceptions.** "No order NW-9999. Ask the customer to check the number on their confirmation email." lets the model recover. A stack trace does not.
+
+`OrderStore` (the schema, seeding and row helpers) is given to you. You write the tools.
+
+## Steps
+
+1. **Look an order up.** Normalize the id, check its shape, then query. Each error says what is wrong and what to do about it.
+
+```python
+def lookup_order(store, order_id):
+    order_id = str(order_id).strip().upper()
+    if not ORDER_ID_RE.match(order_id):
+        raise ToolError(f"'{order_id}' is not an order number. Order numbers look like NW-1234.")
+    order = store.order(order_id)
+    if order is None:
+        raise ToolError(f"No order {order_id}. Ask the customer to check the number on their confirmation email.")
+    return order
+```
+
+2. **Check a refund is allowed.** `check_refundable` enforces the business rules: more than $0, only delivered (or partly refunded) orders, and never more than is left. A processing order gets a hint, because cancelling is the right action there.
+
+```python
+if amount <= 0:
+    raise ToolError("Refund amount must be more than $0.")
+if order["status"] not in REFUNDABLE_STATUSES:
+    hint = " It is still processing, so it can be cancelled instead." if order["status"] == "processing" else ""
+    raise ToolError(f"Order {order['order_id']} is {order['status']}, so it cannot be refunded.{hint}")
+if amount > refundable:
+    raise ToolError(f"Refund of ${amount:.2f} is more than the ${refundable:.2f} left to refund "
+                    f"on {order['order_id']}.")
+```
+
+3. **Refund exactly once.** Look for the key first. The same key with the same order and amount is a retry: return the first result with `"duplicate": True` and change nothing. The same key with different arguments is a bug, so say so. Otherwise write the refund row and update the order in one transaction.
+
+```python
+prior = store.db.execute("SELECT * FROM refunds WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+if prior is not None:
+    if prior["order_id"] != str(order_id).upper() or abs(prior["amount"] - float(amount)) > 0.005:
+        raise ToolError("This idempotency key was already used for a different refund.")
+    return {**dict(prior), "status": "refunded", "duplicate": True}
+
+order, amount, refundable = check_refundable(store, order_id, amount)
+with store.db:   # one transaction: both writes happen, or neither does
+    refund_id = store.next_id("refunds", "RF")
+    store.db.execute("INSERT INTO refunds VALUES (?,?,?,?,?,?)",
+                     (refund_id, order["order_id"], amount, reason, idempotency_key, now()))
+    store.db.execute("UPDATE orders SET refunded_amount = refunded_amount + ?, status = 'refunded' "
+                     "WHERE order_id = ?", (amount, order["order_id"]))
+```
+
+The `idempotency_key` column is `UNIQUE`, so even a race between two threads cannot write two rows for one key.
+
+4. **Derive the key.** The model does not choose the key; your code does. The same conversation asking for the same refund gets the same key. A different conversation gets a different one.
+
+```python
+def make_idempotency_key(conversation_id, name, args):
+    canonical = json.dumps({"c": conversation_id, "t": name, "a": args}, sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:24]
+```
+
+5. **Escalate.** `escalate_to_human` inserts a ticket and returns its id and an ETA. An empty summary is an error: a person picking up the ticket needs to know what the customer wants.
+
+6. **One door for every call.** `run_tool` is the only way the agent calls a tool. It checks the tool exists, validates the arguments against the JSON schema (`validate_args`, given), runs it, and wraps the result. A `ToolError` becomes `"Error: ..."` with `is_error=True`. It never raises.
+
+```python
+elif name == "issue_refund":
+    args["order_id"] = str(args["order_id"]).upper()
+    args["amount"] = round(float(args["amount"]), 2)
+    key = make_idempotency_key(conversation_id, name, {"order_id": args["order_id"], "amount": args["amount"]})
+    gated = refund_gate(store, args, key) if refund_gate else None
+    data = gated if gated is not None else issue_refund(store, args["order_id"], args["amount"],
+                                                        args["reason"], key)
+```
+
+The `refund_gate` hook does nothing yet. Part 5 plugs human approval into it.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part03_tools.py
+```
+
+The tests refund the same order twice with one key, reuse a key for a different amount, try to refund a shipped order, a processing order and more than the total, and send `run_tool` an unknown tool, a missing argument and `"amount": "lots"`.
+
+## What you just learned
+
+- A tool is a function plus a schema the model reads. The description says when to use it, not only what it does. See [Function Calling](/c/tools/).
+- Any tool that moves money or sends something needs an idempotency key derived by your code, checked before the write, and enforced by the database. See [Retries and Idempotent Tools](/c/idempotency/).
+- Tool errors are part of the conversation. Write them for the model: what went wrong, and what to try next. See [Tool Errors and Recovery](/c/tool_errors/).

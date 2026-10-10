@@ -19,7 +19,7 @@ By the end of part 10 it has:
 
 - a loop that calls the model and runs the tools it asks for
 - six tools: `read_file`, `write_file`, `edit_file`, `list_dir`, `grep` and `bash`
-- allow, ask and deny permission rules with a y/N prompt
+- allow, ask and deny permission rules with a y/N/a prompt
 - a sandbox for `bash`: working directory, timeout, output cap, optional Docker
 - token counting and compaction by summarization at 70% of the window
 - `AGENTS.md` loaded into the system prompt
@@ -36,7 +36,7 @@ Around that loop sit four helpers. The context manager (part 5) compacts the tra
 
 | Part | File | What it adds |
 |---|---|---|
-| 1 | `loop.py` | The agent loop |
+| 1 | `loop.py`, `tools.py` | The agent loop and the tool registry |
 | 2 | `tools.py` | File tools, locked to the working directory |
 | 3 | `permissions.py` | allow / ask / deny and the y/N prompt |
 | 4 | `sandbox.py` | `bash` with a timeout and an output cap |
@@ -73,7 +73,7 @@ IMPL=starter python3 -m pytest tests/test_part01_loop.py   # your code, part 1
 IMPL=solution python3 -m pytest -q                         # the reference: all green
 ```
 
-Pass bar: every test passes on the mock model, and with a real model at least 10 of the 15 evals pass (`python3 evals/run_evals.py --min-pass 10`).
+Pass bar: every test passes on the mock model, and with a real model at least 10 of the 15 evals pass (`IMPL=starter python3 evals/run_evals.py --min-pass 10`).
 
 <Callout type="note" label="Before you start">
 Read [What Is an Agent Harness](/c/harness/) and [The Agent Loop](/c/agent_loop/) first. Each part links the lessons it builds on, and [Design a Coding Agent](/c/case_coding_agent/) shows the same design at production scale.

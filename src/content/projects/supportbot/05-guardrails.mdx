@@ -1,0 +1,88 @@
+---
+title: "Guardrails: PII and approvals"
+project: "supportbot"
+part: 5
+tagline: "Redact emails, phones and card numbers from every reply, and send refunds over $100 to a person."
+goal: "\"Please refund NW-1002\" ($149) creates an approval request instead of a refund, and an order status reply shows [email] instead of the customer's address."
+lessons: ["guardrails", "hitl"]
+test: "IMPL=starter python3 -m pytest tests/test_part05_guardrails.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+The system prompt already says "never repeat a customer's email address" and "refunds over $100 need approval". A prompt is a request, though, not a rule. Models follow it most of the time, and most of the time is not good enough for money or personal data.
+
+This part moves both rules into code, where they hold every time:
+
+- **Output redaction.** Every reply passes `redact_pii` before the customer sees it. Run `Where is my order NW-1003?` with guardrails off and the mock happily says "We send updates to sofia.garcia@example.com". With them on, it says `[email]`.
+- **Human approval.** A refund over $100 does not run. It becomes a row in the `approvals` table, and a person approves or rejects it later, from the web UI in part 8.
+
+## Steps
+
+1. **Redact with patterns, in the right order.** Card numbers go before phone numbers, or the phone pattern eats half a card number and leaves the rest. Count what you redacted: the count goes into the trace, the matched text never does.
+
+```python
+PII_PATTERNS = [
+    ("email", re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"), "[email]"),
+    ("card", re.compile(r"\b(?:\d[ -]?){12,18}\d\b"), "[card number]"),
+    ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[ssn]"),
+    ("phone", re.compile(r"(?:\+1[\s.-]?)?(?:\(\d{3}\)\s?|\b\d{3}[\s.-])\d{3}[\s.-]\d{4}\b"), "[phone]"),
+]
+
+def redact_pii(text):
+    counts = {}
+    for kind, pattern, replacement in PII_PATTERNS:
+        text, n = pattern.subn(replacement, text)
+        if n:
+            counts[kind] = n
+    return text, counts
+```
+
+Order numbers, tracking numbers and "card ending in 5037" are not PII here and must survive. The test checks that too: a redactor that removes everything with digits in it is useless.
+
+2. **Decide the threshold once.** `needs_approval` is strictly over the limit: $100.00 goes straight through, $100.01 waits. Write the boundary into a test so nobody "fixes" it to `>=` by accident.
+
+3. **Gate the refund.** `refund_gate` plugs into the hook you left in `run_tool`. Under the limit it returns `None` and the refund runs. Over it, it first checks the refund would be valid at all (no point asking a person to approve a refund on a shipped order), then stores a pending request under the same idempotency key, so a retry finds the same request instead of creating a second one.
+
+```python
+def refund_gate(store, args, key):
+    if not needs_approval(args["amount"]):
+        return None
+    order, amount, _ = check_refundable(store, args["order_id"], args["amount"])
+    row = store.db.execute("SELECT * FROM approvals WHERE idempotency_key = ?", (key,)).fetchone()
+    if row is None:
+        with store.db:
+            approval_id = store.next_id("approvals", "AP")
+            store.db.execute("INSERT INTO approvals VALUES (?,?,?,?,?,?,?,?,?)",
+                             (approval_id, order["order_id"], amount, args.get("reason", ""), key,
+                              "pending", None, None, now()))
+        row = store.db.execute("SELECT * FROM approvals WHERE approval_id = ?", (approval_id,)).fetchone()
+    return {"status": "pending_approval", "approval_id": row["approval_id"], "order_id": row["order_id"],
+            "amount": row["amount"], "message": f"Refunds over ${REFUND_APPROVAL_LIMIT:.0f} need a person to approve."}
+```
+
+The model sees `pending_approval` as the tool result and tells the customer the refund is being reviewed. It does not get a way around it.
+
+4. **Approve with the stored key.** When a person approves, `approve_refund` calls `issue_refund` with the request's own idempotency key. Clicking Approve twice is then harmless: the second call finds the first refund. A rejected request can never be approved.
+
+```python
+refund = issue_refund(store, row["order_id"], row["amount"], row["reason"], row["idempotency_key"])
+with store.db:
+    store.db.execute("UPDATE approvals SET status = 'approved', decided_by = COALESCE(decided_by, ?), "
+                     "refund_id = ? WHERE approval_id = ?", (approver, refund["refund_id"], approval_id))
+```
+
+5. **Turn them on in the agent.** With `guardrails=True` (the default) the agent passes `refund_gate` to `run_tool` and runs `redact_pii` on the final text, emitting a `redacted` event with the counts.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part05_guardrails.py
+```
+
+## What you just learned
+
+- A guardrail is a check in code on the way in or out. The prompt states the policy; the code enforces it. See [Guardrails](/c/guardrails/).
+- Human approval is a state machine (pending, approved, rejected) with the same idempotency rules as the action it guards. See [Human in the Loop](/c/hitl/).
+- Redact before anything is shown or stored. Part 8 runs the same redaction on every trace line, because logs outlive conversations.

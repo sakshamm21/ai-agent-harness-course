@@ -1,0 +1,113 @@
+---
+title: "Ingest the help center"
+project: "supportbot"
+part: 1
+tagline: "60 Markdown articles become 74 chunks, 74 vectors and one searchable index, in pure Python."
+goal: "index.search(\"how do I wash my rain jacket\") returns the jacket-care article first, with a score."
+lessons: ["embeddings", "chunking"]
+test: "IMPL=starter python3 -m pytest tests/test_part01_ingest.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+The bot can only cite what it can find. Part 1 turns `data/help_center/` into something you can search by meaning: parse each article, cut it into chunks small enough to quote, turn each chunk into a vector, and keep the vectors in an index with a cosine search.
+
+There is no vector database and no numpy. 74 vectors of 512 floats is a linear scan that takes well under a millisecond. You will see why chunk size and the embedding matter much more than the index at this scale.
+
+Every article looks like this:
+
+```markdown
+---
+id: returns-window
+title: Our return window
+category: returns
+---
+
+# Our return window
+
+You can return most items within 30 days of delivery. Items must be unworn and unwashed, ...
+```
+
+The `id` is what the bot cites in part 2, so it has to be there.
+
+## Steps
+
+1. **Parse an article.** `parse_article` splits the front matter from the body and returns a dict. An article with no `id` is a bug in the data, so raise `ValueError` instead of guessing one.
+
+```python
+m = re.match(r"^---\n(.*?)\n---\n?(.*)$", text, re.S)
+if m:
+    for line in m.group(1).splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            meta[key.strip()] = value.strip()
+    body = m.group(2)
+if not meta.get("id"):
+    raise ValueError(f"{path}: front matter needs an id")
+return {"id": meta["id"], "title": meta.get("title", meta["id"]), "category": meta.get("category", ""),
+        "body": body.strip(), "path": str(path)}
+```
+
+2. **Chunk by sentences.** `chunk_article` packs whole sentences into chunks of at most `max_words` (60 by default). Each chunk starts with the article title, so a chunk still makes sense when it is retrieved on its own. Each new chunk repeats the last sentence of the one before, so a fact that spans two sentences is not cut in half.
+
+```python
+for s in sentences:
+    n = len(s.split())
+    if current and words + n > max_words:
+        chunks.append(current)
+        current = current[-overlap:] if overlap else []
+        words = sum(len(x.split()) for x in current)
+        if words + n > max_words:          # the overlap alone would overflow: drop it
+            current, words = [], 0
+    current.append(s)
+    words += n
+```
+
+Most articles fit in one chunk. The long ones split into two or three, which gives 74 chunks in all.
+
+3. **Embed with the hashing trick.** A real embedding model is a neural network. Yours is 20 lines: `features` (given) turns text into word stems, a few hand-written concepts ("refund" and "money" share one) and character trigrams. `embed` hashes each feature into one of 512 buckets, adds or subtracts its weight, and normalizes the vector to length 1.
+
+```python
+def embed(text: str) -> list[float]:
+    v = [0.0] * DIM
+    for f, weight in features(text):
+        h = zlib.crc32(f.encode())
+        v[h % DIM] += weight if (h >> 20) & 1 else -weight
+    norm = math.sqrt(sum(x * x for x in v)) or 1.0
+    return [x / norm for x in v]
+```
+
+Use `zlib.crc32`, not Python's `hash()`. `hash()` of a string changes every time Python starts, so a saved index would stop matching new queries.
+
+4. **Search.** Because every vector has length 1, cosine similarity is just the dot product. `VectorIndex.search` embeds the query once, scores every chunk, and returns the top `k` with their scores.
+
+```python
+def search(self, query: str, k: int = 4) -> list[dict]:
+    q = embed(query)
+    scored = sorted(((cosine(q, v), i) for i, v in enumerate(self.vectors)), key=lambda x: (-x[0], x[1]))
+    return [{**self.chunks[i], "score": round(s, 4)} for s, i in scored[:k]]
+```
+
+5. **Build and look at the scores.** `build_index(HELP_DIR)` loads, chunks and embeds every article. Then try it:
+
+```bash
+cd solution && python3 -m supportbot ingest
+# 60 articles -> 74 chunks -> runs/index.json
+```
+
+Search for "when will I get my money back". The top four are `refund-method` 0.30, `refund-timing` 0.30, `partial-refunds` 0.28 and `refund-approval` 0.23. None of them contains the word "money" near "back", and the concept table is what finds them. Now search for "zebra quantum xylophone" and look at how low the best score is. Part 2 uses that gap to decide when there is nothing worth retrieving.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part01_ingest.py
+```
+
+The tests check the front matter, the 60 unique ids, the chunk word limit and overlap, unit-length vectors, that four real questions find the right article in the top 3, and that the index saves and loads.
+
+## What you just learned
+
+- An embedding turns text into a vector so that similar meanings end up close together. Cosine similarity measures how close. See [Embeddings and Similarity](/c/embeddings/).
+- Chunk size is a trade-off: small chunks quote precisely, big ones keep context. Titles and overlap make small chunks safer. See [Chunking and Indexing](/c/chunking/).
+- At 74 chunks a brute-force scan is the right index. A vector database earns its place at hundreds of thousands of chunks, not before.

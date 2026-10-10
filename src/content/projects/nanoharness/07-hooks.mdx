@@ -1,0 +1,124 @@
+---
+title: "Hooks"
+project: "nanoharness"
+part: 7
+tagline: "Run your own code before and after every tool call, from a config file."
+goal: "pre_tool hooks that can block a call with a reason the model reads, and post_tool hooks that add notes to a tool result, all configured in nanoharness.json."
+lessons: ["hooks"]
+test: "IMPL=starter python3 -m pytest tests/test_part07_hooks.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Permissions match on names and globs. Some rules need real code: "no `curl` piped into `sh`", "run the linter after every edit", "log every command to a file". Hooks let you run your own program at fixed points in the loop, without changing the harness.
+
+```json
+{
+  "hooks": {
+    "pre_tool":  [{"matcher": "bash", "command": "python3 .hooks/guard.py"}],
+    "post_tool": [{"matcher": "edit_file|write_file", "command": "ruff check --quiet ."}]
+  }
+}
+```
+
+The contract is the same as Claude Code's hooks. The hook gets the event as JSON on stdin. A `pre_tool` hook that **exits with code 2** blocks the call, and its stderr is the reason the model sees. Whatever a `post_tool` hook prints is added to the tool result. In `hooks.py` you write `load_config`, `run_hook_command`, `Hooks.run_pre` and `Hooks.run_post`. Part 1 already calls the last two from `Agent.execute`.
+
+## Steps
+
+### 1. Load the config
+
+Look for `nanoharness.json` (or `.toml`) in the working directory, or use the path from `--config`. No file means an empty config, not an error. The same dict feeds permissions (part 3), hooks, and `bash_timeout` (part 4):
+
+```python
+candidates = [path] if path else [os.path.join(workdir, n) for n in CONFIG_FILES]
+for p in candidates:
+    if p and os.path.isfile(p):
+        if p.endswith(".toml"):
+            import tomllib  # Python 3.11+; use nanoharness.json on 3.10
+            with open(p, "rb") as f:
+                return tomllib.load(f)
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+return {}
+```
+
+### 2. Run a hook command
+
+Run the command with the shell, in the working directory, with the event as JSON on stdin. Hooks get a timeout too: a hook that hangs would hang the agent with it.
+
+```python
+def run_hook_command(command: str, payload: dict, cwd: str, timeout: float = 30) -> tuple[int, str, str]:
+    try:
+        p = subprocess.run(command, shell=True, cwd=cwd, input=json.dumps(payload), capture_output=True,
+                           text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired:
+        return 1, "", f"hook timed out after {timeout}s: {command}"
+```
+
+### 3. Pre-tool: exit code 2 blocks, anything else is a warning
+
+Run every hook whose `matcher` (a regex on the tool name) fits, in order. The first one that blocks wins. Function hooks are there for tests and for embedding nanoharness in your own Python: they block by returning a string.
+
+```python
+for h in self.pre:
+    if not self._matches(h, tool):
+        continue
+    if "fn" in h:
+        reason = h["fn"](tool, args)
+        if reason:
+            return str(reason)
+        continue
+    code, out, err = run_hook_command(h["command"], {"event": "pre_tool", "tool": tool, "input": args},
+                                      self.cwd)
+    if code == BLOCK_EXIT_CODE:
+        return (err.strip() or out.strip() or f"blocked by hook {h['command']}")
+    if code != 0:
+        self.warnings.append(f"pre_tool hook {h['command']!r} exited {code}: {err.strip()}")
+return None
+```
+
+Why exit code 2 and not "any non-zero"? Because a hook with a bug (a typo, a missing import) exits 1. If that blocked every call, one broken script would stop your agent dead. Blocking is a deliberate signal; crashing is a warning.
+
+### 4. Post-tool: add a note to the result
+
+Post hooks see the output too. Anything they print goes after the tool result, marked `[hook]`, so after an edit the model reads the linter's complaints in the same message:
+
+```python
+payload = {"event": "post_tool", "tool": tool, "input": args, "output": output, "is_error": is_error}
+code, note, err = run_hook_command(h["command"], payload, self.cwd)
+if code != 0:
+    self.warnings.append(f"post_tool hook {h['command']!r} exited {code}: {err.strip()}")
+if note and note.strip():
+    output += f"\n[hook] {note.strip()}"
+```
+
+### 5. Write a guard
+
+Here is a complete `pre_tool` hook, the same guard the part 7 test runs. Save it as `.hooks/guard.py` in a repo and point the config at it, as in the example at the top of this page:
+
+```python
+import json, sys
+event = json.load(sys.stdin)
+if "curl" in event["input"].get("command", ""):
+    print("network is off limits", file=sys.stderr)
+    sys.exit(2)
+```
+
+The model then gets `Blocked by hook: network is off limits` as an error result and can pick another way.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part07_hooks.py
+```
+
+You should see `5 passed`. The tests load a JSON config, check that a hook command gets the event on stdin, block and annotate with function hooks, run the `curl` guard above next to a broken hook that exits 1 (it warns and does not block), and check that a blocked call never runs and the model reads why.
+
+## What you just learned
+
+- Hooks are fixed points in the loop where your code runs: before a tool, after a tool. That is the lifecycle from [Hooks and Lifecycle Events](/c/hooks/).
+- A hook is the right tool for rules you can check with code but not with a glob, and for side jobs (lint, log, notify) that should happen every time without the model having to remember.
+- Make the blocking signal explicit. Exit code 2 blocks; a crash only warns.
+- The order in `execute` is permissions, then `pre_tool`, then the tool, then `post_tool`. A call the user denied never reaches your hooks at all.

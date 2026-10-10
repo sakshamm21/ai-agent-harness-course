@@ -1,0 +1,101 @@
+---
+title: "Evaluator–Optimizer"
+section: "patterns"
+order: 34
+tagline: "One drafts, one critiques, loop until good."
+realWorld: "Translation and code refinement loops"
+build:
+  type: "lab"
+  scenario: "evaluator_optimizer"
+terms:
+  - term: "evaluator-optimizer"
+    def: "A workflow where one model call produces a draft and a second call grades it against criteria and returns feedback, repeating until the draft passes or a retry cap is hit."
+  - term: "pass bar"
+    def: "The score a draft must reach for the evaluator to accept it. Too low lets bad drafts through; too high rejects good ones and burns retries."
+  - term: "rubric"
+    def: "The written list of checks the evaluator grades against, such as 'formal Sie is used' or 'every placeholder is unchanged'."
+usedIn: ["deepresearch/4"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Drafts are right 60% of the time. The evaluator catches 81% of bad drafts, and a revision after feedback is right 90% of the time. About how many strings ship correctly after one round?"
+    options: ["60%", "About 89%", "100%"]
+    answer: 1
+    why: "0.6 are right at once. Of the 0.4 bad ones, 0.81 are caught and 0.9 of those get fixed: 0.4 × 0.81 × 0.9 ≈ 0.29. Total ≈ 0.89."
+  - q: "What makes the second draft better than the first?"
+    options: ["The model is called at a higher temperature", "The evaluator's feedback names exactly what is wrong", "The second draft uses a different prompt that hides the rules"]
+    answer: 1
+    why: "Feedback like 'you used du; keep {days} unchanged' turns a vague task into a specific fix. Without useful feedback, a retry is just another roll of the dice."
+  - q: "You raise the pass bar from 0.8 to 0.95. What happens?"
+    options: ["Quality rises for free", "The evaluator starts rejecting good drafts, so drafts per string and cost go up", "Nothing changes"]
+    answer: 1
+    why: "A very strict grader fails good work too. Each false rejection costs another draft and another grading call, and it can loop until the retry cap."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "Self-Refine: Iterative Refinement with Self-Feedback (Madaan et al., 2023)"
+    url: "https://arxiv.org/abs/2303.17651"
+---
+
+## 4 in 10 German strings would ship broken
+
+Your app is launching in Germany. A model translates each UI string: "Your free trial ends in `{days}` days." About 6 in 10 drafts are fine. The other 4 use the informal "du" when your brand uses "Sie", translate an idiom word for word, or worse, translate the placeholder itself: `{Tage}` instead of `{days}`. That last one shows a raw key on screen or crashes the template.
+
+You try the large model. It gets 7 in 10 right at five times the price. Still not shippable.
+
+## The model writes once and never looks back
+
+A single call has no second look. The model produces the most likely translation and stops. It knew the rules. They were in the system prompt. But following four rules while also choosing good German is several jobs at once, and nothing checks the result.
+
+A human translator would reread the draft against a checklist. "Did I keep the placeholders? Is this formal? Does the idiom make sense in German?" That reread is a different task from writing, and it is easier. Spotting `{Tage}` is simpler than producing perfect German.
+
+## Add a critic and a loop
+
+The **evaluator-optimizer** pattern from [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) pairs two roles. The **optimizer** writes a draft. The **evaluator** grades it against a rubric and returns a verdict plus specific feedback. If it fails, the optimizer revises with that feedback. Repeat until it passes or you hit a retry cap.
+
+<Flow steps={["String", { label: "Optimizer", sub: "drafts / revises" }, { label: "Evaluator", sub: "rubric + feedback", kind: "hl" }, "Ship"]} loop loopLabel="fail: send feedback back, max 3 rounds" caption="The evaluator returns a score and a reason. Only drafts above the pass bar ship." />
+
+```python
+draft = model(f"Translate to German. Use Sie. Keep placeholders.\n{src}")
+for _ in range(MAX_RETRIES):
+    verdict = judge(RUBRIC, source=src, draft=draft)   # JSON: score, issues
+    if verdict.score >= PASS_BAR:
+        return draft
+    draft = model(f"Revise. Fix exactly these issues: {verdict.issues}\n{draft}")
+return escalate(src, draft)                             # a human looks at it
+```
+
+Anthropic gives two signs the pattern fits. First, a draft clearly improves when someone states the problem. Second, a model can state that problem. Translation passes both, which is why literary translation is one of the post's examples. Code passes too: tests and linters are evaluators that never get tired.
+
+Put cheap checks in code before the model grader. A regex can confirm every `{placeholder}` survived for free. Save the [LLM judge](/c/llm_judge/) for what needs judgment, like tone and idioms.
+
+## Let us check the math
+
+Sim prices (illustrative), medium tier. A draft costs about $0.003 and a grading call about $0.002. With a pass bar of 0.8 the evaluator catches about 81% of bad drafts, and a revision with feedback is right 90% of the time.
+
+<Callout type="math" label="Let us check the math">
+**No evaluator:** 60% right, **$0.003** per string.<br /><br />
+**One round:** 0.60 right at once.<br />
+Bad and caught: 0.40 × 0.81 = 0.324. Fixed on revision: 0.324 × 0.9 = 0.292.<br />
+Bad and missed: 0.40 × 0.19 = 0.076, these ship wrong.<br />
+Right after one round: 0.60 + 0.292 ≈ **0.89**.<br /><br />
+**Drafts per string:** 1 + 0.324 ≈ **1.32**. Every draft is graded, so 1.32 grades too.<br />
+Cost: 1.32 × $0.003 + 1.32 × $0.002 ≈ **$0.0066 per string**, about 2.2 times the single draft.<br />
+The large model alone: 70% right for about $0.015.
+</Callout>
+
+So for roughly double the cost of one draft, you go from 60% to about 89%, beating a model five times the price. A second round adds a little more, because some revisions also fail and get caught.
+
+## The tradeoff: the critic costs money and can be wrong
+
+Every round is another draft and another grade. The loop has three failure modes:
+
+- **The bar is too high.** A grader that wants perfection rejects good drafts too, and each rejection costs a full round. Calibrate the bar against strings people already judged, and cap retries at 2 or 3 ([LLM-as-Judge](/c/llm_judge/)).
+- **The critic misses things.** In the math, 7.6% of strings were bad and passed. The evaluator only checks what the rubric names. Measure its catch rate on a labelled set ([Why Evals Come First](/c/evals/)).
+- **Feedback that does not help.** "Make it better" leads to a new draft with new mistakes. Ask the evaluator for specific issues, and stop when the score stops rising ([Stop Conditions and Budgets](/c/stop_conditions/)).
+
+Latency also grows with each round. For a batch translation job nobody notices. For a live chat reply, one round is often the limit.
+
+## In the real world
+
+Coding agents run this loop constantly: write code, run the tests, read the failures, revise. The test runner is the evaluator, and its feedback is the failing assertion. Research shows the same idea with a model as its own critic: the Self-Refine paper had one model draft, critique and revise its own output, and reported gains across tasks from code to dialogue. You will build an evaluator that checks citations in part 4 of the deepresearch project.

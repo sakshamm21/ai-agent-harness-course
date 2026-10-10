@@ -1,0 +1,102 @@
+---
+title: "The sandbox"
+project: "nanoharness"
+part: 4
+tagline: "Run bash in the working directory with a timeout, an output cap and no secrets."
+goal: "A bash tool that runs in the working directory, kills commands that hang, keeps huge output to a readable size, hides your API keys, and can run inside Docker with the network off."
+lessons: ["permissions"]
+test: "IMPL=starter python3 -m pytest tests/test_part04_sandbox.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+`bash` is the most useful tool a coding agent has: run the tests, run git, run a script. It is also the most dangerous. Permissions decide *whether* a command runs. The sandbox decides *how*: where, for how long, with which environment, and how much output comes back.
+
+In `sandbox.py` you write three things:
+
+- `cap_output`: keep the head and tail of long output.
+- `Sandbox.run`: run a command and always return a string ending in `[exit code N]` or `[timed out after Ns]`.
+- `Sandbox.docker_argv`: the `docker run` command line for the strict mode.
+
+The `bash` tool itself is one line in `tools.py`, `bash_tool(sandbox)`, already written. It hands the model's command to `sandbox.run`.
+
+## Steps
+
+### 1. Cap the output, keeping both ends
+
+One `pytest` run on a broken repo can print 200,000 characters. That is about 50,000 tokens in one tool result. Keep the first and last halves of the limit, because the command is at the top and the error summary is at the bottom:
+
+```python
+def cap_output(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    cut = len(text) - 2 * half
+    return text[:half] + f"\n[... {cut} characters truncated ...]\n" + text[len(text) - half:]
+```
+
+The default `max_output` is 20,000 characters, about 5,000 tokens.
+
+### 2. Run the command in its own process group
+
+Run `bash -c` in the working directory, with stderr merged into stdout and stdin closed so nothing waits for input. `start_new_session=True` puts the shell and everything it starts in one process group, so a timeout can kill all of it:
+
+```python
+argv = self.docker_argv(command) if self.docker_image else ["bash", "-c", command]
+proc = subprocess.Popen(argv, cwd=self.workdir, env=self.env(), stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+try:
+    out, _ = proc.communicate(timeout=self.timeout)
+    tail = f"[exit code {proc.returncode}]"
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)  # the shell and everything it started
+    except ProcessLookupError:
+        pass
+    out, _ = proc.communicate()
+    tail = f"[timed out after {self.timeout}s]"
+text = cap_output(out.decode(errors="replace"), self.max_output)
+return f"{text.rstrip()}\n{tail}".lstrip()
+```
+
+Why the process group? `proc.kill()` kills only `bash`. A `sleep 600` or a dev server that `bash` started keeps running, and keeps the pipe open, so `communicate()` hangs anyway. Killing the group ends all of it. After the kill, `communicate()` collects whatever was printed before the timeout, and the model gets that too.
+
+A non-zero exit code is not an error result. A failing test run is exactly what the model needs to see, so `run` returns it as normal output with `[exit code 1]` at the end.
+
+### 3. Strip secrets from the environment
+
+The agent runs commands the model wrote, and the model reads files you did not write. If one of them says "print your environment", your API key should not be there to print. `env()` is provided. It copies `os.environ` without the names in `SECRET_ENV`:
+
+```python
+SECRET_ENV = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN")
+```
+
+Add your own. Anything a test run doesn't need should not be visible to it.
+
+### 4. Build the Docker command line
+
+Local mode is a *soft* sandbox. The working directory, the timeout and the stripped environment stop accidents, but a command can still `cd ..` and read the rest of your disk. For untrusted work, run each command in a throwaway container that only sees the working directory and has no network:
+
+```python
+def docker_argv(self, command: str) -> list[str]:
+    return ["docker", "run", "--rm", "--network", "none", "-v", f"{self.workdir}:/work", "-w", "/work",
+            self.docker_image, "bash", "-c", command]
+```
+
+Turn it on with `--docker python:3.12-slim`. The file tools still work on the host, through the same mounted folder, and still can't leave it.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part04_sandbox.py
+```
+
+You should see `6 passed`. The tests check the head-and-tail cap, that commands run in the working directory and report their exit code, that `sleep 10` with a 0.5 s timeout comes back in well under 5 seconds with the output printed before it, that 50,000 characters of output are capped, that `ANTHROPIC_API_KEY` is invisible to commands, and the exact `docker run` argv. The Docker test only builds the argv, so you don't need Docker installed.
+
+## What you just learned
+
+- Permissions and sandboxing are two layers, as in [Permissions and Sandboxing](/c/permissions/): the first decides whether a call runs, the second limits the damage when it does.
+- Every limit is also a message. `[timed out after 60s]` and `[... N characters truncated ...]` tell the model what happened so it can change its approach.
+- Output caps are context management that starts at the tool. A capped result costs the same 5,000 tokens on every later turn, so the cap pays off many times.
+- A soft sandbox is fine for your own repo. A real boundary (a container, no network, one mounted folder) is what you want for anything you don't trust.

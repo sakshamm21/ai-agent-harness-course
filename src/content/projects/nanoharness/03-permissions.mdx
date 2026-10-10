@@ -1,0 +1,116 @@
+---
+title: "Permissions"
+project: "nanoharness"
+part: 3
+tagline: "Allow, ask and deny rules, and a y/N/a prompt before anything changes."
+goal: "Rules like bash(git *) that allow, ask or deny a tool call, safe defaults, and a terminal prompt that can approve once, approve always, or say no."
+lessons: ["permissions", "hitl"]
+test: "IMPL=starter python3 -m pytest tests/test_part03_permissions.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+Right now your agent runs every call the model asks for. Ask it to "clean up the build" and it might run `rm -rf` on the wrong folder before you can blink. In `permissions.py` you build the gate that every call passes through first.
+
+A rule looks like Claude Code's: a tool name, and optionally a glob in parentheses that is matched against the call's *subject*. For `bash` the subject is the command. For file tools it is the path.
+
+```json
+{
+  "permissions": {
+    "allow": ["bash(python3 -m pytest*)", "edit_file(src/*)"],
+    "ask":   ["bash(git *)"],
+    "deny":  ["bash(curl *)", "write_file(.env*)"]
+  }
+}
+```
+
+Each call gets one of three decisions. **Deny** wins over everything, then **ask**, then **allow**. If no rule matches, read-only tools run and everything else asks. You already wired `self.permissions.decide` into `Agent.execute` in part 1, so the loop needs no change.
+
+## Steps
+
+### 1. Parse a rule
+
+`"bash(git *)"` becomes `Rule("bash", "git *")` and `"read_file"` becomes `Rule("read_file", None)`. One regex does it, and anything else is an error so a typo in the config fails loudly instead of silently allowing nothing:
+
+```python
+def parse_rule(text: str) -> Rule:
+    m = re.fullmatch(r"\s*([\w*?\[\]-]+)\s*(?:\((.*)\))?\s*", text)
+    if not m:
+        raise ValueError(f"Bad permission rule: {text!r}. Use 'tool' or 'tool(glob)'.")
+    return Rule(m.group(1), m.group(2))
+```
+
+### 2. Match a rule
+
+Both halves are globs, so `*_file` covers all three file-writing tools. Use `fnmatchcase`, not `fnmatch`, so matching does not change with the operating system:
+
+```python
+def matches(self, tool: str, subject: str) -> bool:
+    if not fnmatch.fnmatchcase(tool, self.tool):
+        return False
+    return self.pattern is None or fnmatch.fnmatchcase(subject, self.pattern)
+```
+
+### 3. Decide: deny, then ask, then allow, then the default
+
+`check` returns a decision and a reason. The reason ends up in the tool result, so the model learns *which* rule stopped it:
+
+```python
+subject = subject_of(tool, args)
+for decision, rules in (("deny", self.deny), ("ask", self.ask), ("allow", self.allow)):
+    for r in rules:
+        if r.matches(tool, subject):
+            verb = {"deny": "denied by rule", "ask": "rule", "allow": "allowed by rule"}[decision]
+            return decision, f"{verb} {r}"
+if tool in READ_ONLY:
+    return "allow", "read-only tool"
+if self.yes:
+    return "allow", "--yes"
+return "ask", "default: ask before writes and commands"
+```
+
+Notice where `--yes` sits: after the rules. It approves calls that would be *asked by default*, but a deny rule still denies. `DEFAULT_DENY` puts `sudo`, `rm -rf /` and `git push` in the deny list, so not even `--yes` lets those through.
+
+### 4. Ask the human
+
+On "ask", `decide` prints `Allow bash: make test? [y/N/a]` and reads the answer. `y` allows once. `a` allows and adds a rule for this exact subject, so the same call is not asked again. Anything else, including just pressing Enter, is no:
+
+```python
+decision, reason = self.check(tool, args)
+subject = subject_of(tool, args)
+if decision == "ask":
+    answer = self.prompt(f"Allow {tool}: {subject}? [y/N/a] ").strip().lower()
+    if answer in ("a", "always"):
+        self.allow.append(Rule(tool, glob.escape(subject)))
+        decision, reason = "allow", "user approved (always)"
+    elif answer in ("y", "yes"):
+        decision, reason = "allow", "user approved"
+    else:
+        decision, reason = "deny", "user declined"
+self.log.append((tool, subject, decision))
+return decision == "allow", reason
+```
+
+`glob.escape` matters: approving `make test[1]` must not approve every command that the glob `test[1]` happens to match. And `self.prompt` is a parameter, not a hard-coded `input`, so tests (and a future web UI) can answer for you. With no terminal at all, the default prompt reads EOF as "no".
+
+### 5. Tell the model what happened
+
+A denied call never reaches the tool. Part 1's `execute` returns `Permission denied (user declined). Do not retry this call; tell the user what you needed instead.` as an error result. The second sentence matters: without it, models often ask for the same call again with slightly different wording.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part03_permissions.py
+```
+
+You should see `6 passed`. The tests parse good and bad rules, check the defaults (`read_file` allowed, `bash ls` asked, `git push` denied), check precedence and `--yes`, answer the prompt with `y`, Enter and `a`, and confirm that a declined `write_file` leaves no file on disk.
+
+Then try it for real on the demo repo from the overview: answer `n` to the edit and watch the mock report that it was not allowed.
+
+## What you just learned
+
+- Permissions are a policy you can read: a list of rules, checked in a fixed order, with deny first. That is the model from [Permissions and Sandboxing](/c/permissions/).
+- The safe default is asymmetric: reading is free, changing things asks. Most of a coding agent's calls are reads, so you are asked rarely.
+- "Always allow" is the [human in the loop](/c/hitl/) teaching the policy as you go, scoped to the exact command so one yes does not become a blank check.
+- The reason string is for the model. A clear "denied, don't retry" turns a refusal into a useful next step instead of a retry loop.

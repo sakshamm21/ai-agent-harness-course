@@ -1,0 +1,11 @@
+{
+  "prompt": "median() gives wrong answers for unsorted and even-length lists. Fix it.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [
+    {
+      "path": "median.py",
+      "old": "    return xs[len(xs) // 2]\n",
+      "new": "    s = sorted(xs)\n    mid = len(s) // 2\n    return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2\n"
+    }
+  ]
+}

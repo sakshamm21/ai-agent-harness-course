@@ -1,0 +1,110 @@
+---
+title: "Web UI and trace viewer"
+project: "supportbot"
+part: 8
+tagline: "Write every agent event to a JSONL file as it happens, and read it back as a timeline in a one-page web UI."
+goal: "python3 -m supportbot serve shows a chat, a live timeline of each conversation, and an Approve button for refunds over $100."
+lessons: ["tracing", "streaming"]
+test: "IMPL=starter python3 -m pytest tests/test_part08_ui.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+A customer says "the bot refunded the wrong order". Without a trace you have the final reply and a guess. With one you have the route, the retrieved articles and their scores, each model call with its tokens, each tool call with its arguments and result, and anything that was blocked or redacted, in order, with timings.
+
+The agent has emitted those events since part 4. This part writes them down and shows them:
+
+- `Tracer` appends each event to `runs/traces/<conversation_id>.jsonl` the moment it happens, redacted.
+- `timeline` turns a trace back into rows: time offset, type, one-line label, duration, status.
+- `server.py` (given) serves one HTML page, a JSON API and a Server-Sent Events stream, using `http.server` from the standard library.
+
+## Steps
+
+1. **Write one line per event.** JSONL is append-only, so a crash mid-conversation still leaves every event before it on disk. Redact before writing: traces get copied, shared and kept far longer than the conversation.
+
+```python
+class Tracer:
+    def __init__(self, runs_dir=RUNS_DIR, redact=True):
+        self.dir = Path(runs_dir) / "traces"
+        self.redact = redact
+
+    def write(self, event):
+        self.dir.mkdir(parents=True, exist_ok=True)
+        if self.redact:
+            event = redact_value(event)
+        with self.path_for(event["conversation_id"]).open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    __call__ = write
+```
+
+`path_for` only accepts ids made of letters, digits, `-` and `_`. The id arrives from the browser, and `../../etc/passwd` is not a conversation.
+
+2. **Read it back, tolerantly.** A process killed mid-write leaves a torn last line. Skip lines that are not valid JSON instead of refusing to show the whole trace.
+
+```python
+def load_trace(path):
+    events = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(e, dict) and "type" in e:
+            events.append(e)
+    return events
+```
+
+3. **Turn events into a timeline.** Each row gets its offset from the first event, so you can see where the time went, and a status: `error` for blocked calls, failed tools and running out of turns, `warn` for suspicious documents and redactions.
+
+```python
+t0 = events[0].get("ts", 0)
+for e in events:
+    if e["type"] in ERROR_TYPES or (e["type"] == "tool_call" and e.get("is_error")):
+        status = "error"
+    elif e["type"] in ("suspicious_document", "redacted"):
+        status = "warn"
+    else:
+        status = "ok"
+    rows.append({"t_ms": round((e.get("ts", t0) - t0) * 1000, 1), "type": e["type"], "label": _label(e),
+                 "duration_ms": e.get("duration_ms", 0), "status": status})
+```
+
+`summarize` adds the header: turns, model calls, tool calls, blocked calls, tokens in and out, total time.
+
+4. **Stream to the browser.** `POST /api/chat?stream=1` sends each event as a Server-Sent Event while the agent works, so the page shows "route...", "retrieve...", "tool_call..." instead of a spinner. The handler gives the agent a callback that writes to the trace and to the response at once.
+
+```python
+def send(e: dict) -> None:
+    self.wfile.write(f"data: {json.dumps(e)}\n\n".encode())
+    self.wfile.flush()
+
+reply = app.chat(message, conversation_id, on_event=send)
+send({"type": "done", **reply})
+```
+
+5. **Run it.**
+
+```bash
+cd solution && python3 -m supportbot serve
+# supportbot on http://127.0.0.1:8000  (model: mock, traces: .../runs/traces)
+```
+
+Click the example "Please refund NW-1002, the jacket leaks". The timeline shows `route` refund, `retrieve`, two tool calls and the reply, and the refund appears under "Refunds waiting for approval". Approve it and it is issued, once. Now try "Can I get a refund on opened items for order NW-1004?" with the poisoned article: build the app with `build_index(HELP_DIR, POISONED_DIR)` in `default_app()` and look for the red `blocked` row.
+
+The plan for this course said FastAPI. `http.server` does the same job here with nothing to install. Move to FastAPI when you need async handlers, auth or generated API docs; `App` stays as it is.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part08_ui.py
+```
+
+The tests start the server on a free port in a thread, chat through the JSON API, read the trace back, approve a refund over HTTP, read a streamed reply, and check that no customer email appears in the stream or on disk.
+
+## What you just learned
+
+- A trace is the ordered list of everything the agent did, with inputs, outputs and timings. Write it as you go, redact it, and make it easy to read. See [Tracing and Observability](/c/tracing/).
+- Streaming progress events is cheap once you have events, and it changes how the wait feels. See [Streaming and UX](/c/streaming/).
+- You have built the whole support agent: retrieval with checked citations, tools that refund exactly once, routing, guardrails, a trust boundary, evals and traces. [Design a Customer Support Agent](/c/case_support_agent/) shows how the same pieces scale up.

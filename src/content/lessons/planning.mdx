@@ -1,0 +1,106 @@
+---
+title: "Planning and Replanning"
+section: "patterns"
+order: 35
+tagline: "Write a plan, track it, change it when reality disagrees."
+realWorld: "Todo lists in coding agents"
+build:
+  type: "lab"
+  scenario: "planning"
+terms:
+  - term: "plan"
+    def: "An ordered list of steps the agent writes before acting. It is a guess about the future, not a promise."
+  - term: "replanning"
+    def: "Rewriting the remaining steps of a plan after a step fails or the agent learns something that makes the old plan wrong."
+  - term: "todo list"
+    def: "A plan kept as structured state with a status per item (pending, in progress, done, failed), which the agent updates through a tool as it works."
+usedIn: ["deepresearch/1"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "A plan has 5 steps and each has a 10% chance that reality disagrees with it. How often does the plan survive untouched?"
+    options: ["90%", "About 59%", "50%"]
+    answer: 1
+    why: "All five steps must go as planned: 0.9⁵ ≈ 0.59. Four tasks in ten need the plan to change somewhere."
+  - q: "Step 2 of the plan fails. An agent with a fixed plan most often does what?"
+    options: ["Rewrites the plan and finds another way", "Retries the failed step, skips ahead, or reports the plan as done", "Asks for a larger model"]
+    answer: 1
+    why: "If the plan lives only in an early message, there is no place to change it. The agent keeps following the steps it wrote, even when they no longer fit."
+  - q: "Why keep the plan as a todo list the agent rewrites, instead of a paragraph at the start?"
+    options: ["It is shorter", "The current plan sits near the end of the context, with each step's status, so the agent sees what is done and what is left", "The model cannot read paragraphs"]
+    answer: 1
+    why: "A fresh copy of the list near the end of the context keeps the goal and progress in view, even on a long task where the first message is buried."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "Anthropic: Claude Code best practices"
+    url: "https://www.anthropic.com/engineering/claude-code-best-practices"
+---
+
+## The plan said "run the codemod." The codemod failed. It ran it again.
+
+Your coding agent has to upgrade three services from payments SDK v2 to v3. It starts well, with a plan: read the changelog, run the official codemod, run the tests, report. Then the codemod exits with "Unsupported pattern: custom wrapper PaymentsClient. 0 files changed."
+
+The agent runs the codemod again. Then it runs the tests, which fail with "sdk.charge is not a function". Then it reports: "Plan complete. Upgrade done." In the lab, only about 3 upgrades in 10 actually finish.
+
+## A plan written once becomes a script
+
+Writing a plan first is good. It makes the model think about the whole task before it touches anything, and it gives you something to review. The problem is what happens next.
+
+The plan lives in one early message. It has no status, no way to mark a step failed, and no way to add a step. So the agent treats it as a script. When step 2 fails, its options are to repeat step 2, move on to step 3 as if step 2 worked, or give up. None of those is "the codemod cannot handle this repo, so edit the six call sites by hand."
+
+On long tasks it gets worse. The plan scrolls further up the context with every tool result, and the model sees less of it each turn.
+
+## Keep the plan as state the agent can rewrite
+
+Give the agent a todo list it owns, and a tool to change it. Each item has a status. After every step, and always after a failure, the agent rewrites the list.
+
+```python
+@tool
+def update_todos(items: list[dict]) -> str:
+    """Rewrites the task list. Each item: {text, status}, where status is
+    pending, in_progress, done or failed. Use it after each step, and
+    whenever a step fails or you learn something that changes the plan."""
+    STATE["todos"] = items
+    return render(items)   # "[x] read changelog\n[!] codemod failed ..."
+```
+
+<Flow steps={[{ label: "Plan", sub: "write todo list" }, { label: "Act", sub: "next pending item" }, { label: "Observe", sub: "result or error" }, { label: "Update todos", sub: "done, failed, new steps", kind: "hl" }]} loop loopLabel="until every item is done" caption="The plan is part of the loop, not a preface to it. A failed step produces new steps." />
+
+Now the failure has somewhere to go. After the codemod error, the agent writes:
+
+```text
+[x] read the v3 changelog
+[!] run_codemod: no support for our PaymentsClient wrapper
+[ ] edit the 6 call sites by hand: charge() -> payments.create()
+[ ] run_tests
+```
+
+Two things help here. The failed step stays visible, so the agent does not retry it. And each rewrite puts a fresh copy of the goal and progress at the end of the context, where the model pays the most attention. You can also show the list to the user, who sees what the agent thinks it is doing.
+
+## Let us check the math
+
+Say a 5-step plan, and each step has a 10% chance that reality disagrees: a tool fails, a file is not where the plan expected, a test reveals something new. Sim prices (illustrative), medium tier at $15 per million output tokens.
+
+<Callout type="math" label="Let us check the math">
+**Plan survives untouched:** 0.9⁵ = **0.59**. So 41% of tasks need a change.<br /><br />
+**Fixed plan:** assume it rarely recovers, say 1 time in 5. Success ≈ 0.59 + 0.41 × 0.2 ≈ **0.67**.<br />
+**Replanning:** assume it recovers 9 times in 10. Success ≈ 0.59 + 0.41 × 0.9 ≈ **0.96**.<br /><br />
+**Cost of the list:** about 5 updates of 250 output tokens each = 1,250 tokens.<br />
+1,250 × $15/M ≈ **$0.019 per task**, plus a few hundred more input tokens per turn.<br />
+Each update is also a turn: about 1 to 2 extra seconds each.
+</Callout>
+
+Two cents and a few seconds to turn a third of your failures into successes. The lab task is harsher: the codemod fails every time, so without replanning almost every run goes wrong.
+
+## The tradeoff: plans cost turns, and agents can replan forever
+
+A todo list is not free, and too much planning is its own failure:
+
+- **Overhead on easy tasks.** A one-step question does not need a five-item plan. Let the agent skip the list for short tasks, and use it when a task has three or more steps.
+- **Endless replanning.** An agent that rewrites its plan every turn without acting is stuck, just more politely. Cap the turns and cost ([Stop Conditions and Budgets](/c/stop_conditions/)), and count replans in your traces ([Tracing and Observability](/c/tracing/)).
+- **Plans that drift from the goal.** Each rewrite can quietly drop a requirement. Keep the original task fixed at the top and check the final result against it, with tests or a grader ([Evaluator–Optimizer](/c/evaluator_optimizer/)). For risky changes, have a person approve the plan before the agent acts ([Human in the Loop](/c/hitl/)).
+
+## In the real world
+
+Coding agents make this visible. Claude Code keeps a todo list it updates with a tool as it works, and shows it to you: items move from pending to in progress to done, and new ones appear when it finds more work. Anthropic's best-practices guide also recommends asking for a plan before any code is written. In deep research, the orchestrator plans which sub-questions to ask, and revises the list when workers come back with gaps. You will build that in part 1 of the deepresearch project.

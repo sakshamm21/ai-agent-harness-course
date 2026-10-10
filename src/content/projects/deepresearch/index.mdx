@@ -1,0 +1,74 @@
+---
+title: "Multi-Agent Research Assistant"
+project: "deepresearch"
+part: 0
+tagline: "An orchestrator, parallel workers, a citation verifier and a report writer, in about 1,500 lines of standard-library Python, built in 6 parts."
+goal: "A research assistant you wrote yourself: it splits a question, researches it in parallel under a cost cap, checks every citation, and scores itself on 10 evals."
+lessons: ["orchestrator", "agentic_search", "evaluator_optimizer", "evals"]
+test: "IMPL=solution python3 -m pytest -q"
+updated: 2026-10-10
+---
+
+## What you build
+
+`deepresearch` answers questions that one search cannot. You ask "When did the Velmora Tunnel open? How long is it? How much did it cost?". A lead agent splits that into three sub-questions. Three worker agents research them at the same time, each with its own `search` and `fetch_page` tools. A verifier checks every claim against the page it cites. A writer turns what survives into a Markdown report with numbered sources.
+
+One agent with a search tool could try this alone. It would read every page into one context, lose track of which page said what, and cite whatever it read first. Splitting the work keeps each context small, and checking the citations catches the guesses.
+
+By the end of part 6 it has:
+
+- an orchestrator that plans standalone sub-questions and replans the ones that fail
+- worker agents with a BM25 `search` and a `fetch_page` tool over an 80-document offline corpus
+- workers on a thread pool, all charged to one shared, thread-safe cost cap
+- a citation verifier that sends bad citations back for repair (evaluator–optimizer)
+- a report writer that gets a structured handoff and cites by number, with a Sources list
+- 10 eval questions with reference facts, scored on fact recall and citation precision
+
+## How the pieces fit
+
+<Flow steps={["Question", { label: "Orchestrator", sub: "part 1", kind: "hl" }, { label: "Workers", sub: "parts 2 + 3" }, { label: "Verifier", sub: "part 4" }, { label: "Writer", sub: "part 5" }]} caption="One run: plan, research in parallel, check every citation, write the report." />
+
+The orchestrator never reads a page. It decides what to research and reads what comes back. Each worker is an ordinary agent loop (the loop from [The Agent Loop](/c/agent_loop/) is given to you in `loop.py`) that returns claims, each tied to the doc ids it came from. Every model call goes through a budget meter. The writer never sees a worker's transcript, only the verified claims. Part 6 runs the whole pipeline on 10 questions and grades the reports.
+
+| Part | File | What it adds |
+|---|---|---|
+| 1 | `orchestrator.py` | Plan sub-questions, replan failures |
+| 2 | `corpus.py`, `worker.py` | `search`, `fetch_page`, a worker that returns cited claims |
+| 3 | `parallel.py` | A thread pool and a shared cost cap |
+| 4 | `verifier.py` | Check each citation; revise or drop the bad ones |
+| 5 | `writer.py` | Structured handoff, numbered citations, Sources list |
+| 6 | `evals.py` | Fact recall and citation precision on 10 questions |
+
+## Run it
+
+Everything runs offline on a deterministic mock model, so you need no API key to start. From the repo root:
+
+```bash
+cd projects/deepresearch
+python3 -m pip install pytest
+PYTHONPATH=solution python3 -m deepresearch --trace "When did the Velmora Tunnel open? How long is it?"
+PYTHONPATH=solution python3 -m deepresearch --eval
+```
+
+The first command prints the plan, each worker and each verify round to stderr, then the report. The second prints a scorecard: 100% fact recall and 100% citation precision on the mock. Add `--no-verify` and citation precision falls to 58%. That gap is what part 4 is for.
+
+To use a real model, set `ANTHROPIC_API_KEY`. The planner and writer default to `claude-sonnet-5-5`, the workers, verifier and reviser to `claude-haiku-5-5`, and `DEEPRESEARCH_<ROLE>_MODEL` overrides any of them. The corpus stays the same: the questions are about fictional places, so the facts only exist there.
+
+## Starter, solution and tests
+
+The code is in [projects/deepresearch](https://github.com/sakshamm21/free-agent-harness-course/tree/main/projects/deepresearch).
+
+- `starter/deepresearch/` is yours. Every function you write raises `NotImplementedError("Part N: ...")`, and its docstring is the spec. The model, the loop, the `@tool` decorator, the prompts and the records are already there.
+- `solution/deepresearch/` is the finished assistant. Read it when you are stuck.
+- `tests/test_part01_orchestrator.py` to `tests/test_part06_evals.py` check one part each. Each part's tests only need the parts before it.
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part01_orchestrator.py   # your code, part 1
+IMPL=solution python3 -m pytest -q                                 # the reference: 61 green
+```
+
+Pass bar: every test passes on the mock model. The part 6 test also runs the evals and wants at least 80% fact recall and 95% citation precision.
+
+<Callout type="note" label="Before you start">
+Read [Orchestrator–Workers](/c/orchestrator/) and [Agentic Search vs RAG](/c/agentic_search/) first. Each part links the lessons it builds on. If you built [nanoharness](/p/nanoharness/), the worker's loop will look familiar: it is the same loop with two tools.
+</Callout>

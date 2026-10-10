@@ -1,0 +1,134 @@
+---
+title: "Evals"
+project: "nanoharness"
+part: 10
+tagline: "Grade your harness on 15 bug-fix tasks: pass rate, turns, tokens and cost."
+goal: "An eval runner that fixes 15 small buggy repos on throwaway copies, grades each with its own tests, and reports pass rate, average turns, tokens and dollars, so every change to the harness gets a number."
+lessons: ["evals", "trajectory_evals", "determinism", "cost"]
+test: "IMPL=starter python3 -m pytest tests/test_part10_evals.py"
+updated: 2026-10-10
+---
+
+## What you are building
+
+You now have a working coding agent. Is it any good? Did shortening the system prompt in part 6 help or hurt? Without a fixed set of tasks and a grader, you are guessing from the last run you happened to watch.
+
+`evals/tasks/` holds 15 tiny repos, each with one real bug and a pytest that fails because of it: `celsius`, `clamp`, `fizzbuzz`, `median`, `slugify`, `mutable_default` and nine more. Each has a `task.json`:
+
+```json
+{
+  "prompt": "median() gives wrong answers for unsorted and even-length lists. Fix it.",
+  "check": "python3 -m pytest -q -p no:cacheprovider",
+  "oracle": [{"path": "median.py", "old": "    return xs[len(xs) // 2]\n", "new": "..."}]
+}
+```
+
+In `evals.py` you write `grade`, `run_task` and `summarize`. `evals/run_evals.py` (provided) loads the tasks, builds an agent for each with the same `build_agent` the CLI uses, and prints a table.
+
+## Steps
+
+### 1. Grade with the task's own tests, restored
+
+The check is the repo's test suite: exit code 0 is a pass. But an agent under pressure will sometimes "fix" a failing test by editing the test. So before running the check, copy every `test_*.py` from the original repo back over the agent's work:
+
+```python
+repo = os.path.join(task["dir"], "repo")
+for src in glob.glob(os.path.join(repo, "**", "test_*.py"), recursive=True):
+    dst = os.path.join(workdir, os.path.relpath(src, repo))
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copyfile(src, dst)
+try:
+    p = subprocess.run(task["check"], shell=True, cwd=workdir, capture_output=True, text=True,
+                       timeout=timeout, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+except subprocess.TimeoutExpired:
+    return False, f"check timed out after {timeout}s"
+return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+```
+
+Keep the last 2,000 characters of output. When a task fails, that tail is the first thing you read.
+
+### 2. Run each task on a throwaway copy
+
+Never let an eval touch the task folder. Copy `repo/` into a temp dir, run the agent there, grade it, and let the `with` block delete it. A crash inside the agent is a failed task, not a crashed eval run:
+
+```python
+with tempfile.TemporaryDirectory(prefix=f"nh-eval-{task['name']}-") as tmp:
+    workdir = os.path.join(tmp, "repo")
+    shutil.copytree(os.path.join(task["dir"], "repo"), workdir)
+    agent = make_agent(task, workdir)
+    try:
+        result = agent.run(task["prompt"])
+    except Exception as e:  # a crash is a failed task, not a crashed eval run
+        return TaskResult(task["name"], False, 0, 0, 0, 0.0, "error", f"{type(e).__name__}: {e}")
+    usage = result.usage + agent.child_usage
+    passed, out = grade(task, workdir)
+    return TaskResult(task["name"], passed, result.turns, usage.input_tokens, usage.output_tokens,
+                      cost(usage.input_tokens, usage.output_tokens, price_as), result.stop_reason, out)
+```
+
+`agent.child_usage` is the subagent spend from part 9. Leave it out and a harness that hands all its work to subagents looks free.
+
+### 3. Summarize
+
+One row per run is for debugging. One line per run is for comparing:
+
+```python
+n = len(results)
+passed = sum(r.passed for r in results)
+total_cost = sum(r.cost for r in results)
+return {
+    "tasks": n,
+    "passed": passed,
+    "pass_rate": round(passed / n, 3) if n else 0,
+    "avg_turns": round(sum(r.turns for r in results) / n, 3) if n else 0,
+    "input_tokens": sum(r.input_tokens for r in results),
+    "output_tokens": sum(r.output_tokens for r in results),
+    "cost": round(total_cost, 4),
+    "cost_per_pass": round(total_cost / passed, 4) if passed else None,
+}
+```
+
+`cost_per_pass` is the number to watch. A change that lifts the pass rate from 11 to 12 but doubles the cost per fix may not be worth shipping.
+
+### 4. Run it offline, then for real
+
+The `oracle` in each `task.json` is the known fix. Only the scripted mock reads it, so the whole runner can be tested without an API key. A real model never sees it.
+
+```bash
+IMPL=starter python3 evals/run_evals.py --mock          # offline: should print Passed 15/15
+export ANTHROPIC_API_KEY=sk-ant-...
+IMPL=starter python3 evals/run_evals.py --min-pass 10   # the capstone pass bar
+```
+
+`--min-pass 10` exits with code 1 if fewer than 10 tasks pass, so you can put it in CI. Add `--json results.json` to keep each run, and `--tasks clamp,median` to rerun just the ones that failed.
+
+<Callout type="math" label="Let us check the math">
+The mock run: 15 tasks, 5 turns each, **72,919 tokens** in total, priced at the harness's illustrative rates of $2 per million input and $10 per million output (check your provider's pricing page for real numbers): about **$0.16** for the whole suite, about a cent per task.<br />
+A real model reads more and retries more, so expect several times that. Even at 10× it is under $2 per run, cheap enough to run after every change to the harness.
+</Callout>
+
+### 5. Run it more than once
+
+Models are not deterministic, so one run of 15 tasks is a noisy measurement. 11/15 and 13/15 can be the same harness on two different days. Run the suite three times before you believe a difference of one or two tasks, and look at which tasks flip. A task that passes sometimes is telling you where the harness is fragile.
+
+## Run the test
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part10_evals.py
+```
+
+You should see `23 passed`. Fifteen of them check that each task is a real bug: its tests fail as shipped and pass with the oracle fix. The rest check that editing a test does not count as a fix, a run with the oracle mock, an agent that crashes, the summary math, the eval runner from the command line, and the whole CLI: fix the demo bug, resume the session, and change nothing when nobody answers the permission prompt.
+
+Then run everything:
+
+```bash
+IMPL=starter python3 -m pytest -q    # 70 passed: you built the whole harness
+```
+
+## What you just learned
+
+- An eval is a fixed task set plus a grader you trust. With it, every harness change gets a number. That is [Why Evals Come First](/c/evals/).
+- Grade the outcome, guard the grader: restore the tests, use a throwaway copy, count a crash as a fail. Turns and tool calls are logged too, so you can look at *how* each task was solved, as in [Trajectory and Tool-Use Evals](/c/trajectory_evals/).
+- One run is one sample. Repeat runs and watch which tasks flip, as [Taming Nondeterminism](/c/determinism/) explains.
+- Report tokens and dollars next to the pass rate, and count subagents. [Cost and Latency Math](/c/cost/) is how you decide whether a better score was worth it.
+- You built a real coding agent: loop, tools, permissions, sandbox, compaction, instructions, hooks, sessions, subagents and evals. For the same design at production scale, read [Design a Coding Agent](/c/case_coding_agent/).

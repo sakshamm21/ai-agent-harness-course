@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nanoharness"
+version = "0.1.0"
+description = "A small coding agent harness, built in 10 parts (Free Agent Harness capstone)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []  # the harness itself is standard library only
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+nanoharness = "nanoharness.cli:main"
+
+# `pip install -e .` installs the reference solution. To install your own work instead,
+# change "solution" to "starter" below.
+[tool.setuptools.packages.find]
+where = ["solution"]
+include = ["nanoharness*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"

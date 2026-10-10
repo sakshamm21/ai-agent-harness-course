@@ -1,0 +1,109 @@
+---
+title: "Handoffs and Shared State"
+section: "patterns"
+order: 36
+tagline: "Pass control and context between agents cleanly."
+realWorld: "Sales agent handing a customer to a support agent"
+build:
+  type: "lab"
+  scenario: "handoffs"
+terms:
+  - term: "handoff"
+    def: "One agent passing control of a conversation to another agent, which then talks to the user directly instead of reporting back."
+  - term: "handoff record"
+    def: "A structured object passed at a handoff with named fields the next agent needs, such as plan, seats and promised terms, instead of the raw transcript."
+  - term: "input filter"
+    def: "Code that runs at a handoff and decides which parts of the conversation history the next agent receives."
+usedIn: ["deepresearch/5"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "How is a handoff different from calling a subagent?"
+    options: ["A handoff is always faster", "After a handoff the new agent owns the conversation; a subagent reports back to the agent that called it", "Subagents cannot use tools"]
+    answer: 1
+    why: "A subagent is a function call that returns a result to its caller. A handoff transfers control: the next agent talks to the user from then on."
+  - q: "The sales transcript is 9,000 tokens and support takes 3 turns. How many extra input tokens does passing the full transcript cost per customer?"
+    options: ["9,000", "27,000", "3,000"]
+    answer: 1
+    why: "Every turn resends the whole context, so the 9,000 tokens are billed on each of the 3 turns: 27,000 tokens."
+  - q: "Why can a one-line free-text summary be worse than the full transcript?"
+    options: ["Summaries are more expensive", "Details the next agent needs, like a promised discount, can drop out of it", "The model cannot read summaries"]
+    answer: 1
+    why: "A short summary is cheap, but nothing guarantees it keeps every fact that matters. A structured record names each required field, so a missing one is obvious."
+reading:
+  - title: "OpenAI Agents SDK: Handoffs"
+    url: "https://openai.github.io/openai-agents-python/handoffs/"
+  - title: "Anthropic: How we built our multi-agent research system"
+    url: "https://www.anthropic.com/engineering/multi-agent-research-system"
+---
+
+## Sales promised 15% off. Support never heard about it.
+
+Your sales agent closes a deal: Acme moves to the Team plan, 40 seats, annual billing, 15% off the first year, SSO with Okta. It hands the customer to a support agent to finish setup. Support receives the whole sales conversation, 41 messages and about 9,000 tokens.
+
+In the lab, about 1 setup in 4 goes wrong. Sometimes support reads the sales instructions in the transcript and keeps pitching the Enterprise add-on. Sometimes the 15% discount, mentioned once in message 23, never makes it onto the invoice.
+
+## The next agent inherits everything, or nothing
+
+A **handoff** is when one agent passes the conversation to another, which then talks to the user directly. It differs from a [subagent](/c/subagents/): a subagent does a job and reports back, while a handoff transfers ownership. So the question is what the new owner gets to see.
+
+The two easy answers both fail:
+
+- **Everything.** Support gets the full transcript, including the sales agent's prompt, tool output and small talk. It pays to read all of it on every turn, and the old instructions ("always mention add-ons") leak into its behaviour.
+- **A one-line note.** "Customer upgraded, please finish setup." It is cheap, but the discount and the billing email are gone. Support either asks the customer again or sets up the wrong thing.
+
+The real problem is that nobody decided what the handoff must carry.
+
+## Make the handoff a contract
+
+Treat a handoff like an API call between two teams: define the fields. The sending agent fills a structured record. The receiving agent gets that record, the customer's last message, and its own system prompt. Nothing else.
+
+```python
+class SetupHandoff(BaseModel):
+    account_id: str
+    plan: Literal["Starter", "Team", "Business"]
+    seats: int
+    billing: Literal["monthly", "annual"]
+    promised_terms: list[str]        # "15% off year 1", "first month free"
+    sso: str | None
+    open_questions: list[str]
+
+def transfer_to_support(record: SetupHandoff, last_msg: str):
+    return run_agent(SUPPORT_PROMPT, tools=SUPPORT_TOOLS,
+                     context=[record.model_dump_json(), last_msg])
+```
+
+<Flow steps={[{ label: "Sales agent", sub: "closes the deal" }, { label: "Handoff record", sub: "plan, seats, terms, SSO", kind: "hl" }, { label: "Support agent", sub: "own prompt, own tools" }, "Customer"]} caption="Only the record crosses the boundary. The sales prompt and pitch stay behind." />
+
+Three rules keep it clean:
+
+- **Required fields fail loudly.** If `promised_terms` is missing, validation fails at the handoff, not on the invoice a month later ([Structured Output](/c/structured/)).
+- **Shared state lives outside the transcript.** Both agents read and write the same account record, so a fact is stored once, not retold.
+- **Filter the history.** If the next agent needs some conversation, pass the customer's messages, not the previous agent's tool calls and instructions.
+
+## Let us check the math
+
+Sim prices (illustrative): medium tier, $3 per million input tokens. Support takes about 3 turns per setup, and every turn resends its context.
+
+<Callout type="math" label="Let us check the math">
+**Full transcript:** 9,000 tokens × 3 turns = 27,000 extra input tokens.<br />
+27,000 × $3/M = **$0.081 per handoff**.<br /><br />
+**Handoff record:** about 450 tokens × 3 turns = 1,350 tokens.<br />
+1,350 × $3/M ≈ **$0.004 per handoff**, about 20 times less.<br /><br />
+At 10,000 handoffs a month: **$810 vs $40**.<br /><br />
+**Accuracy in the lab:** the full-transcript starter gets about 77% of handoffs right; the structured record gets about 97%.
+</Callout>
+
+The record is both cheaper and more accurate. The full transcript loses to it on both counts, because more context is not the same as the right context.
+
+## The tradeoff: a schema only carries what you thought of
+
+A structured handoff is a design decision, and it can be wrong:
+
+- **Missing fields.** If sales promises something the schema has no field for ("you can pay in euros"), it vanishes. Keep a free-text `notes` field and an `open_questions` list, and review real handoffs that went wrong ([Trajectory and Tool-Use Evals](/c/trajectory_evals/)).
+- **Stale shared state.** Two agents writing the same record can overwrite each other. Give each field one owner, and validate writes ([Writing Memory Safely](/c/memory_write/)).
+- **Handoff loops.** Support hands back to sales, which hands back to support. Cap the number of handoffs per conversation and route to a human after that ([Human in the Loop](/c/hitl/)).
+
+## In the real world
+
+The OpenAI Agents SDK makes handoffs a first-class feature. A handoff appears to the model as a tool, such as `transfer_to_refund_agent`. You can attach an `input_type` so the model must fill structured data when it hands off, and an `input_filter` to control which history the next agent sees, for example removing all previous tool calls. That is this lesson's contract and filter, built in. In part 5 of the deepresearch project, the research agents hand their findings to a report writer the same way: as structured notes, not raw transcripts.
