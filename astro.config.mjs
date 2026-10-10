@@ -3,8 +3,9 @@ import mdx from '@astrojs/mdx';
 import react from '@astrojs/react';
 import sitemap from '@astrojs/sitemap';
 
-// SITE_URL: the public URL once deployed. BASE_PATH: set to "/free-agent-harness" for a
-// GitHub Pages project site; leave unset for Cloudflare Pages or a custom domain.
+// SITE_URL: the public URL once deployed (Vercel's production URL is picked up automatically).
+// BASE_PATH: set to "/free-agent-harness" for a GitHub Pages project site; leave unset for Vercel,
+// Cloudflare Pages or a custom domain.
 const base = process.env.BASE_PATH || '/';
 
 /** Prefix root-relative links written in Markdown/MDX (e.g. /c/agent_loop/) with the base path. */
@@ -23,7 +24,7 @@ function rehypeBaseLinks() {
 }
 
 export default defineConfig({
-  site: process.env.SITE_URL || 'https://free-agent-harness.pages.dev',
+  site: process.env.SITE_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`) || 'https://free-agent-harness.vercel.app',
   base,
   trailingSlash: 'always',
   integrations: [mdx(), react(), sitemap()],

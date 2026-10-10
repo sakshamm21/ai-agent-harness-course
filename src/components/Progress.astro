@@ -1,12 +1,13 @@
 ---
-// Progress lives in localStorage only. Every read and write is wrapped so private windows still work.
+// Progress lives in localStorage (value = completion time in ms). Every read and write is wrapped so private
+// windows still work. /progress/ can export it to a file and import it on another device.
 ---
 <script is:inline>
   (function () {
     var KEY = 'fah-progress';
     function load() { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } }
     function save(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
-    window.fahProgress = { load: load, save: save, mark: function (slug, v) { var p = load(); if (v) p[slug] = 1; else delete p[slug]; save(p); paint(); } };
+    window.fahProgress = { load: load, save: save, mark: function (slug, v) { var p = load(); if (v) p[slug] = p[slug] || Date.now(); else delete p[slug]; save(p); paint(); } };
     function paint() {
       var p = load();
       document.querySelectorAll('[data-tick]').forEach(function (el) {

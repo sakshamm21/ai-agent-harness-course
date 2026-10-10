@@ -20,14 +20,42 @@ Inspired by the format of [freesystemdesign.com](https://freesystemdesign.com/):
 | `docs/PLAN.md` | The full product spec. |
 | `AUTHORING.md` | How to write lessons, scenarios, code labs and capstone pages. |
 
-## Run it locally
+## Take the course on your computer
+
+The course runs entirely on your machine; there is no hosted version to sign up for.
+
+You need [Node.js](https://nodejs.org/) 22 or newer and git. Python 3.12 is only needed for the capstone projects.
 
 ```bash
+git clone https://github.com/sakshamm21/free-agent-harness-course.git
+cd free-agent-harness-course
 npm install
-npm run dev          # http://localhost:4321
+npm run dev          # open http://localhost:4321
 ```
 
-Checks (all run in CI):
+Lessons, Agent Labs and code labs all work in `npm run dev`. Search needs a built copy:
+
+```bash
+npm run build && npm run preview      # http://localhost:4321, search included
+```
+
+Your progress, lab graphs and code lab code are saved in your browser. To move them to another browser or
+computer, use **Your progress** in the footer (download a file, import it on the other side).
+
+Capstone projects are plain Python in `projects/`; each has a README with its own steps, for example:
+
+```bash
+cd projects/nanoharness
+python3 -m pip install pytest
+python3 -m pytest -q          # your starter code: fails until you build each part
+IMPL=solution python3 -m pytest -q   # the reference solution: passes
+```
+
+To get new lessons later: `git pull && npm install`.
+
+## Checks
+
+For contributors (all run in CI):
 
 ```bash
 node scripts/validate-content.mjs           # lesson frontmatter, MDX, structure
@@ -38,9 +66,9 @@ npm run build && npm run check              # static build + internal link check
 (cd projects/nanoharness && IMPL=solution python3 -m pytest -q)
 ```
 
-## Deploy (free)
+## Hosting (optional, later)
 
-See [DEPLOY.md](DEPLOY.md). Short version: Cloudflare Pages, build command `npm run build`, output directory `dist`.
+Not needed to take the course. If you ever want a public copy, see [DEPLOY.md](DEPLOY.md).
 
 ## Licence
 

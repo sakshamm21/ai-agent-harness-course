@@ -8,6 +8,7 @@ lessons: ["rag", "routing", "guardrails", "case_support_agent"]
 test: "IMPL=solution python3 -m pytest -q"
 updated: 2026-10-10
 ---
+import { SITE } from '../../../lib/site';
 
 ## What you build
 
@@ -66,7 +67,7 @@ The runtime is the standard library only: `sqlite3` for the store, a list of flo
 
 ## Starter, solution and tests
 
-The code is in [projects/supportbot](https://github.com/sakshamm21/free-agent-harness-course/tree/main/projects/supportbot).
+The code is in <a href={`${SITE.repo}/tree/main/projects/supportbot`}>projects/supportbot</a>.
 
 - `starter/supportbot/` is yours. Every function marked `Part N:` raises `NotImplementedError`, and its docstring is the spec.
 - `solution/supportbot/` is the finished bot. Read it when you are stuck.

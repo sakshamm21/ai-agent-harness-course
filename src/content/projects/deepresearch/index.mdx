@@ -8,6 +8,7 @@ lessons: ["orchestrator", "agentic_search", "evaluator_optimizer", "evals"]
 test: "IMPL=solution python3 -m pytest -q"
 updated: 2026-10-10
 ---
+import { SITE } from '../../../lib/site';
 
 ## What you build
 
@@ -56,7 +57,7 @@ To use a real model, set `ANTHROPIC_API_KEY`. The planner and writer default to 
 
 ## Starter, solution and tests
 
-The code is in [projects/deepresearch](https://github.com/sakshamm21/free-agent-harness-course/tree/main/projects/deepresearch).
+The code is in <a href={`${SITE.repo}/tree/main/projects/deepresearch`}>projects/deepresearch</a>.
 
 - `starter/deepresearch/` is yours. Every function you write raises `NotImplementedError("Part N: ...")`, and its docstring is the spec. The model, the loop, the `@tool` decorator, the prompts and the records are already there.
 - `solution/deepresearch/` is the finished assistant. Read it when you are stuck.

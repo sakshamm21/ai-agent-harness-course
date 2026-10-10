@@ -100,7 +100,7 @@ export default function CodeLab({ lab, lessonSlug, lessonTitle, nextUrl, nextTit
       if (withCheck && !res.err && res.checks.length && res.checks.every((c: any) => c.ok)) {
         try {
           const p = JSON.parse(localStorage.getItem('fah-progress') || '{}') || {};
-          p[lessonSlug] = 1;
+          p[lessonSlug] = p[lessonSlug] || Date.now();
           localStorage.setItem('fah-progress', JSON.stringify(p));
         } catch { /* ignore */ }
       }

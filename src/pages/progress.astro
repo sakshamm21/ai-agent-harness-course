@@ -1,0 +1,88 @@
+---
+import Base from '../layouts/Base.astro';
+import { href } from '../lib/site';
+---
+<Base title="Your progress" description="Move your course progress to another browser or device with a file." noindex>
+  <div class="page-head">
+    <h1>Your progress</h1>
+    <p>There are no accounts. Your progress, lab graphs and code lab code are saved in this browser only.</p>
+  </div>
+  <div class="prose">
+    <p id="progress-summary" role="status"></p>
+    <h2>Move to another device</h2>
+    <ol>
+      <li>Here, press <strong>Download progress file</strong>.</li>
+      <li>On the other device, open this page and press <strong>Import progress file</strong>.</li>
+    </ol>
+    <p>The file stays on your devices; nothing is uploaded anywhere. Importing adds the lessons you completed to the ones already completed there, and replaces saved lab graphs and code with the copies from the file.</p>
+    <p class="transfer-actions">
+      <button class="btn" type="button" id="export-progress">Download progress file</button>
+      <label class="btn ghost" for="import-progress">Import progress file</label>
+      <input type="file" id="import-progress" accept="application/json,.json" hidden />
+    </p>
+    <p id="transfer-note" role="status"></p>
+    <p><a href={href('/')}>← All lessons</a></p>
+  </div>
+</Base>
+
+<style>
+  .transfer-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .transfer-actions label { cursor: pointer; }
+  #transfer-note.bad { color: var(--bad); }
+  #transfer-note.good { color: var(--good); }
+</style>
+
+<script>
+  import { buildExport, planImport, TRANSFER_KEY } from '../lib/progress-transfer';
+
+  const $ = (id: string) => document.getElementById(id)!;
+  function readLocal(): Record<string, string> {
+    const out: Record<string, string> = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && TRANSFER_KEY.test(k)) out[k] = localStorage.getItem(k) as string;
+      }
+    } catch { /* storage unavailable */ }
+    return out;
+  }
+  function summarize() {
+    const local = readLocal();
+    let done = 0;
+    try { done = Object.keys(JSON.parse(local['fah-progress'] || '{}')).length; } catch { /* corrupt */ }
+    const saved = Object.keys(local).length - (local['fah-progress'] ? 1 : 0);
+    $('progress-summary').textContent = `This browser has ${done} completed item${done === 1 ? '' : 's'} and ${saved} saved lab or code lab${saved === 1 ? '' : 's'}.`;
+  }
+  function note(text: string, kind: 'good' | 'bad') { const el = $('transfer-note'); el.textContent = text; el.className = kind; }
+
+  $('export-progress').addEventListener('click', () => {
+    const file = buildExport(readLocal());
+    const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `free-agent-harness-progress-${file.exportedAt.slice(0, 10)}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    note('Progress file downloaded.', 'good');
+  });
+
+  ($('import-progress') as HTMLInputElement).addEventListener('change', async (e) => {
+    const input = e.target as HTMLInputElement;
+    const f = input.files?.[0];
+    input.value = '';
+    if (!f) return;
+    try {
+      const { writes, completed } = planImport(await f.text(), readLocal());
+      for (const [k, v] of Object.entries(writes)) localStorage.setItem(k, v);
+      window.dispatchEvent(new Event('fah-progress'));
+      note(`Imported. This browser now has ${completed} completed item${completed === 1 ? '' : 's'}.`, 'good');
+      summarize();
+    } catch (err) {
+      note(err instanceof Error ? err.message : 'Could not import that file.', 'bad');
+    }
+  });
+
+  summarize();
+</script>

@@ -8,6 +8,7 @@ lessons: ["harness", "agent_loop", "case_coding_agent"]
 test: "IMPL=solution python3 -m pytest -q"
 updated: 2026-10-10
 ---
+import { SITE } from '../../../lib/site';
 
 ## What you build
 
@@ -62,7 +63,7 @@ Answer `y` twice (once for the edit, once for the test run) and you should see `
 
 ## Starter, solution and tests
 
-The code is in [projects/nanoharness](https://github.com/sakshamm21/free-agent-harness-course/tree/main/projects/nanoharness).
+The code is in <a href={`${SITE.repo}/tree/main/projects/nanoharness`}>projects/nanoharness</a>.
 
 - `starter/nanoharness/` is yours. Every function marked `Part N:` raises `NotImplementedError`, and its docstring is the spec.
 - `solution/nanoharness/` is the finished harness. Read it when you are stuck.

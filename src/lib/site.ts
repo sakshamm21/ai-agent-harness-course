@@ -1,11 +1,19 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 import sections from '../content/sections.json';
 
+function repoUrl() {
+  const env = typeof process !== 'undefined' ? process.env : {};
+  if (env.VERCEL_GIT_REPO_OWNER && env.VERCEL_GIT_REPO_SLUG) return `https://github.com/${env.VERCEL_GIT_REPO_OWNER}/${env.VERCEL_GIT_REPO_SLUG}`;
+  if (env.GITHUB_REPOSITORY) return `https://github.com/${env.GITHUB_REPOSITORY}`;
+  return env.PUBLIC_REPO_URL || 'https://github.com/sakshamm21/free-agent-harness-course';
+}
+
 export const SITE = {
   name: 'Free Agent Harness',
   tagline: 'Learn AI agents by building them.',
   author: 'Sak',
-  repo: 'https://github.com/sakshamm21/free-agent-harness-course',
+  // Follows the repo automatically on Vercel and GitHub Actions builds, so a rename needs no code change.
+  repo: repoUrl(),
 };
 
 export type Lesson = CollectionEntry<'lessons'>;

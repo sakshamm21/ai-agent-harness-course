@@ -141,7 +141,7 @@ function Lab({ scenario, lessonSlug, lessonTitle, nextUrl, nextTitle, base }: Pr
       setEdges((es) => es.map((e) => ({ ...e, animated: true })));
       if (result.passed) {
         const p = (store('fah-progress') as Record<string, number> | null) ?? {};
-        p[lessonSlug] = 1;
+        p[lessonSlug] = p[lessonSlug] || Date.now();
         store('fah-progress', p);
       }
     }, 20);
