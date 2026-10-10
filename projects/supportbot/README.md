@@ -2,7 +2,7 @@
 
 Capstone 2 of [Free Agent Harness](https://github.com/sakshamm21/free-agent-harness-course): a customer support agent for a made-up outdoor gear store, Northwind Outfitters. It answers policy questions from a help center with citations, looks up orders, issues refunds, hands hard cases to a person, refuses to be talked into refunds by a poisoned article, grades itself on 40 conversations, and shows every step it took in a web trace viewer.
 
-You build it in 8 parts. The course pages walk through each one: <https://free-agent-harness.pages.dev/p/supportbot/>.
+You build it in 8 parts. The course pages walk through each one: <https://free-agent-harness.vercel.app/p/supportbot/>.
 
 | Part | File | What it adds | Test |
 |---|---|---|---|

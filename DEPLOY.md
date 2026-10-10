@@ -1,47 +1,30 @@
-# Hosting (optional)
+# Public copy on Vercel
 
-The course is meant to be cloned and run locally (see the README). Nothing here is needed for that. These notes
-are for later, if you decide to put a public copy online.
+Learners take the course by cloning the repo and running it locally (see the README). The Vercel copy is an
+always-on public showcase you can send to anyone. It is fully static: no sign-in, no database, no secrets.
+Each visitor's progress is saved in their own browser, and **Your progress** in the footer lets them move it
+with a file.
 
-The site is fully static (`dist/` after `npm run build`): no server, no database, no secrets. Progress lives in
-each learner's browser; `/progress/` exports it to a file and imports it on another device.
+## Set it up (once)
 
-## Vercel
+1. Go to <https://vercel.com/new> and, under **Import Git Repository**, pick this repo. If it isn't listed,
+   choose **Adjust GitHub App Permissions** and give Vercel access to it.
+2. Set the project name to `free-agent-harness` (that becomes `https://free-agent-harness.vercel.app`, or a
+   close variant if the name is taken). Leave every other setting as is; `vercel.json` holds them.
+3. Press **Deploy**.
 
-Free Hobby plan, a stable `https://<project>.vercel.app` link, HTTPS, a production redeploy on every push to
-`main`, and a preview link for every other branch and pull request. Vercel detects Astro; the build command is
-`npm run build` and the output directory `dist`.
+From then on every push to `main` redeploys the public site, and every other branch or pull request gets its
+own preview link. The free Hobby plan covers this (it is meant for personal, non-commercial projects).
 
-1. Go to <https://vercel.com/new> and import this repository under Import Git Repository (grant the Vercel
-   GitHub app access to it if it isn't listed).
-2. Set the project name to `free-agent-harness` (that becomes the link) and press **Deploy**. No environment
-   variables are needed.
-3. Done. Every push to `main` updates the site.
+## Good to know
 
-`SITE_URL` and the GitHub links on the site come from Vercel's build environment automatically. Set `SITE_URL`
-only if you add a custom domain (**Settings → Domains**).
-
-**Renaming the repo** needs nothing: Vercel follows the repo by its ID, GitHub redirects old links, and the
-site's GitHub links are rebuilt from the new name on the next push. If the Vercel project ever shows the repo
-as disconnected, reconnect it under **Settings → Git**.
-
-**Adding another course** to this repo needs nothing either; it deploys with the rest. A course in its own repo
-is one more Vercel project, imported the same way.
-
-## Cloudflare Pages
-
-Unlimited bandwidth and no non-commercial clause, at the cost of creating a Cloudflare account.
-Workers & Pages → Create → Pages → Connect to Git, pick the repo. Build command `npm run build`, output
-`dist`, environment variables `NODE_VERSION=22` and `SITE_URL=https://<project>.pages.dev`. Every push to `main`
-redeploys.
-
-## GitHub Pages (fallback)
-
-Repo **Settings → Pages → Source: GitHub Actions**, then **Actions → Deploy to GitHub Pages → Run workflow**.
-The site lives under `https://<user>.github.io/<repo-name>/`, so renaming the repo changes the link; the
-workflow sets `BASE_PATH` to match.
-
-## Notes
-
-- Pyodide (about 14 MB) is copied into `public/pyodide/` by `npm install` and ships with the build, so a hosted copy serves its own Python. jsDelivr is only a fallback if those files are missing.
-- Search (Pagefind) is generated during `npm run build`, so it only works on a built site, not in `npm run dev`.
+- **Renaming the repo** needs nothing: Vercel follows the repo by its ID, GitHub redirects old links, and the
+  site's GitHub links are rebuilt from the new name on the next deploy. If the project ever shows the repo as
+  disconnected, reconnect it under **Settings → Git**.
+- **Adding courses** to this repo needs nothing; they deploy with the rest. A course in another repo is one
+  more Vercel project, imported the same way.
+- **Custom domain**: **Settings → Domains**. Then set the environment variable `SITE_URL` to that address so
+  canonical links and the sitemap use it (otherwise Vercel's own address is picked up automatically).
+- **Analytics** (optional, cookieless): **Analytics** tab in the project.
+- Pyodide (about 14 MB) is copied into `public/pyodide/` during the build, so the public site serves its own
+  Python for code labs.

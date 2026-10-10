@@ -80,9 +80,10 @@ node tests/progress-local.mjs               # progress survives dev server and b
 (cd projects/nanoharness && IMPL=solution python3 -m pytest -q)
 ```
 
-## Hosting (optional, later)
+## Public copy on Vercel
 
-Not needed to take the course. If you ever want a public copy, see [DEPLOY.md](DEPLOY.md).
+The course is also published on Vercel as an always-on showcase anyone can open; it redeploys on every push to
+`main`. Setup steps are in [DEPLOY.md](DEPLOY.md). You don't need it to take the course.
 
 ## Licence
 
