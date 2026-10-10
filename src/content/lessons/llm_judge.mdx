@@ -43,6 +43,13 @@ Your support agent writes 3,000 free-text replies a day. String checks from [Why
 
 The dashboard reports 85% passing. Then your team hand-labels 100 of the same drafts, and only 60 are actually good. The judge waved 25 bad drafts through, including a reply with a tracking number that does not exist.
 
+<Trace caption="The judge passed a confident reply with a made-up tracking number. People failed it." steps={[
+  { role: "user", text: "My parcel hasn't arrived. Where is it?" },
+  { role: "model", text: "So sorry! It's on its way, tracking number 7741 0093 2210.", tag: "draft" },
+  { role: "model", text: "PASS: polite, clear, answers the question", tag: "judge", bad: true },
+  { role: "human", text: "FAIL: that tracking number does not exist", good: true },
+]} />
+
 ## A judge is another model, so it makes mistakes too
 
 A judge does not see the truth. It sees a draft and a prompt, and it predicts what a grader would say. That prediction has its own errors:
@@ -50,6 +57,12 @@ A judge does not see the truth. It sees a draft and a prompt, and it predicts wh
 - **Too lenient.** A low bar passes anything that sounds polite and confident. Confident wrong answers are exactly what you need it to catch.
 - **Too strict.** A bar near perfect rejects good drafts too, and each rejection costs another model call.
 - **Biased.** Judges tend to prefer longer answers, the first answer when shown two, and answers in their own style.
+
+<Compare caption="Until you compare the judge with people, you do not know which of these you have." cols={[
+  { title: "Too lenient", kind: "bad", rows: ["- Passes polite, confident errors", "- Misses what you need caught"] },
+  { title: "Too strict", rows: ["- Rejects good drafts too", "- Each rejection costs a call"] },
+  { title: "Biased", rows: ["- Prefers longer answers", "- Prefers the first of two", "- Prefers its own style"] },
+]} />
 
 Until you compare the judge with people, you do not know which of these you have. A judge you have not checked is an opinion, not a measurement.
 
@@ -84,6 +97,13 @@ Cost: a small-tier judge reads about 1,900 tokens and writes 200 per draft: 1,90
 
 The lenient judge looked fine on raw agreement and caught barely a third of the bad drafts. Kappa and the catch rate show it.
 
+<Bars caption="Calibration lifted the catch rate on bad drafts from 37.5% to 90%, and kappa from 0.38 to 0.83." unit="%" max={100} bars={[
+  { label: "Agreement, before", value: 73 },
+  { label: "Agreement, after", value: 92, kind: "good" },
+  { label: "Catch rate, before", value: 37.5, kind: "bad", note: "37.5% · kappa 0.38" },
+  { label: "Catch rate, after", value: 90, kind: "good", note: "90% · kappa 0.83" },
+]} />
+
 ## The tradeoff: you now have two models to maintain
 
 A judge scales grading from 100 drafts to 100,000, but it adds cost and its own failure modes:
@@ -92,6 +112,24 @@ A judge scales grading from 100 drafts to 100,000, but it adds cost and its own 
 - **It has biases.** When comparing two answers, grade both orders and keep only consistent verdicts. Give it a rubric with concrete fail conditions, not "is this good?".
 - **It adds a call in the loop.** Used as a gate that sends drafts back, a strict judge multiplies calls per task. That pattern is [Evaluator-Optimizer](/c/evaluator_optimizer/); cap its retries.
 
+```python
+def calibrate(judge, labelled):              # [(draft, human_pass), ...]
+    pairs = [(judge(d), h) for d, h in labelled]
+    n = len(pairs)
+    agree = sum(j == h for j, h in pairs) / n
+    bad = [j for j, h in pairs if not h]
+    catch = sum(not j for j in bad) / len(bad)
+    pj = sum(j for j, _ in pairs) / n         # judge pass rate
+    ph = sum(h for _, h in pairs) / n         # human pass rate
+    chance = pj * ph + (1 - pj) * (1 - ph)
+    kappa = (agree - chance) / (1 - chance)
+    return agree, catch, kappa                # re-run on every judge change
+```
+
 ## In the real world
 
 Zheng et al. (2023) built MT-Bench, a set of 80 multi-turn questions, and compared GPT-4 as a judge with expert human votes. GPT-4 agreed with the humans over 80% of the time, about as often as the humans agreed with each other. The same paper measured position bias, verbosity bias and self-enhancement bias, and showed that swapping answer order and giving the judge reference answers reduce them. That is the practice to copy: use the judge, and keep checking it against people.
+
+<Fan caption="Judge both orders and keep only verdicts that agree, so position bias cannot pick the winner." root={{ label: "Two answers", sub: "A and B" }} fanLabel="swap the order"
+  items={[{ label: "Judge sees A, then B" }, { label: "Judge sees B, then A" }]}
+  merge={{ label: "Same winner both times?", sub: "keep it, else drop it", kind: "good" }} />

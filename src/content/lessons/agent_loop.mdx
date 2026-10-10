@@ -45,6 +45,12 @@ Run that ten times and about 7 of the 10 answers are wrong. The model is not bad
 
 To fix *your* bug, it has to look at *your* code, change it, and check that the tests pass. That is three actions, and a single model call can take none of them.
 
+<Trace caption="One call, no tools: the model answers about a file it never saw." steps={[
+  { role: "user", text: "Page 2 of /orders repeats the last item of page 1. Fix it." },
+  { role: "model", text: "Change `offset = page * size` to `offset = (page - 1) * size`.", tag: "end_turn", meta: "1 call" },
+  { role: "error", text: "Tests still fail: the real bug is an inclusive slice on line 42.", bad: true },
+]} />
+
 ## The model can't act, but it can ask
 
 In [Function Calling](/c/tools/) you gave the model tools. A tool call is a request, not an action. The model returns something like this and then stops:
@@ -93,6 +99,11 @@ Total input: **63k tokens**. Output is small, about 6 × 300 = 1.8k tokens.<br /
 At $3 per million input and $15 per million output: 63,000 × $3/M + 1,800 × $15/M ≈ **$0.19 + $0.03 = $0.22 per bug fix**.
 </Callout>
 
+<Bars caption="Input tokens billed on each turn. Every turn resends everything before it." unit="k" bars={[
+  { label: "Turn 1", value: 3 }, { label: "Turn 2", value: 6 }, { label: "Turn 3", value: 9 },
+  { label: "Turn 4", value: 12 }, { label: "Turn 5", value: 15 }, { label: "Turn 6", value: 18, kind: "hl", note: "18k · total 63k" },
+]} />
+
 Notice the shape. Cost grows with the *square* of the number of turns, because every turn pays for all the turns before it. A 12-turn task is not twice the cost of a 6-turn task. It is closer to four times.
 
 <Stack blocks={[{ label: "System + tools", tokens: 3000 }, { label: "read_file", tokens: 6000 }, { label: "edit_file", tokens: 1500 }, { label: "run_tests", tokens: 4500, kind: "hl" }, { label: "next turns…", tokens: 3000 }]} caption="What the model sees on turn 5. Every earlier turn rides along." />
@@ -100,6 +111,14 @@ Notice the shape. Cost grows with the *square* of the number of turns, because e
 ## The tradeoff: loops don't know when to stop
 
 A loop gives the model freedom to take as many steps as it needs. That freedom cuts both ways:
+
+<States caption="A run is a small state machine. Without a cap, the tool_use edge can spin forever." states={[
+  { id: "call", label: "Call model", kind: "hl" }, { id: "tools", label: "Run tools" },
+  { id: "done", label: "Done", sub: "end_turn", kind: "good" }, { id: "cap", label: "Stopped", sub: "max turns", kind: "bad" },
+]} edges={[
+  { from: "call", to: "tools", label: "tool_use" }, { from: "tools", to: "call", label: "append results" },
+  { from: "call", to: "done", label: "no tool calls" }, { from: "tools", to: "cap", label: "budget hit" },
+]} path={["call", "tools", "call", "tools", "call", "done"]} />
 
 - **Runaway turns.** A model that keeps calling `run_tests` on a test that will never pass loops forever. You need [stop conditions and budgets](/c/stop_conditions/): a max turn count, a max cost, and a clear done signal.
 - **Growing context.** Every turn adds tokens. On a long task the conversation outgrows the window, and the first thing to fall out is the task itself. That is [context management](/c/context_mgmt/).
@@ -110,5 +129,16 @@ Each of those is a lesson in this course, and each is a piece of the harness you
 ## In the real world
 
 Every coding agent runs a version of this loop. Claude Code, Codex CLI and OpenHands differ in their tools, prompts and safety rules, but strip those away and you find the same cycle: call the model, run the tool calls, append the results, repeat. In the Claude API you can see it directly: a response with `stop_reason: "tool_use"` means "run these and call me back", and `"end_turn"` means "I'm done".
+
+<Trace caption="The same loop as the Claude API shows it: stop_reason tells your code what to do next." steps={[
+  { role: "user", text: "Fix the pagination bug in app/orders.py" },
+  { role: "model", text: 'read_file({"path": "app/orders.py"})', tag: "tool_use" },
+  { role: "tool", text: "…line 42: items[start:end + 1]…", meta: "+2.4k tok" },
+  { role: "model", text: 'edit_file({"line": 42, "new": "items[start:end]"})', tag: "tool_use" },
+  { role: "tool", text: "ok" },
+  { role: "model", text: 'run_tests({"path": "tests/test_orders.py"})', tag: "tool_use" },
+  { role: "tool", text: "12 passed", good: true },
+  { role: "model", text: "Fixed: the slice was inclusive, so page 2 repeated one item.", tag: "end_turn", good: true },
+]} />
 
 You will write this loop yourself, about 40 lines, in part 1 of the nanoharness project.

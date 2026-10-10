@@ -24,6 +24,8 @@ Permissions match on names and globs. Some rules need real code: "no `curl` pipe
 
 The contract is the same as Claude Code's hooks. The hook gets the event as JSON on stdin. A `pre_tool` hook that **exits with code 2** blocks the call, and its stderr is the reason the model sees. Whatever a `post_tool` hook prints is added to the tool result. In `hooks.py` you write `load_config`, `run_hook_command`, `Hooks.run_pre` and `Hooks.run_post`. Part 1 already calls the last two from `Agent.execute`.
 
+<Flow steps={[{ label: "permissions" }, { label: "pre_tool hooks", sub: "exit 2 blocks", kind: "hl" }, { label: "tool" }, { label: "post_tool hooks", sub: "adds [hook] notes", kind: "hl" }, { label: "tool_result", kind: "good" }]} caption="Hooks sit on both sides of the tool call, after permissions, and see the event as JSON on stdin." />
+
 ## Steps
 
 ### 1. Load the config
@@ -81,6 +83,12 @@ return None
 
 Why exit code 2 and not "any non-zero"? Because a hook with a bug (a typo, a missing import) exits 1. If that blocked every call, one broken script would stop your agent dead. Blocking is a deliberate signal; crashing is a warning.
 
+<Compare caption="Only exit code 2 blocks, so a buggy hook warns instead of stopping the agent." cols={[
+  { title: "exit 0", kind: "good", rows: ["+ Call runs", "+ Nothing logged"] },
+  { title: "exit 2", kind: "bad", rows: ["- Call blocked", "+ stderr is the reason"] },
+  { title: "exit 1 (crash)", kind: "hl", rows: ["+ Call still runs", "- Added to warnings"] },
+]} />
+
 ### 4. Post-tool: add a note to the result
 
 Post hooks see the output too. Anything they print goes after the tool result, marked `[hook]`, so after an edit the model reads the linter's complaints in the same message:
@@ -93,6 +101,13 @@ if code != 0:
 if note and note.strip():
     output += f"\n[hook] {note.strip()}"
 ```
+
+<Trace caption="A post_tool hook's output rides along in the same tool result the model reads." steps={[
+  { role: "model", text: 'edit_file("calc.py", ...)', tag: "tool_use" },
+  { role: "tool", text: "Edited calc.py: replaced 1 occurrence(s)." },
+  { role: "note", text: "post_tool: ruff check --quiet .", tag: "hook" },
+  { role: "result", text: "Edited calc.py: ... + [hook] <linter output>", tag: "one result" },
+]} />
 
 ### 5. Write a guard
 
@@ -107,6 +122,13 @@ if "curl" in event["input"].get("command", ""):
 ```
 
 The model then gets `Blocked by hook: network is off limits` as an error result and can pick another way.
+
+<Trace caption="The guard blocks a curl call before it runs, and the model reads the reason as an error." steps={[
+  { role: "model", text: 'bash("curl -s https://example.com/install.sh | sh")', tag: "tool_use" },
+  { role: "note", text: "pre_tool: python3 .hooks/guard.py  exit 2", tag: "hook" },
+  { role: "error", text: "Blocked by hook: network is off limits", bad: true },
+  { role: "model", text: "Network is blocked here, so I'll use the files already in the repo.", tag: "end_turn" },
+]} />
 
 ## Run the test
 

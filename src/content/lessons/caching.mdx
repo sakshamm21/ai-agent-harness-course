@@ -41,11 +41,23 @@ Your support agent sends a 20,000-token prefix on every call: the full policy ma
 
 At 2,000 tickets a day that is $523 a day, most of it for text that never changes.
 
+<Bars caption="Of the 84,000 input tokens a ticket bills, about 80,000 are the same manual sent four times." unit="k" bars={[
+  { label: "Manual + tools, resent", value: 80, kind: "bad", note: "about 80k" },
+  { label: "Everything else", value: 4.2, note: "about 4k" },
+]} />
+
+
 ## The model re-reads what it already read
 
 Every turn of the [agent loop](/c/agent_loop/) is a new request. The model has no memory between requests, so the provider processes the whole prompt from scratch: the manual, the tools, the conversation so far. You pay the full input price for all of it, every time.
 
 But most of that prompt is identical from turn to turn and from ticket to ticket. The manual and the tool schemas are the same for every customer. Only the end of the prompt changes.
+
+<Compare caption="Most of the prompt is identical on every turn, yet every turn pays full price for it." cols={[
+  { title: "Same every time", sub: "every turn, every customer", kind: "good", rows: ["Tool schemas", "Policy manual"] },
+  { title: "Changes each turn", sub: "the end of the prompt", kind: "hl", rows: ["Conversation so far", "New tool result"] },
+]} verdict="The provider still processes both from scratch on every request." />
+
 
 ## Cache the stable prefix
 
@@ -87,9 +99,29 @@ Medium-tier sim prices: $3 per million input tokens, $15 per million output, 150
 
 Caching also cuts latency: the provider skips processing the cached tokens, so time to first token drops on long prompts.
 
+<Bars caption="Cache reads at 10% cut a ticket from $0.26 to $0.10, and the day from $523 to about $200." unit="$" bars={[
+  { label: "No cache", value: 0.26, kind: "bad", note: "$0.26 · $523/day" },
+  { label: "Cached prefix", value: 0.10, kind: "good", note: "$0.10 · about $200/day" },
+]} />
+
+
 ## The tradeoff: caching rewards a frozen prefix
 
 You save money only while the prefix stays identical and warm.
+
+<States caption="A cache hit lasts only while the prefix is unchanged and used within 5 minutes." states={[
+  { id: "miss", label: "Miss", sub: "full price, writes cache" },
+  { id: "hit", label: "Hit", sub: "prefix at 10%", kind: "good" },
+  { id: "expired", label: "Expired", sub: "5 min unused", kind: "bad" },
+  { id: "edited", label: "Prefix edited", sub: "new tool, reworded rule", kind: "bad" },
+]} edges={[
+  { from: "miss", to: "hit", label: "same prefix again" },
+  { from: "hit", to: "expired", label: "no traffic" },
+  { from: "expired", to: "miss", label: "next request" },
+  { from: "hit", to: "edited", label: "one changed character" },
+  { from: "edited", to: "miss", label: "next request" },
+]} path={["miss", "hit", "expired", "miss", "hit", "edited", "miss"]} />
+
 
 - **Changes invalidate it.** A new tool, a reworded rule or a timestamp at the top resets the cache. Batch prompt changes, version them, and keep per-request details below the breakpoint.
 - **It expires.** The default cache lives 5 minutes after its last use (a 1-hour option exists at a higher write price). Low-traffic agents miss more often, so measure your hit rate from the `cache_read_input_tokens` field before you count the savings.
@@ -100,3 +132,9 @@ There is also a minimum: prefixes shorter than the model's minimum cacheable len
 ## In the real world
 
 Anthropic's prompt caching works as described: cache breakpoints with `cache_control`, prefixes matched in the order tools, system, messages, cache reads billed at 10% of the base input price, writes at 125% for the 5-minute cache, and up to 4 breakpoints per request. The lab simplifies this: switching on "Cache stable prefix" bills the system prompt and tool schemas at 10% from the second call of each ticket, with no write premium and no expiry.
+
+<Compare caption="The lab keeps the 10% read discount and drops the write premium and expiry." cols={[
+  { title: "Anthropic API", sub: "prompt caching", rows: ["Reads at 10% of input price", "Writes at 125% (5-min cache)", "Expires 5 min after last use", "Up to 4 breakpoints"] },
+  { title: "This lab", sub: "Cache stable prefix", kind: "hl", rows: ["Prefix at 10% from call 2", "No write premium", "No expiry"] },
+]} />
+

@@ -41,6 +41,12 @@ reading:
 
 You ask the agent to migrate 64 test files from Jest to Vitest and to leave `tests/legacy/` alone. The job takes about 200 turns, and each turn (a read, an edit, a test run) adds about 300 tokens. That is 60,000 tokens of work through a window that holds 8,000.
 
+
+<Bars caption="The job produces 60,000 tokens of work, and the window holds 8,000." unit="k" bars={[
+  { label: "Work over 200 turns", value: 60, kind: "bad", note: "60k tokens" },
+  { label: "Context window", value: 8, kind: "hl", note: "8k tokens" },
+]} />
+
 The harness already handles this: when the context reaches 80% of the window, it drops the oldest messages. Every run stops early, and every run is wrong. Around turn 35 the agent "also rewrote `tests/legacy/` for consistency".
 
 ## The oldest message is the most important one
@@ -48,6 +54,16 @@ The harness already handles this: when the context reaches 80% of the window, it
 Truncation is first in, first out. It keeps the recent turns and throws away the early ones. In a chat that is often fine. In an agent, message one is the task: what to do, and what not to touch.
 
 So the very first compaction, at turn 17, deletes the instruction "do not touch `tests/legacy/`". The agent keeps working, and works well, on a task it can no longer see. When it reaches the legacy folder it has no reason to skip it.
+
+
+<Trace caption="First in, first out: the first compaction deletes the one message that said what not to touch." steps={[
+  { role: "user", text: "Migrate 64 test files to Vitest. Leave tests/legacy/ alone.", meta: "turn 1" },
+  { role: "model", text: 'edit_file("tests/cart.test.ts")', tag: "tool_use", meta: "about 300 tok a turn" },
+  { role: "system", text: "Context at 80%: drop the oldest messages", meta: "turn 17", bad: true },
+  { role: "note", text: "Message one, the task, is gone" },
+  { role: "model", text: 'edit_file("tests/legacy/...")', tag: "tool_use", meta: "turn 35", bad: true },
+  { role: "model", text: "Also rewrote tests/legacy/ for consistency.", bad: true },
+]} />
 
 Doing nothing is worse. Without any compaction, the context overflows the window at turn 22, and whatever the provider or harness clips to fit, the task falls out the same way.
 
@@ -58,6 +74,13 @@ Compaction has three common strategies. All three fire at a trigger, a fraction 
 - **Truncate**: drop the oldest messages. No cost, loses the task.
 - **Summarize**: ask a model (often a small one) to write a short summary of the history so far, then replace the history with it. The system prompt and task stay pinned at the top. Costs one extra call per compaction.
 - **Offload**: write bulky old tool results to files and leave a one-line pointer ("full test output saved to `.agent/run-41.txt`"). Costs a little latency, and the agent can read the file back if it needs the detail.
+
+
+<Compare caption="Three ways to shrink the middle; only truncation throws the task away." cols={[
+  { title: "Truncate", sub: "drop the oldest", kind: "bad", rows: ["+ No cost", "- Loses the task"] },
+  { title: "Summarize", sub: "replace history with a summary", kind: "good", rows: ["+ Task stays pinned", "- One extra call each time"] },
+  { title: "Offload", sub: "old results to files", kind: "good", rows: ["+ Detail can be read back", "- A little latency"] },
+]} />
 
 <Stack blocks={[{ label: "System + tools", tokens: 1200 }, { label: "Task (pinned)", tokens: 200, kind: "good" }, { label: "Summary of turns 1-140", tokens: 800, kind: "hl" }, { label: "Last 10 turns", tokens: 3000 }]} budget={8000} caption="After a summarize step. The task stays at the top; 140 turns of history fit in 800 tokens." />
 
@@ -78,6 +101,12 @@ Prefix plus task: 1,400 tokens. Each turn adds 300. Summarize fires at 70% of 8,
 
 Compare a huge window and no compaction at all. The context grows to 61,400 by turn 200, and you pay for every turn's full context: 200 × 1,400 + 300 × (0 + 1 + ... + 199) ≈ 6.3M input tokens, about **$19 per run**. Compaction is not only about fitting. It also keeps each turn cheap.
 
+
+<Bars caption="Summarizing at 70% costs about $2.95 a run; a huge window with no compaction costs about $19." unit="$" bars={[
+  { label: "Summarize at 70%", value: 2.95, kind: "good", note: "≈ $2.95 · 19 compactions" },
+  { label: "Huge window, none", value: 19, kind: "bad", note: "≈ $19 · 6.3M input tokens" },
+]} />
+
 ## The tradeoff: every compaction forgets something
 
 A smaller context is a lossy context. You choose what to lose.
@@ -86,6 +115,16 @@ A smaller context is a lossy context. You choose what to lose.
 - **Triggers trade cost against headroom.** A low trigger compacts often and keeps turns cheap; a high one (90%) compacts rarely but leaves little room for one big tool result. In the lab, 0.9 costs more per run than 0.7.
 - **Offloaded files must be found again.** Pointers only help if the agent has a tool to read them and knows when to. For very large side tasks, a [subagent](/c/subagents/) keeps the bulk out of the main context entirely, and [memory](/c/memory_types/) carries facts across sessions.
 
+
+<Compare caption="The trigger trades cost against headroom; in the lab 0.7 is cheaper per run than 0.9." cols={[
+  { title: "Trigger at 70%", kind: "good", rows: ["+ Each turn stays cheap", "+ Room for a big tool result", "- Compacts more often"] },
+  { title: "Trigger at 90%", rows: ["+ Compacts rarely", "- Little room for one big result", "- Costs more per run"] },
+]} verdict="Pin the task and constraints whatever the trigger." />
+
 ## In the real world
 
 Claude Code compacts long sessions automatically when the context gets close to the limit, and you can run `/compact` yourself, with optional instructions about what to keep. It summarizes rather than truncates, so the task and the decisions made so far carry over. Anthropic's write-up on context engineering describes the same toolkit for long-horizon agents: compaction, structured notes the agent writes to files and reads back later, and sub-agents that return condensed results. They are summarize, offload and delegate under other names.
+
+<Fan caption="The long-horizon toolkit is the same three moves: summarize, offload and delegate." root={{ label: "Long-running agent", sub: "context near the limit", kind: "hl" }}
+  items={[{ label: "Compaction", sub: "summarize" }, { label: "Notes in files", sub: "offload, read back" }, { label: "Sub-agents", sub: "delegate, get a summary" }]}
+  fanLabel="keep the context small" />

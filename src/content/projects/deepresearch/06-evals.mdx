@@ -24,6 +24,11 @@ You have a pipeline with five agents and a dozen knobs: how many sub-questions, 
 
 A research report can fail in two ways, so you measure two things. **Fact recall** asks whether it found the answers: the share of reference facts the report states. **Citation precision** asks whether you can trust what it cites: the share of citations whose page really backs the sentence. A report can have perfect recall and cite the wrong page for half of it. That was the pipeline before part 4.
 
+<Compare caption="Recall and precision catch different failures, so one number would hide the other." cols={[
+  { title: "Fact recall", sub: "did it find the answers?", rows: ["+ Share of reference facts stated", "+ Match strings in the body"] },
+  { title: "Citation precision", sub: "can you trust the cites?", rows: ["+ Share of cites the page backs", "+ Judged on the full page"] },
+]} verdict="Perfect recall with 58% precision is the pipeline before part 4." />
+
 <Flow steps={["10 questions", { label: "research()", sub: "parts 1 to 5" }, { label: "Score", sub: "recall + precision", kind: "hl" }, "Scorecard"]} caption="Run every question through the whole pipeline, then grade the report." />
 
 You write `fact_recall`, `citation_precision` and `run_evals` in `evals.py`. `load_evals` and `format_scorecard` are given.
@@ -54,6 +59,14 @@ You write `fact_recall`, `citation_precision` and `run_evals` in `evals.py`. `lo
    ```
 
    The default judge is `textutil.supports`: true when one sentence of the page holds at least 75% of the claim's content words. It is deterministic and free, so the eval gives the same number every run. Pass a model-backed `judge` for paraphrased claims, and check it against a few cases you graded by hand before you trust it.
+
+<Trace caption="Each (sentence, doc) pair is judged on its own, so one wrong page halves this report's precision." steps={[
+  { role: "result", text: "The tunnel opened in June 2019 [vt-01].", meta: "pair 1" },
+  { role: "tool", text: "supports(sentence, vt-01 text) -> true", good: true },
+  { role: "result", text: "It cost 6.2 billion crowns [vt-01].", meta: "pair 2" },
+  { role: "tool", text: "supports(sentence, vt-01 text) -> false: vt-01 never states the cost", bad: true },
+  { role: "note", text: "citation precision = 1 / 2 = 0.5" },
+]} />
 
 3. **Run the set.** Research each question with the same models and corpus, score the report, keep one row per question. Pass the research options through, so you can eval any configuration: `verify=False`, a smaller cap, fewer workers.
 
@@ -87,6 +100,13 @@ You write `fact_recall`, `citation_precision` and `run_evals` in `evals.py`. `lo
    ```
 
    Recall is the same both ways: the verifier does not find new facts. Precision goes from 58% to 100% for $0.05 more across ten questions. That is the case for part 4, in one line. Now when you change a prompt, run this first and compare.
+
+<Bars caption="The verifier leaves recall at 100% and lifts citation precision from 58% to 100% for $0.05 more." unit="%" max={100} bars={[
+  { label: "recall, --no-verify", value: 100 },
+  { label: "recall, verifier", value: 100 },
+  { label: "precision, --no-verify", value: 58, kind: "bad", note: "58% · $0.1301" },
+  { label: "precision, verifier", value: 100, kind: "good", note: "100% · $0.1787" },
+]} />
 
 ## Run the test
 

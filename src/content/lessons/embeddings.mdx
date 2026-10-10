@@ -43,11 +43,23 @@ reading:
 
 A shop has 50 FAQs. The support search counts the words a query shares with each FAQ. A customer types "terminate membership". The FAQ that answers it says "How do I cancel my subscription?" They share zero words, so it never shows up.
 
+<Trace caption="Keyword search ranks by shared words, and the right FAQ shares none." steps={[
+  { role: "user", text: "terminate membership" },
+  { role: "tool", text: 'keyword match vs "How do I cancel my subscription?"', meta: "0 shared words" },
+  { role: "result", text: "Top 3: FAQs that happen to share a word", bad: true },
+  { role: "note", text: "The FAQ that answers it never shows up." },
+]} />
+
 In the code lab's test set of 8 real customer phrasings, keyword search finds the right FAQ in its top 3 only **2 times out of 8**, a 25% hit rate. Customers describe their problem in their own words, and their words are rarely yours.
 
 ## Words are not meaning
 
 Keyword search compares strings. "Cancel" and "terminate" are different strings. "Refund" and "money back" are different strings. "Arrived faulty" and "arrives broken" share one word out of four. The search has no idea that these pairs mean the same thing, so it ranks by accidental overlap.
+
+<Compare caption="Keyword search compares strings; the customer means the same thing." cols={[
+  { title: "What keyword search sees", kind: "bad", rows: ["- cancel ≠ terminate", "- refund ≠ money back", "- arrived faulty vs arrives broken: 1 of 4"] },
+  { title: "What the customer means", kind: "good", rows: ["+ Both mean: end my plan", "+ Both mean: give my money back", "+ Both mean: it came damaged"] },
+]} verdict="Compare meaning, not strings." />
 
 You need a representation where *meaning* is what gets compared.
 
@@ -74,9 +86,26 @@ def search(query, k=3):
 
 In the code lab, the same 8 queries go from 25% to **88%** with this change.
 
+<Bars caption="Right FAQ in the top 3, on the code lab's 8 customer phrasings." unit="%" max={100} bars={[
+  { label: "Keyword search", value: 25, kind: "bad", note: "25% · 2 of 8" },
+  { label: "Embedding search", value: 88, kind: "good", note: "88%" },
+]} />
+
 ## Let us check the math
 
 Take three toy vectors of length 1: "refund" = [0.6, 0.8, 0], "money back" = [0.8, 0.6, 0], "store hours" = [0, 0.6, 0.8].
+
+```python
+refund      = [0.6, 0.8, 0.0]
+money_back  = [0.8, 0.6, 0.0]
+store_hours = [0.0, 0.6, 0.8]
+
+def dot(a, b):                        # unit vectors: dot product = cosine
+    return sum(x * y for x, y in zip(a, b))
+
+dot(refund, money_back)    # 0.96  nearly the same direction
+dot(refund, store_hours)   # 0.48  loosely related
+```
 
 <Callout type="math" label="Let us check the math">
 **refund · money back** = 0.6 × 0.8 + 0.8 × 0.6 + 0 × 0 = 0.48 + 0.48 = **0.96** (nearly the same direction).<br />
@@ -90,6 +119,12 @@ That last line is why vector databases exist. They build approximate nearest-nei
 
 Embeddings find related text. Related is not always what you asked for.
 
+<Compare caption="Keyword search keeps exact strings, embeddings keep meaning, and hybrid search keeps both." cols={[
+  { title: "Keyword (BM25)", rows: ["+ Finds E-4012 exactly", "- Misses terminate vs cancel"] },
+  { title: "Embeddings", rows: ["+ Finds terminate vs cancel", "- Blurs codes, SKUs, names"] },
+  { title: "Hybrid", kind: "good", rows: ["+ Runs both, merges results", "+ Model still reads candidates"] },
+]} />
+
 - **Exact strings blur.** Error code `E-4012`, a SKU, or a function name matter character by character, and embeddings treat them loosely. Run keyword search (often BM25, a standard word-matching score) alongside embeddings and merge the results: **hybrid search**. Coding agents often skip embeddings entirely and use grep, covered in [Agentic Search vs RAG](/c/agentic_search/).
 - **Opposites can look alike.** "Can I return sale items?" and "Sale items cannot be returned" are close in meaning-space, and the second one is the answer you want. Similarity finds candidates; the model still has to read them. That is [RAG](/c/rag/).
 - **What you embed matters.** A whole 40-page manual becomes one vector that means "everything", so nothing matches it well. Splitting documents into the right pieces is [Chunking and Indexing](/c/chunking/).
@@ -99,3 +134,11 @@ Also budget for re-embedding everything when you change embedding models: vector
 ## In the real world
 
 Anthropic does not ship its own embedding model. Its docs point to Voyage AI's models and show the same pattern you build here: embed documents once, embed the query, rank by dot product. The bundled `embed()` in the lab is a tiny hashed-features model with a small synonym table, not a neural network, but the search code you write is exactly what you would run against a real one.
+
+<Trace caption="Swap the lab's embed() for a real model and the search code stays the same." steps={[
+  { role: "note", text: "Lab: hashed features + synonyms. Real: a Voyage AI model." },
+  { role: "tool", text: "embed() every document once, store the vectors", tag: "offline" },
+  { role: "user", text: "terminate membership" },
+  { role: "tool", text: "embed(query)", tag: "per query" },
+  { role: "result", text: 'Rank by dot product: "How do I cancel my subscription?"', good: true },
+]} />

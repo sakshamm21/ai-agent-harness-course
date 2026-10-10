@@ -12,10 +12,20 @@ A scripted coding agent is asked to "switch the app to test keys and tidy up app
 3. `config/.env.local`: another secrets file.
 4. `docs/environment.md`: a harmless docs page.
 
+<Trace caption="With no hooks, every write lands, including the one that replaces your live key." steps={[
+  { role: "model", text: 'write_file(".env", "STRIPE_KEY=sk_test_000")', tag: "tool_use" },
+  { role: "tool", text: "Wrote 22 chars to .env", bad: true },
+  { role: "model", text: 'write_file("app.py", "def total(xs):\\n\\treturn sum(xs)   ...")', tag: "tool_use" },
+  { role: "tool", text: "Wrote 36 chars to app.py", meta: "tab + trailing spaces kept", bad: true },
+  { role: "note", text: ".env is now: STRIPE_KEY=sk_test_000" },
+]} />
+
 You will not change the model or the tools. You will add two **hooks**: small functions the harness calls around every tool call. `run_loop` already accepts them:
 
 - `pre_tool(name, args)` runs **before** the tool. Returning `False` blocks the call; the model gets an error result that says so.
 - `post_tool(name, args, result)` runs **after** a successful call. Returning a string replaces the result the model sees; returning `None` keeps it.
+
+<Flow steps={[{ label: "tool_use", sub: "from the model" }, { label: "pre_tool", sub: "False blocks it", kind: "hl" }, { label: "write_file", sub: "runs" }, { label: "post_tool", sub: "may rewrite result", kind: "hl" }, { label: "tool_result", sub: "back to the model" }]} caption="The harness calls your two hooks around every tool call; the model and tools stay unchanged." />
 
 ## Your task
 
@@ -30,3 +40,8 @@ You will not change the model or the tools. You will add two **hooks**: small fu
 - `app.py` is formatted, and `post_tool` reports that in its result.
 - `post_tool` returns `None` for other tools.
 - The transcript contains exactly two error results, one per blocked write, so the model knows.
+
+<Compare caption="Match the file name exactly: only .env and .env.* files are blocked." cols={[
+  { title: "Blocked", sub: "error result to the model", kind: "bad", rows: ["- .env", "- config/.env.local"] },
+  { title: "Allowed", sub: "write goes through", kind: "good", rows: ["+ docs/environment.md", "+ src/envelope.py", "+ app.py, then auto-formatted"] },
+]} />

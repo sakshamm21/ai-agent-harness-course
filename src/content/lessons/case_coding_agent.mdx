@@ -43,6 +43,12 @@ A developer types: "Invoices round tax per line instead of per invoice. Fix it a
 
 The failure cost has two very different halves. A wrong edit is cheap: the tests catch it, and `git diff` shows it. A wrong shell command is not: `git clean -fdx` deletes uncommitted work, and `git push --force` overwrites other people's commits. So the design has to let the agent edit freely and run commands carefully.
 
+<Compare caption="Edits are cheap to get wrong and shell commands are not, so they get different rules." cols={[
+  { title: "A wrong edit", sub: "cheap", kind: "good", rows: ["+ The tests catch it", "+ git diff shows it", "+ git can undo it"] },
+  { title: "A wrong command", sub: "expensive", kind: "bad", rows: ["- git clean -fdx: work deleted", "- git push --force: commits lost"] },
+]} verdict="Edit freely, run commands carefully." />
+
+
 This lesson walks the [6-step method](/c/method/) using public documentation of tools like Claude Code. It describes a design *like* Claude Code, based on public documentation; it is not how Claude Code works internally.
 
 ## Step 2: twenty turns, and every turn resends everything
@@ -59,6 +65,12 @@ Context on turn 20: 8k + 38k = **46k tokens**. A 40-file rename that reads every
 
 Two design facts fall out. Caching is not optional for a coding agent: the transcript prefix is reused on every turn ([Prompt Caching](/c/caching/)). And big tasks will outgrow the window, so step 4 needs a plan for that.
 
+<Bars caption="Caching the reused transcript prefix cuts a 20-turn task from $1.74 to $0.43." unit="$" bars={[
+  { label: "No cache", value: 1.74, kind: "bad", note: "$1.74 · $870/day" },
+  { label: "90% cache hits", value: 0.43, kind: "good", note: "$0.43 · $215/day" },
+]} />
+
+
 ## Step 3: few tools, and a rule for each
 
 Public docs for Claude Code list tools for reading, editing and writing files, searching (grep and glob), and running shell commands. A minimal version looks like this:
@@ -72,6 +84,23 @@ Public docs for Claude Code list tools for reading, editing and writing files, s
 
 `edit_file` takes an exact string to replace instead of a whole new file, so a 3-line fix costs 3 lines of output, not 300. `bash` runs in the project directory, ideally in a sandbox or container, and asks before anything not on the allowlist ([Permissions and Sandboxing](/c/permissions/)). Claude Code's docs describe exactly this pattern: an allowlist you tune over time, so routine commands stop prompting.
 
+```json
+{
+  "name": "edit_file",
+  "description": "Replaces one exact string in a file. old_string must appear exactly once; include surrounding lines to make it unique. Use for small changes instead of rewriting the file.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" },
+      "old_string": { "type": "string", "description": "Exact text to replace, unique in the file" },
+      "new_string": { "type": "string" }
+    },
+    "required": ["path", "old_string", "new_string"]
+  }
+}
+```
+
+
 ## Step 4: one loop, compaction, and subagents for exploring
 
 <Flow steps={["Developer", { label: "Main loop", sub: "plans, edits, tests", kind: "hl" }, { label: "Permissions", sub: "allow / ask / deny" }, "Tools"]} loop loopLabel="tool results go back into the main context" caption="The main loop of a coding agent. Exploration can go to a subagent with its own context, and only its summary comes back." />
@@ -82,6 +111,12 @@ The core is the [agent loop](/c/agent_loop/) you already know. Three pieces keep
 - **Compaction.** When the context passes about 70% of the window, summarize the history and keep going ([Context Management](/c/context_mgmt/)). Claude Code documents both a manual `/compact` command and automatic compaction.
 - **Subagents.** "Find every use of `UserRecord`" can return 8k tokens of grep output. Hand it to a [subagent](/c/subagents/) with a fresh context, and only a 1k summary comes back.
 
+<Bars caption="A subagent explores in its own context, so the main loop gets 1k tokens instead of 8k." unit="k" bars={[
+  { label: "grep output in main loop", value: 8, kind: "bad", note: "8k tokens" },
+  { label: "subagent summary", value: 1, kind: "good", note: "1k tokens" },
+]} />
+
+
 Cap the loop too: a turn limit and a cost limit per task ([Stop Conditions](/c/stop_conditions/)).
 
 ## Step 5: the test suite is the eval, and hooks are the guardrail
@@ -90,6 +125,19 @@ Coding agents have an unusual gift: the repo's tests tell you whether the change
 
 Guardrails live in the harness, not the prompt. Permission rules block or ask, and [hooks](/c/hooks/) run your own code before or after a tool call, for example refusing any `bash` command that contains `--force`.
 
+```python
+def pre_tool(name, args):
+    if name == "bash" and "--force" in args["command"]:
+        return False                      # block: the model gets an error result
+    return None                           # allow, or fall through to permission rules
+
+def trajectory_ok(run):                   # eval: tests ran before "done"
+    ran_tests = any(c["name"] == "bash" and "pytest" in c["input"]["command"]
+                    for c in run.tool_calls)
+    return (True, "") if ran_tests else (False, "said done without running the tests")
+```
+
+
 ## Step 6: the tradeoff is speed against oversight
 
 Every permission prompt is a developer pulled out of their work. Too many, and they start approving without reading, or switch the checks off. Too few, and one bad command costs a day. Three ways to balance it:
@@ -97,5 +145,18 @@ Every permission prompt is a developer pulled out of their work. Too many, and t
 - **Tune the allowlist from traces.** If `pytest` was approved 40 times last week, allow it ([Tracing](/c/tracing/)).
 - **Sandbox instead of asking.** A container with no network and no credentials can run more commands without a prompt.
 - **Keep edits reversible.** Work on a branch or a git worktree so any edit is one `git checkout` away from undone.
+
+<States caption="A command starts out asking, and the traces tell you when it can graduate to the allowlist." states={[
+  { id: "new", label: "Command", sub: "model wants to run it" },
+  { id: "ask", label: "Ask developer", sub: "interrupts their work", kind: "hl" },
+  { id: "allow", label: "Allowlisted", sub: "runs, no prompt", kind: "good" },
+  { id: "deny", label: "Blocked", sub: "hook: --force", kind: "bad" },
+]} edges={[
+  { from: "new", to: "ask", label: "not on allowlist" },
+  { from: "ask", to: "allow", label: "approved 40 times: allow it" },
+  { from: "new", to: "allow", label: "pytest, npm test" },
+  { from: "new", to: "deny", label: "matches a hook" },
+]} path={["new", "ask", "allow"]} />
+
 
 In the lab, the draft runs every command it writes and floods its own context on the big rename. Add the permission rule, the compactor and the subagent, and keep the cost under budget. Then build the real thing, about 800 lines of Python, in [nanoharness](/p/nanoharness/).

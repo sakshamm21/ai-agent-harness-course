@@ -43,6 +43,14 @@ reading:
 
 Your team's repo has three rules: use pnpm, run `pnpm test` before finishing, and never edit files under `generated/` because codegen overwrites them. You give the coding agent four small tasks. In about 19 runs out of 20, it runs `npm install` and edits `generated/order.ts` by hand.
 
+
+<Trace caption="The rules exist, but not in the context, so the agent breaks them in 19 runs out of 20." steps={[
+  { role: "user", text: "Add a discount field to orders" },
+  { role: "model", text: 'shell("npm install")', tag: "tool_use", bad: true, meta: "rule: use pnpm" },
+  { role: "model", text: 'edit_file("generated/order.ts")', tag: "tool_use", bad: true, meta: "rule: never edit generated/" },
+  { role: "model", text: "Done. Added the discount field.", tag: "end_turn", bad: true, meta: "no pnpm test" },
+]} />
+
 Meanwhile every call sends a 6,000-token prefix (a 2,000-token base prompt and 14 tool schemas) into a 16,000-token window, and the last turns of each task scrape the ceiling.
 
 ## The model only knows what you put in front of it
@@ -50,6 +58,12 @@ Meanwhile every call sends a 6,000-token prefix (a 2,000-token base prompt and 1
 The rules live in a wiki page and in people's heads. They are not in the context, so for the model they do not exist. When it has to pick a package manager it picks the one it saw most often in training. That is npm. When it sees a file with the type it needs to change, it edits that file.
 
 This is the core fact of this lesson: **on every call, the harness builds the context from scratch.** The model has no memory of the last call except what the harness puts back in. So "the agent knows the house rules" really means "the harness put the house rules in the prompt, every time, somewhere the model pays attention to".
+
+
+<Compare caption="For the model, a rule that is not in the context does not exist." cols={[
+  { title: "Rules in a wiki", sub: "and in people's heads", kind: "bad", rows: ["- Never reach the context", "- Model picks npm from training", "- Edits the file it sees"] },
+  { title: "Rules in the prompt", sub: "put back on every call", kind: "good", rows: ["+ Sent with every request", "+ The model can follow them", "+ About 300 tokens"] },
+]} verdict="The harness builds the context from scratch on every call." />
 
 ## Build the stack on purpose
 
@@ -79,6 +93,12 @@ Saved: about **$0.15 per task**. At 2,000 tasks a month that is about $290.<br /
 **Window:** prefix 6,200 (with the task) + history growing 1,000 to 2,400 tokens a turn reaches 16,000 by turn 7 or 8. A summary memory that kicks in at 90% (14,400) keeps the peak under the window.
 </Callout>
 
+
+<Bars caption="Caching the 6,000-token prefix cuts its cost from $0.18 to about $0.034 per task." unit="$" bars={[
+  { label: "No caching", value: 0.18, kind: "bad", note: "$0.18 per task" },
+  { label: "Cached prefix", value: 0.034, kind: "good", note: "$0.034 · saves about $0.15" },
+]} />
+
 The rules themselves cost almost nothing: 300 tokens is 5% of the prefix, and once cached it is billed at a tenth of that. The cheapest fix in this lesson is also the one that matters most: with summary memory and caching but no rules, only about 1 change in 6 follows the house rules.
 
 ## The tradeoff: every block competes for the same window
@@ -89,6 +109,20 @@ The context is a budget, and every block you add takes room from the work.
 - **Tool schemas are a fixed tax.** Fourteen tools cost 4,000 tokens on every call, even when the task needs three. Load tool sets per task, or route first ([Designing Good Tools](/c/tool_design/), [Routing](/c/routing/)).
 - **Summaries lose detail.** A summary keeps the gist and drops exact lines. Decide when to summarize, truncate or offload in [Context Management](/c/context_mgmt/), and use caching deliberately in [Prompt Caching](/c/caching/).
 
+
+<Stack blocks={[
+  { label: "System prompt", tokens: 2000 }, { label: "Tool schemas (14, task needs 3)", tokens: 4000, kind: "hl" },
+  { label: "AGENTS.md, grown", tokens: 4000, kind: "bad" },
+]} budget={16000} caption="A grown rules file and unused tool schemas take 10,000 of 16,000 tokens before any work." />
+
 ## In the real world
 
 Claude Code reads `CLAUDE.md` files at the start of a session (one in your home directory for personal preferences, one in the project root for the team) and places them in the context, which is why teams commit theirs to the repo. Codex CLI, Cursor and several other agents read `AGENTS.md`, an open format: a plain Markdown file of build commands, test commands and conventions. The format suggests putting one in each package of a monorepo, with the nearest file to the code taking precedence. In every case the mechanism is the same as in the lab: the harness reads a file and pastes it into the stack.
+
+```markdown
+# AGENTS.md
+
+- Use pnpm, never npm: `pnpm install`
+- Run `pnpm test` before you finish.
+- Do not edit files under `generated/`. Codegen overwrites them.
+```

@@ -43,6 +43,15 @@ Your checkout agent creates an order, then calls `charge_card`. The payment API 
 
 Then the support tickets start. Over 60 checkouts, 6 customers were charged twice. Each "failed" call had in fact gone through; only the reply was lost.
 
+<Trace caption="The first call went through and only the reply was lost, so the retry charged again." steps={[
+  { role: "model", text: 'charge_card(order="ord_5521")', tag: "tool_use" },
+  { role: "error", text: "Timed out, safe to retry", bad: true },
+  { role: "note", text: "Server side: the first charge already succeeded" },
+  { role: "model", text: 'charge_card(order="ord_5521")', tag: "tool_use" },
+  { role: "tool", text: "charged" },
+  { role: "result", text: "Customer charged twice", bad: true },
+]} />
+
 ## A timeout is not a failure
 
 A remote call has three outcomes, not two:
@@ -50,6 +59,15 @@ A remote call has three outcomes, not two:
 1. **It succeeded** and you got the reply.
 2. **It failed** and you got an error that says so.
 3. **You do not know.** The connection dropped, or you stopped waiting after 10 seconds. The server may have finished the work a moment later.
+
+<Lanes caption="The harness stops waiting at 10 s, but the server finishes the charge a moment later." unit="s" total={18} lanes={[
+  { heading: "Your harness" },
+  { label: "attempt 1: waiting", start: 0, end: 10, kind: "bad", note: "gives up" },
+  { label: "attempt 2", start: 10, end: 13 },
+  { heading: "Payment API" },
+  { label: "charge 1", start: 0, end: 11, note: "done, reply lost" },
+  { label: "charge 2", start: 10, end: 13, kind: "bad", note: "charged again" },
+]} marks={[{ at: 10, label: "timeout" }]} />
 
 Case 3 is the dangerous one. For a read, retrying is free: reading an order twice changes nothing. For a call with a **side effect** (charging a card, sending an email, creating a ticket), retrying an unknown outcome can do the work twice.
 
@@ -89,6 +107,12 @@ Use the lab's numbers: 30% of calls time out, and half of those timeouts happen 
 **With a key:** the retry returns the first result. **0 double charges.**<br />
 **Reliability of the retry:** a checkout fails only if all 3 attempts time out: 0.3³ = **2.7%**. So 97.3% complete, the same as before. The key does not change how often you retry; it makes the retries harmless.<br />
 **Cost:** one stored row per key. Stripe keeps keys for at least 24 hours: about 2,000 rows a day here.
+
+<Bars caption="Same retries, same 97.3% completion rate, but the key takes double charges to zero." bars={[
+  { label: "Double charges / day, no key", value: 300, kind: "bad", note: "300 · $30,000 to refund" },
+  { label: "Double charges / day, with key", value: 0, kind: "good", note: "0" },
+]} />
+
 </Callout>
 
 ## The tradeoff: what counts as "the same" operation
@@ -99,10 +123,25 @@ Idempotency keys move the hard question into one place: when are two calls the s
 - **Too narrow a key** (a new UUID per attempt) does nothing. Generate it once and persist it with the task, so a crash and [resume](/c/sessions/) reuses it.
 - **Not every tool supports keys.** For those, check state before retrying, make the error message say whether a retry is safe ([Tool Errors](/c/tool_errors/)), and put the riskiest calls behind [Human in the Loop](/c/hitl/).
 
+<Compare caption="Scope the key to one intended operation: not the customer, not the attempt." cols={[
+  { title: "Customer id", sub: "too broad", kind: "bad", rows: ["- A real second order looks like a retry"] },
+  { title: "Order id + action", sub: "one intent", kind: "good", rows: ["+ Every retry shares the key", "+ A new order gets a new key"] },
+  { title: "New UUID per attempt", sub: "too narrow", kind: "bad", rows: ["- Each retry is a new charge"] },
+]} verdict="Generate the key once, persist it with the task, reuse it on every retry and resume." />
+
 Stripe's implementation adds one more safeguard: if a retry with a known key arrives with *different* parameters, it returns an error instead of guessing.
 
 ## In the real world
 
 Stripe's API is the standard example. You send an `Idempotency-Key` header on a POST; Stripe saves the status code and body of the first request with that key, whether it succeeded or failed, and returns the same response for any retry. Keys can be pruned once they are at least 24 hours old. Many payment and messaging APIs offer the same pattern, and an agent tool that wraps them should pass a key through on every call.
+
+<Trace caption="Stripe replays the saved response for a known key, and rejects a known key with new parameters." steps={[
+  { role: "system", text: "POST charge · Idempotency-Key: ord_5521:charge · amount=100" },
+  { role: "error", text: "timeout: the reply is lost", bad: true },
+  { role: "system", text: "retry: same key, same parameters" },
+  { role: "tool", text: "saved status and body of the first request", good: true },
+  { role: "system", text: "retry: same key, amount=120" },
+  { role: "error", text: "error: parameters differ from the first request" },
+]} />
 
 You will make the support bot's `issue_refund` safe to retry in part 3 of the supportbot project.

@@ -43,6 +43,15 @@ reading:
 
 Your report agent reads a day of support tickets and writes a summary. On your laptop it takes 90 seconds and works every time. You put it behind an API endpoint, and the first week goes badly. About 1 request in 5 hits the load balancer's 60-second timeout, so the browser shows an error while the agent keeps running and finishes a report nobody receives. Users click retry, so the same report runs twice. One job hangs on a slow upstream API for 40 minutes. And a job log contains your provider API key, because the agent ran `env` to debug a 401.
 
+<Lanes caption="The timeout cuts the connection at 60 seconds, but the run keeps going, and the retry runs it again." unit="s" total={150} lanes={[
+  { heading: "Browser" },
+  { label: "request", start: 0, end: 60, kind: "bad", note: "timeout at 60 s" },
+  { heading: "Agent" },
+  { label: "run 1", start: 0, end: 90, note: "report nobody receives" },
+  { label: "run 2, user retried", start: 60, end: 150, kind: "bad", note: "same report twice" },
+]} marks={[{ at: 60, label: "load balancer timeout" }]} />
+
+
 ## A web request is the wrong shape for an agent run
 
 A web request is meant to be short and to have one owner who is waiting. An agent run is long, variable in length, calls flaky services, and can loop. Putting one inside the other causes the failures above:
@@ -51,6 +60,12 @@ A web request is meant to be short and to have one owner who is waiting. An agen
 - **Retries** from impatient users and clients repeat side effects.
 - **No budget** means a stuck job runs until something kills it.
 - **The model can reach whatever the process can reach**, including its own credentials.
+
+<Compare caption="A web request is short with one waiting owner; an agent run is neither." cols={[
+  { title: "Web request", sub: "what the stack expects", rows: ["Short, fixed length", "One owner who is waiting", "Retry is harmless"] },
+  { title: "Agent run", sub: "what you put inside it", kind: "bad", rows: ["Long, variable length", "Calls flaky services", "Can loop, repeats side effects"] },
+]} verdict="Timeouts cut the connection, not the work." />
+
 
 ## Accept the job, then run it in a worker
 
@@ -78,9 +93,29 @@ In progress = 0.21 × 90 s ≈ **19 jobs at once**. With 20 worker slots the que
 
 The queue turns a capacity problem into a waiting-time choice: pay for 20 slots and finish every report within minutes, or run 10 and accept that some morning reports arrive two hours late.
 
+<Bars caption="Little's law: about 19 jobs run at once in the morning peak, so 20 worker slots keep the queue short." unit="" bars={[
+  { label: "Peak, in progress", value: 19, kind: "hl", note: "about 19 jobs" },
+  { label: "Off-peak, in progress", value: 1.7, note: "about 1.7 jobs" },
+  { label: "Worker slots", value: 20, kind: "good", note: "20 slots" },
+]} />
+
+
 ## The tradeoff: more moving parts, slower answers
 
 The worker design is sturdier, and it costs you:
+
+<States caption="Queues deliver at least once, so a job can run twice and every side effect must be safe to repeat." states={[
+  { id: "queued", label: "Queued", sub: "job id returned" },
+  { id: "running", label: "Running", sub: "one agent loop", kind: "hl" },
+  { id: "done", label: "Done", sub: "result stored", kind: "good" },
+  { id: "stopped", label: "Stopped", sub: "turn, cost or time cap", kind: "bad" },
+]} edges={[
+  { from: "queued", to: "running", label: "worker picks it up" },
+  { from: "running", to: "queued", label: "worker dies: redelivered" },
+  { from: "running", to: "done", label: "report written" },
+  { from: "running", to: "stopped", label: "budget hit" },
+]} path={["queued", "running", "queued", "running", "done"]} />
+
 
 - **Latency and UX.** The user no longer gets an answer in the same request. You need a job status page, polling or webhooks, and [streaming](/c/streaming/) progress if they watch.
 - **At-least-once delivery.** Queues redeliver. Every side effect must be safe to repeat, or the retry double-charges ([Retries and Idempotent Tools](/c/idempotency/)).
@@ -89,5 +124,14 @@ The worker design is sturdier, and it costs you:
 ## In the real world
 
 Claude Code's GitHub Actions integration runs an agent as exactly this kind of background job. A comment that mentions `@claude` on an issue or pull request triggers a workflow; a GitHub-hosted runner (the worker) starts Claude Code, which works on the repo and posts its result back as a comment or a pull request. The API key is stored as a repository secret and injected into the runner by the platform, and the workflow file pins what the agent is allowed to do.
+
+<Trace caption="GitHub Actions runs Claude Code as a background job: trigger, worker, result posted back." steps={[
+  { role: "human", text: "Comments on an issue or pull request, mentioning @claude" },
+  { role: "system", text: "Workflow triggers; a GitHub-hosted runner starts Claude Code", tag: "worker" },
+  { role: "system", text: "API key injected from a repository secret", meta: "not in the repo" },
+  { role: "model", text: "Works on the repo within what the workflow file allows" },
+  { role: "result", text: "Posts its result back as a comment or a pull request", good: true },
+]} />
+
 
 The lab canvas shows only the worker: one job at a time, with the queue, API, store and secrets manager outside the picture. You set what that worker needs to survive production: a fallback model, a turn and cost budget, and no path from the model to the key.

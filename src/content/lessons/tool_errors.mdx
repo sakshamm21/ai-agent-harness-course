@@ -43,6 +43,15 @@ Your order-status agent calls `get_order`, then `track_shipment` on the carrier'
 
 It never got a status. It made one up. The customer waits all day for a parcel that is still in a depot in Leeds.
 
+
+<Trace caption="The tracking call failed, and the model filled the gap with a confident guess." steps={[
+  { role: "model", text: 'get_order({"id": "A1042"})', tag: "tool_use" },
+  { role: "tool", text: "order found, shipped" },
+  { role: "model", text: 'track_shipment({"order": "A1042"})', tag: "tool_use" },
+  { role: "error", text: "ConnectionResetError: Connection reset by peer", bad: true, meta: "raw traceback" },
+  { role: "model", text: "Good news, your order is out for delivery and should arrive today!", tag: "end_turn", bad: true },
+]} />
+
 ## An error is just more text to the model
 
 Here is what the model sees when the call fails:
@@ -103,6 +112,12 @@ At 1,000 orders a day, that is 350 failures × 2,340 tokens saved ≈ 819k token
 
 The tokens are a bonus. The real win is 20 more customers in every 100 getting a true answer.
 
+
+<Bars caption="Actionable errors raise correct statuses from about 76% to 96%." unit="%" max={100} bars={[
+  { label: "Raw tracebacks", value: 76, kind: "bad", note: "76% · 1 in 4 gets a guess" },
+  { label: "Actionable errors", value: 96, kind: "good", note: "96% · up to 2 retries" },
+]} />
+
 ## The tradeoff: retries are not free either
 
 Telling the model "safe to retry" works only when it is true, and every retry costs something:
@@ -111,6 +126,21 @@ Telling the model "safe to retry" works only when it is true, and every retry co
 - **Retry loops.** A model told to retry can keep retrying a service that is down. Cap retries in code and in the turn budget ([Stop Conditions and Budgets](/c/stop_conditions/)), and fail over when a dependency is out ([Timeouts and Fallbacks](/c/timeouts/)).
 - **Leaking internals.** Raw errors can carry file paths, hostnames or keys. Send the model a summary, and keep the full trace in your logs ([Tracing](/c/tracing/)).
 
+
+<States caption="Retries need a cap in code, so a dead service ends in an honest answer, not a loop." states={[
+  { id: "call", label: "Call tool", kind: "hl" }, { id: "fail", label: "Failed", sub: "timeout", kind: "bad" },
+  { id: "ok", label: "Got status", kind: "good" }, { id: "tell", label: "Tell the user", sub: "retries used up" },
+]} edges={[
+  { from: "call", to: "fail", label: "error" }, { from: "fail", to: "call", label: "retry, up to 2" },
+  { from: "call", to: "ok", label: "success" }, { from: "fail", to: "tell", label: "cap hit" },
+]} path={["call", "fail", "call", "fail", "call", "fail", "tell"]} />
+
 ## In the real world
 
 The Claude API builds this in. A `tool_result` can carry `is_error: true`, and Anthropic's docs suggest returning a helpful error message in that block so Claude can retry or explain. MCP does the same thing at the protocol level: a tool that runs but fails returns `isError: true` with a text message in the normal result, so the model sees it, while protocol problems like an unknown tool are reported as JSON-RPC errors to the client.
+
+<Compare caption="Tool failures go to the model as results; protocol problems go to the client." cols={[
+  { title: "Claude API", sub: "tool_result block", rows: ["+ is_error: true", "+ A helpful message so Claude can retry"] },
+  { title: "MCP tool failure", sub: "tool ran but failed", kind: "good", rows: ["+ isError: true in the normal result", "+ The model sees the text message"] },
+  { title: "MCP protocol error", sub: "e.g. unknown tool", rows: ["- JSON-RPC error", "- Reported to the client, not the model"] },
+]} verdict="If the model can act on it, send it as a result." />

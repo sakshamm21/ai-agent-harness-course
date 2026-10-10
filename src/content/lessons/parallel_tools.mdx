@@ -43,9 +43,26 @@ A research agent answers "How many heat pumps were installed in the UK in 2025?"
 
 The transcript shows why. It fetches page 1 and waits. Then it calls the model, which asks for page 2. Then it waits again. Five pages, five round trips, each one a model call of 1.6 seconds plus a 1.5-second fetch.
 
+
+<Trace caption="One page per turn: every fetch waits for a model call that only asks for the next page." steps={[
+  { role: "user", text: "How many heat pumps were installed in the UK in 2025?" },
+  { role: "model", text: 'web_search({"query": "UK heat pump installs 2025"})', tag: "tool_use", meta: "1.6 s" },
+  { role: "tool", text: "5 result URLs", meta: "0.4 s" },
+  { role: "model", text: 'fetch_page({"url": "<result 1>"})', tag: "tool_use", meta: "1.6 s" },
+  { role: "tool", text: "page 1 text", meta: "1.5 s" },
+  { role: "model", text: 'fetch_page({"url": "<result 2>"})', tag: "tool_use", meta: "1.6 s" },
+  { role: "note", text: "pages 3, 4 and 5: one more round trip each" },
+  { role: "model", text: "A comparison of the five sources", tag: "end_turn", meta: "19 s, 7 turns", bad: true },
+]} />
+
 ## The calls don't depend on each other, but the loop pretends they do
 
 The search has to come first, because the fetches need its URLs. After that, the five fetches are **independent**: page 3 does not need anything from page 2. You could hand all five URLs to five people at once.
+
+
+<Fan caption="After the search, the five fetches need nothing from each other, so they can all start at once." root={{ label: "web_search", sub: "returns 5 URLs", kind: "hl" }}
+  items={[{ label: "fetch_page", sub: "page 1" }, { label: "fetch_page", sub: "page 2" }, { label: "fetch_page", sub: "page 3" }, { label: "fetch_page", sub: "page 4" }, { label: "fetch_page", sub: "page 5" }]}
+  merge={{ label: "Model", sub: "writes the comparison", kind: "good" }} fanLabel="independent" mergeLabel="all 5 results" />
 
 The loop from [The Agent Loop](/c/agent_loop/) runs one step at a time. If the model asks for one page per turn, the harness waits for that page, sends it back, and calls the model again just to hear "now page 2". Four of those five model calls add nothing. They only exist because the model asked for one thing at a time.
 
@@ -95,6 +112,22 @@ At medium sim prices ($3 per million input, illustrative): $0.098 vs $0.035 per 
 
 The latency win grows with the number of calls. Ten independent fetches save nine round trips.
 
+
+<Lanes caption="Sequential takes 19.1 s; one parallel fetch turn brings it to 6.7 s." unit="s" total={19.1} lanes={[
+  { heading: "Sequential, 7 turns" },
+  { label: "search", start: 0, end: 2.0 },
+  { label: "page 1", start: 2.0, end: 5.1 },
+  { label: "page 2", start: 5.1, end: 8.2 },
+  { label: "page 3", start: 8.2, end: 11.3 },
+  { label: "page 4", start: 11.3, end: 14.4 },
+  { label: "page 5", start: 14.4, end: 17.5 },
+  { label: "answer", start: 17.5, end: 19.1, kind: "bad", note: "19.1 s" },
+  { heading: "Parallel, 3 turns" },
+  { label: "search", start: 0, end: 2.0, kind: "good" },
+  { label: "pages 1-5", start: 2.0, end: 5.1, kind: "good" },
+  { label: "answer", start: 5.1, end: 6.7, kind: "good", note: "6.7 s" },
+]} marks={[{ at: 6.7, label: "parallel done" }]} />
+
 ## The tradeoff: parallel is only safe when the calls really are independent
 
 Running calls together trades simplicity for speed, and it has limits:
@@ -103,8 +136,18 @@ Running calls together trades simplicity for speed, and it has limits:
 - **Bursts of load.** Five calls at once is five times the request rate on someone's API. Cap concurrency and handle rate limits and timeouts ([Timeouts and Fallbacks](/c/timeouts/)).
 - **A big context, all at once.** Five pages land in one turn: 6,000 tokens in a single step. Hand big reads to a [subagent](/c/subagents/) that returns a summary, or [compact](/c/context_mgmt/) early.
 
+
+<Compare caption="Run calls together only when neither one needs or changes what the other touches." cols={[
+  { title: "Safe in parallel", sub: "independent reads", kind: "good", rows: ["+ Five fetch_page calls", "+ One bad URL fails alone", "+ Cap concurrency for rate limits"] },
+  { title: "Keep in order", sub: "hidden dependencies", kind: "bad", rows: ["- create_branch, then commit", "- Two writes to the same file", "- Side effects that may collide"] },
+]} verdict="Parallel by default for reads; sequential for writes unless you know they don't collide." />
+
 This lesson is about parallel *tool calls* inside one turn. Running several *model calls* side by side and combining them is [Parallelization and Voting](/c/parallelization/).
 
 ## In the real world
 
 Claude Code shows this openly: one assistant message often holds several `Read` or `Grep` calls, and the results come back together. Anthropic's write-up of its multi-agent research system reports that letting subagents run in parallel, and letting each one call several tools in parallel, cut research time by up to 90% on complex queries.
+
+<Fan caption="Parallel subagents, each making parallel tool calls, cut research time by up to 90% on complex queries." root={{ label: "Lead agent", sub: "plans the research", kind: "hl" }}
+  items={[{ label: "Subagent", sub: "tools in parallel" }, { label: "Subagent", sub: "tools in parallel" }, { label: "Subagent", sub: "tools in parallel" }]}
+  fanLabel="run in parallel" />

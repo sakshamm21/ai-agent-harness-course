@@ -40,6 +40,11 @@ child = Agent(parent.subagent_model or parent.model, parent.tools.without("task"
 - **No `messages`, no `session`.** That is the "fresh context".
 - **Its own turn budget**, 15 by default, and optionally a cheaper `subagent_model` for search work.
 
+<Compare caption="The child inherits the rules and none of the conversation." cols={[
+  { title: "Inherited", kind: "good", rows: ["+ Tools, minus task", "+ Permissions and hooks", "+ System prompt + preface"] },
+  { title: "Fresh", kind: "hl", rows: ["+ Empty messages", "+ No session file", "+ Own budget: 15 turns"] },
+]} />
+
 ### 2. Run it and return the report
 
 Run the prompt, charge the child's tokens to the parent, and return the report with a short header so the main agent knows where it came from:
@@ -52,6 +57,12 @@ return f"[subagent: {description}; {result.turns} turns]\n{text}"
 ```
 
 When the child runs out of turns, `final_text` is empty. Return a note instead of an empty string, so the main agent knows the job did not finish and can try a narrower one.
+
+<Trace caption="From the parent's side, a whole search is one tool call and one short result." steps={[
+  { role: "model", text: 'task("find where parse_date is defined and every caller")', tag: "tool_use" },
+  { role: "note", text: "child: grep, read_file, read_file, ... in its own transcript", meta: "parent sees none" },
+  { role: "result", text: "[subagent: find parse_date callers; 6 turns] Defined in dates.py, called in ...", tag: "tool_result", good: true },
+]} />
 
 `child_usage` matters for part 10. The child's tokens are real spend, and the eval runner adds them to the total.
 
@@ -72,6 +83,12 @@ The child can't see the conversation. The `task` tool's description says so, bec
 A search reads 20 files of about 2,000 tokens each: 40,000 tokens.<br />
 Done in the main loop, those 40,000 tokens ride along on every later turn. Ten more turns cost about **400,000 extra input tokens**.<br />
 Done in a subagent, the main loop gets a 200-token report. Ten more turns cost about **2,000**. The child still pays for its own reading once, but the parent stops paying for it on every turn.
+
+<Bars caption="Extra input tokens the parent pays over ten later turns, by where the 20-file search ran." unit="k" bars={[
+  { label: "In the main loop", value: 400, kind: "bad", note: "~400,000" },
+  { label: "In a subagent", value: 2, kind: "good", note: "~2,000" },
+]} />
+
 </Callout>
 
 ## Run the test

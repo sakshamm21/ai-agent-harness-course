@@ -38,6 +38,11 @@ def cap_output(text: str, limit: int) -> str:
 
 The default `max_output` is 20,000 characters, about 5,000 tokens.
 
+<Bars caption="One broken pytest run, before and after cap_output, in tokens added to the transcript." unit="k" bars={[
+  { label: "Raw output", value: 50, kind: "bad", note: "200,000 chars · ~50k tokens" },
+  { label: "Capped", value: 5, kind: "good", note: "20,000 chars · ~5k tokens" },
+]} />
+
 ### 2. Run the command in its own process group
 
 Run `bash -c` in the working directory, with stderr merged into stdout and stdin closed so nothing waits for input. `start_new_session=True` puts the shell and everything it starts in one process group, so a timeout can kill all of it:
@@ -62,6 +67,11 @@ return f"{text.rstrip()}\n{tail}".lstrip()
 
 Why the process group? `proc.kill()` kills only `bash`. A `sleep 600` or a dev server that `bash` started keeps running, and keeps the pipe open, so `communicate()` hangs anyway. Killing the group ends all of it. After the kill, `communicate()` collects whatever was printed before the timeout, and the model gets that too.
 
+<Lanes caption="sleep 10 with a 0.5 s timeout: killing only bash leaves the pipe open, killing the group returns at once." unit="s" total={10} lanes={[
+  { heading: "proc.kill()" }, { label: "bash", start: 0, end: 0.5 }, { label: "sleep holds the pipe", start: 0, end: 10, kind: "bad", note: "communicate waits 10 s" },
+  { heading: "os.killpg(...)" }, { label: "bash", start: 0, end: 0.5, kind: "good" }, { label: "sleep", start: 0, end: 0.5, kind: "good", note: "back at 0.5 s" },
+]} marks={[{ at: 0.5, label: "timeout" }]} />
+
 A non-zero exit code is not an error result. A failing test run is exactly what the model needs to see, so `run` returns it as normal output with `[exit code 1]` at the end.
 
 ### 3. Strip secrets from the environment
@@ -85,6 +95,11 @@ def docker_argv(self, command: str) -> list[str]:
 ```
 
 Turn it on with `--docker python:3.12-slim`. The file tools still work on the host, through the same mounted folder, and still can't leave it.
+
+<Compare caption="Local mode stops accidents; Docker mode is a real boundary for work you don't trust." cols={[
+  { title: "Local", sub: "bash -c in workdir", rows: ["+ No setup, fast", "+ Timeout, cap, no secrets", "- Can cd .. and read your disk", "- Has your network"] },
+  { title: "Docker", sub: "--docker python:3.12-slim", kind: "good", rows: ["+ Sees only /work", "+ --network none", "+ Thrown away (--rm)", "- Needs Docker installed"] },
+]} />
 
 ## Run the test
 

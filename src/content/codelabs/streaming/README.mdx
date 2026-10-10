@@ -7,6 +7,17 @@ realModel: false
 
 A support bot answers **"Where is my order 4417?"**. It takes 3 turns: look up the order, look up the tracking scan, then answer. Right now the harness waits for each full response before it shows anything, and the tool calls happen silently. The user stares at a blank box.
 
+<Lanes caption="Streaming fills the same three turns with words and status lines instead of a blank box." unit="turns" total={3} lanes={[
+  { heading: "Now: wait for each full response" },
+  { label: "blank box, tools run silently", start: 0, end: 3, kind: "bad" },
+  { heading: "Streamed" },
+  { label: "Let me check that order.", start: 0, end: 0.5, kind: "good" },
+  { label: "Looking up: lookup_order...", start: 0.5, end: 1, kind: "hl" },
+  { label: "It shipped with DHL...", start: 1, end: 1.5, kind: "good" },
+  { label: "Looking up: get_tracking...", start: 1.5, end: 2, kind: "hl" },
+  { label: "final answer, chunk by chunk", start: 2, end: 3, kind: "good", note: "Answer ready (3 turns)" },
+]} />
+
 `Model.stream()` already yields events as the reply is generated: `{"type": "text_delta", "text": ...}` for each chunk, then `{"type": "tool_use", ...}` for any tool calls, then `{"type": "done", "response": ...}`. `run_loop` already calls `on_event` for every model turn and tool call. You will connect them to the screen.
 
 ## Your task
@@ -14,6 +25,19 @@ A support bot answers **"Where is my order 4417?"**. It takes 3 turns: look up t
 1. Finish `status_line(event)`. Return a short line for the events a user cares about: a `model` event with `tool_calls` ("Looking up: lookup_order..."), `tool` ("✓ lookup_order"), `tool_error` ("✗ lookup_order failed") and `done` ("Answer ready (3 turns)"). Return `None` for anything else.
 2. Finish `Streaming.complete()`. Loop over `self.inner.stream(...)`. For each `text_delta`, add it to `text`, add 1 to `self.shown`, append `("text", chunk)` to `TIMELINE` and print it with `end=""`. On `done`, return `ev["response"]`.
 3. Add the Stop button. When `self.stop_after` is set and `self.shown` reaches it, return `Response(text=text.rstrip() + " [stopped]")` straight away. It has no tool calls, so the loop treats it as the final answer and stops.
+
+<States caption="Stop returns a reply with no tool calls, so the stopped run ends after 2 turns and get_tracking never runs." states={[
+  { id: "stream", label: "Streaming", sub: "text_delta chunks", kind: "hl" },
+  { id: "tools", label: "Run tools", sub: "lookup_order" },
+  { id: "stop", label: "Stopped", sub: "[stopped]", kind: "bad" },
+  { id: "done", label: "Answer ready", kind: "good" },
+]} edges={[
+  { from: "stream", to: "tools", label: "tool_use" },
+  { from: "tools", to: "stream", label: "next turn" },
+  { from: "stream", to: "stop", label: "shown hits stop_after" },
+  { from: "stream", to: "done", label: "done, no tools" },
+]} path={["stream", "tools", "stream", "stop"]} />
+
 4. Press **Run**. The first words should appear before any status line, and the second run should stop mid-sentence.
 
 ## What the checks look for

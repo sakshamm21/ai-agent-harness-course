@@ -18,9 +18,21 @@ This part moves both rules into code, where they hold every time:
 - **Output redaction.** Every reply passes `redact_pii` before the customer sees it. Run `Where is my order NW-1003?` with guardrails off and the mock happily says "We send updates to sofia.garcia@example.com". With them on, it says `[email]`.
 - **Human approval.** A refund over $100 does not run. It becomes a row in the `approvals` table, and a person approves or rejects it later, from the web UI in part 8.
 
+<Compare caption="The prompt states the policy; code is what makes it hold every time." cols={[
+  { title: "Rule in the prompt", kind: "bad", rows: ["- Followed most of the time", "- Mock repeats the email", "- Big refund just runs"] },
+  { title: "Rule in code", kind: "good", rows: ["+ redact_pii on every reply", "+ Over $100 waits for a person", "+ Holds every time"] },
+]} />
+
 ## Steps
 
 1. **Redact with patterns, in the right order.** Card numbers go before phone numbers, or the phone pattern eats half a card number and leaves the rest. Count what you redacted: the count goes into the trace, the matched text never does.
+
+<Trace caption="The reply is redacted on the way out, and the trace keeps only the counts." steps={[
+  { role: "user", text: "Where is my order NW-1003?" },
+  { role: "model", text: "... We send updates to sofia.garcia@example.com", bad: true },
+  { role: "system", text: "redact_pii -> counts: email 1", tag: "redacted" },
+  { role: "result", text: "... We send updates to [email]", good: true },
+]} />
 
 ```python
 PII_PATTERNS = [
@@ -42,6 +54,11 @@ def redact_pii(text):
 Order numbers, tracking numbers and "card ending in 5037" are not PII here and must survive. The test checks that too: a redactor that removes everything with digits in it is useless.
 
 2. **Decide the threshold once.** `needs_approval` is strictly over the limit: $100.00 goes straight through, $100.01 waits. Write the boundary into a test so nobody "fixes" it to `>=` by accident.
+
+<Bars caption="The approval line is strictly over $100, so $100.00 refunds at once and $100.01 waits." unit="$" bars={[
+  { label: "refund $100.00", value: 100.00, kind: "good", note: "runs now" },
+  { label: "refund $100.01", value: 100.01, kind: "bad", note: "pending_approval" },
+]} />
 
 3. **Gate the refund.** `refund_gate` plugs into the hook you left in `run_tool`. Under the limit it returns `None` and the refund runs. Over it, it first checks the refund would be valid at all (no point asking a person to approve a refund on a shipped order), then stores a pending request under the same idempotency key, so a retry finds the same request instead of creating a second one.
 
@@ -65,6 +82,17 @@ def refund_gate(store, args, key):
 The model sees `pending_approval` as the tool result and tells the customer the refund is being reviewed. It does not get a way around it.
 
 4. **Approve with the stored key.** When a person approves, `approve_refund` calls `issue_refund` with the request's own idempotency key. Clicking Approve twice is then harmless: the second call finds the first refund. A rejected request can never be approved.
+
+<States caption="An approval is a small state machine, and approving reuses the request's own idempotency key." states={[
+  { id: "call", label: "issue_refund > $100" },
+  { id: "pend", label: "pending", kind: "hl" },
+  { id: "ok", label: "approved", sub: "Approve twice: one refund", kind: "good" },
+  { id: "no", label: "rejected", kind: "bad" },
+]} edges={[
+  { from: "call", to: "pend", label: "refund_gate" },
+  { from: "pend", to: "ok", label: "Approve" },
+  { from: "pend", to: "no", label: "Reject" },
+]} path={["call", "pend", "ok"]} />
 
 ```python
 refund = issue_refund(store, row["order_id"], row["amount"], row["reason"], row["idempotency_key"])

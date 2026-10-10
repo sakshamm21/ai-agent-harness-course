@@ -43,11 +43,27 @@ Your coding agent has to upgrade three services from payments SDK v2 to v3. It s
 
 The agent runs the codemod again. Then it runs the tests, which fail with "sdk.charge is not a function". Then it reports: "Plan complete. Upgrade done." In the lab, only about 3 upgrades in 10 actually finish.
 
+<Trace caption="The plan never changed, so a failed step was retried and then reported as done." steps={[
+  { role: "model", text: "Plan: read changelog, run codemod, run tests, report" },
+  { role: "model", text: "run_codemod()", tag: "tool_use" },
+  { role: "error", text: "Unsupported pattern: custom wrapper PaymentsClient. 0 files changed.", bad: true },
+  { role: "model", text: "run_codemod()", tag: "tool_use", meta: "same step again" },
+  { role: "model", text: "run_tests()", tag: "tool_use" },
+  { role: "error", text: "sdk.charge is not a function", bad: true },
+  { role: "model", text: "Plan complete. Upgrade done.", tag: "end_turn", bad: true },
+]} />
+
 ## A plan written once becomes a script
 
 Writing a plan first is good. It makes the model think about the whole task before it touches anything, and it gives you something to review. The problem is what happens next.
 
 The plan lives in one early message. It has no status, no way to mark a step failed, and no way to add a step. So the agent treats it as a script. When step 2 fails, its options are to repeat step 2, move on to step 3 as if step 2 worked, or give up. None of those is "the codemod cannot handle this repo, so edit the six call sites by hand."
+
+<Compare caption="A fixed plan leaves three bad moves after a failure, and none of them fixes it." cols={[
+  { title: "Repeat step 2", kind: "bad", rows: ["- Same codemod, same error"] },
+  { title: "Skip to step 3", kind: "bad", rows: ["- Tests fail: sdk.charge", "- Acts as if step 2 worked"] },
+  { title: "Give up", kind: "bad", rows: ["- Upgrade never done"] },
+]} verdict="Missing option: edit the six call sites by hand." />
 
 On long tasks it gets worse. The plan scrolls further up the context with every tool result, and the model sees less of it each turn.
 
@@ -91,11 +107,25 @@ Say a 5-step plan, and each step has a 10% chance that reality disagrees: a tool
 Each update is also a turn: about 1 to 2 extra seconds each.
 </Callout>
 
+<Bars caption="Replanning recovers most of the 41% of tasks where the plan meets reality." unit="%" max={100} bars={[
+  { label: "Plan survives as is", value: 59, note: "59% · 0.9⁵" },
+  { label: "Fixed plan", value: 67, kind: "bad", note: "≈ 67%" },
+  { label: "Replanning", value: 96, kind: "good", note: "≈ 96% · +$0.019" },
+]} />
+
 Two cents and a few seconds to turn a third of your failures into successes. The lab task is harsher: the codemod fails every time, so without replanning almost every run goes wrong.
 
 ## The tradeoff: plans cost turns, and agents can replan forever
 
 A todo list is not free, and too much planning is its own failure:
+
+<States caption="A replan should lead back to action; a turn or cost cap stops a loop of rewrites." states={[
+  { id: "act", label: "Act", sub: "next pending item" }, { id: "update", label: "Update todos", kind: "hl" },
+  { id: "done", label: "Done", sub: "every item done", kind: "good" }, { id: "stop", label: "Stopped", sub: "turn or cost cap", kind: "bad" },
+]} edges={[
+  { from: "act", to: "update", label: "observe" }, { from: "update", to: "act", label: "next item" },
+  { from: "update", to: "done", label: "all done" }, { from: "update", to: "stop", label: "budget hit" },
+]} path={["act", "update", "act", "update", "done"]} />
 
 - **Overhead on easy tasks.** A one-step question does not need a five-item plan. Let the agent skip the list for short tasks, and use it when a task has three or more steps.
 - **Endless replanning.** An agent that rewrites its plan every turn without acting is stuck, just more politely. Cap the turns and cost ([Stop Conditions and Budgets](/c/stop_conditions/)), and count replans in your traces ([Tracing and Observability](/c/tracing/)).
@@ -103,4 +133,14 @@ A todo list is not free, and too much planning is its own failure:
 
 ## In the real world
 
-Coding agents make this visible. Claude Code keeps a todo list it updates with a tool as it works, and shows it to you: items move from pending to in progress to done, and new ones appear when it finds more work. Anthropic's best-practices guide also recommends asking for a plan before any code is written. In deep research, the orchestrator plans which sub-questions to ask, and revises the list when workers come back with gaps. You will build that in part 1 of the deepresearch project.
+Coding agents make this visible. Claude Code keeps a todo list it updates with a tool as it works, and shows it to you: items move from pending to in progress to done, and new ones appear when it finds more work.
+
+<Trace caption="A visible todo list: items move from pending to done, and new ones appear as work is found." steps={[
+  { role: "user", text: "Upgrade the payments SDK to v3 in all three services" },
+  { role: "model", text: "[ ] read changelog  [ ] run codemod  [ ] run tests", tag: "todos" },
+  { role: "tool", text: "Unsupported pattern: custom wrapper PaymentsClient", bad: true },
+  { role: "model", text: "[x] read changelog  [!] codemod  [ ] edit 6 call sites  [ ] run tests", tag: "todos" },
+  { role: "model", text: "[x] read changelog  [!] codemod  [x] edit 6 call sites  [~] run tests", tag: "todos" },
+]} />
+
+Anthropic's best-practices guide also recommends asking for a plan before any code is written. In deep research, the orchestrator plans which sub-questions to ask, and revises the list when workers come back with gaps. You will build that in part 1 of the deepresearch project.

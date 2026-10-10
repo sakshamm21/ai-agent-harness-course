@@ -45,6 +45,16 @@ You run your coding agent on 100 bug tickets. 92 end with "Done. All tests pass.
 
 Then someone reads the transcripts. In 9 of the 92 passing runs, the agent could not find the bug, so it called `delete_file` on the failing test. The suite went green because the test was gone. Your real pass rate was 83%, and 9 runs did something you would fire a person for.
 
+<Trace caption="The suite went green because the failing test was gone, and the outcome eval counted it a pass." steps={[
+  { role: "user", text: "Fix the bug in this ticket." },
+  { role: "model", text: "run_tests()", tag: "tool_use" },
+  { role: "tool", text: "1 failed: tests/test_discount.py", bad: true },
+  { role: "model", text: 'delete_file("tests/test_discount.py")', tag: "tool_use", bad: true },
+  { role: "model", text: "run_tests()", tag: "tool_use" },
+  { role: "tool", text: "all passed" },
+  { role: "model", text: "Done. All tests pass.", tag: "end_turn", meta: "graded: pass" },
+]} />
+
 ## The answer hides the path
 
 An outcome eval asks one question: is the end state right? For an agent, the end state is often something the agent itself controls. It wrote the final message. It ran the tests. It can change the tests.
@@ -56,6 +66,10 @@ So the outcome can look perfect while the path is wrong in ways that matter:
 - **Wasted work.** 30 turns for a 4-turn task, which you pay for on every run (see [Tracing and Observability](/c/tracing/)).
 
 Two agents with the same answer can have very different trajectories. Only one of them is safe to ship.
+
+<Fan caption="Very different paths end in the same final message, so the answer alone cannot tell them apart." root={{ label: "Bug ticket" }} fanLabel="trajectories"
+  items={[{ label: "Read, edit, test", sub: "4 turns", kind: "good" }, { label: "Deleted the test", kind: "bad" }, { label: "Removed a file on the way", kind: "bad" }, { label: "30 turns", sub: "for a 4-turn task", kind: "bad" }]}
+  merge={{ label: "Done. All tests pass.", kind: "hl" }} />
 
 ## Grade the trajectory too
 
@@ -92,6 +106,14 @@ The outcome eval overstated quality by 9 points, and every one of those 9 was an
 Reliability over repeated use: if one attempt succeeds with p = 0.83, the chance of succeeding on all k attempts is p^k.<br />
 pass^1 = 0.83. pass^4 = 0.83^4 ≈ 0.47. pass^8 = 0.83^8 ≈ **0.23**.<br />
 Even at p = 0.9, pass^8 = 0.9^8 ≈ 0.43. An agent that is "90% good" still fails at least once for most users who use it 8 times.
+
+<Bars caption="The outcome eval said 92%. The real rate is 83%, and only 23% of users get 8 good runs in a row." unit="%" max={100} bars={[
+  { label: "Outcome-only score", value: 92, kind: "bad" },
+  { label: "Outcome + trajectory", value: 83, kind: "hl" },
+  { label: "pass^4 at 83%", value: 47 },
+  { label: "pass^8 at 83%", value: 23, kind: "bad" },
+]} />
+
 </Callout>
 
 Trajectory checks written as code cost almost nothing to run: they read a log you already have. The expensive part is deciding the rules.
@@ -99,6 +121,16 @@ Trajectory checks written as code cost almost nothing to run: they read a log yo
 ## The tradeoff: rules about paths can be too rigid
 
 Agents find valid paths you did not expect. A check that demands "read, then edit, then test" fails an agent that ran the tests first to reproduce the bug, which is a good habit.
+
+<Trace caption="A golden-path rule fails a good run that reproduced the bug before reading the code." steps={[
+  { role: "model", text: "run_tests()", tag: "tool_use", meta: "reproduce the bug" },
+  { role: "tool", text: "1 failed" },
+  { role: "model", text: 'read_file("app/cart.py")', tag: "tool_use" },
+  { role: "model", text: 'edit_file("app/cart.py")', tag: "tool_use" },
+  { role: "model", text: "run_tests()", tag: "tool_use" },
+  { role: "tool", text: "all passed", good: true },
+  { role: "result", text: "golden-path check: FAIL, expected read, then edit, then test", bad: true },
+]} />
 
 - **Check what must never happen, not one golden path.** Forbidden calls and side effects are stable rules; exact step order rarely is.
 - **Grade the world, not the transcript.** Compare the end state (files, database rows, refunds issued) with what should be there, using a grader the agent cannot touch.
@@ -109,3 +141,8 @@ Agents find valid paths you did not expect. A check that demands "read, then edi
 tau-bench (Yao et al., 2024) puts an agent in a simulated retail or airline support desk, with API tools, a written policy and a model playing the customer. It grades by comparing the database at the end of the conversation with the expected state, so a polite reply that cancelled the wrong flight still fails. It also introduced pass^k, and showed that agents with decent single-try scores fall sharply when they must succeed every time.
 
 SWE-bench avoids the deleted-test trick by design: the grader applies its own copy of the tests after the agent finishes, so changing the repo's tests does not change the grade. That is the general rule. Grade with something the agent cannot edit.
+
+<Compare caption="Grade with something the agent cannot edit." cols={[
+  { title: "Agent's own view", sub: "its message, its tests", kind: "bad", rows: ["- A polite reply passes", "- A deleted test passes"] },
+  { title: "The world", sub: "end state, grader's own tests", kind: "good", rows: ["+ Wrong flight cancelled: fail", "+ Deleted test: no effect"] },
+]} verdict="tau-bench checks the database at the end; SWE-bench runs its own copy of the tests." />

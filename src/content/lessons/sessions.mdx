@@ -43,11 +43,25 @@ Your coding agent is renaming `user_id` to `account_id`. The job takes about 14 
 
 Next morning you run it again with the same prompt. It re-reads every file, re-plans, and calls `run_migration("latest")`. The migration had already run, so it copies 41,000 rows a second time and breaks a unique index. You paid for 9 turns twice and got an incident on top.
 
+<Trace caption="Without a saved session, the second run cannot tell the migration already ran." steps={[
+  { role: "model", text: 'run_migration("latest")', tag: "tool_use", meta: "run 1" },
+  { role: "tool", text: "0042 applied" },
+  { role: "error", text: "Turn 9: laptop lid closes, process dies, messages are gone", bad: true },
+  { role: "user", text: "Rename user_id to account_id", meta: "run 2, same prompt" },
+  { role: "model", text: 're-reads 9 files, re-plans, run_migration("latest")', tag: "tool_use" },
+  { role: "error", text: "41,000 rows copied twice, unique index broken", bad: true },
+]} />
+
 ## The agent's memory lived in a variable
 
 In [The Agent Loop](/c/agent_loop/) you saw that the transcript is the memory. The model is stateless: every call, it only knows what is in `messages`. So the state of the job is not in the model and not in the files. It is in that list.
 
 In a simple harness, that list lives in the process's RAM. When the process dies, the list dies with it. The files on disk survive, but the *story* of the files does not: which ones were already changed, what the plan was, and above all which side effects already happened. A fresh run cannot tell a half-done job from a new one, so it does the safe-looking thing and starts again. For a migration, starting again is not safe.
+
+<Compare caption="A crash keeps the files and loses the story of the files." cols={[
+  { title: "Files on disk", sub: "survive the crash", kind: "good", rows: ["+ 2 of 4 files edited", "+ Migration 0042 applied"] },
+  { title: "messages in RAM", sub: "die with the process", kind: "bad", rows: ["- Which files were changed", "- The plan", "- Which side effects already ran"] },
+]} verdict="A fresh run sees a half-done job and treats it as a new one." />
 
 ## Write the session as it happens, load it before anything else
 
@@ -88,11 +102,28 @@ Say each turn adds about 3,000 tokens and the job starts at 3,000. Turn *k* rese
 Resume saves 135k tokens, **$0.41 and 9 turns of waiting** on this one job, and it never re-runs the migration.
 </Callout>
 
+<Bars caption="Input tokens to finish the job after a crash at turn 9." unit="k" bars={[
+  { label: "Restart", value: 315, kind: "bad", note: "315k · $0.95" },
+  { label: "Resume", value: 180, kind: "good", note: "180k · $0.54" },
+]} />
+
 The later the crash, the bigger the saving, because the turns you would redo are the expensive ones near the end.
 
 ## The tradeoff: saved state can be stale, large or sensitive
 
 A session file is a promise that the world still looks like the transcript. That is not always true.
+
+<States caption="Resume checks the world before acting, and never replays old tool calls." states={[
+  { id: "load", label: "Load session", sub: "repair last turn" },
+  { id: "check", label: "Check the world", sub: "git status", kind: "hl" },
+  { id: "reread", label: "Re-read files", sub: "only what the plan needs" },
+  { id: "run", label: "Continue", sub: "turn 10", kind: "good" },
+]} edges={[
+  { from: "load", to: "check", label: "transcript loaded" },
+  { from: "check", to: "run", label: "nothing changed" },
+  { from: "check", to: "reread", label: "branch moved" },
+  { from: "reread", to: "run", label: "fresh view" },
+]} path={["load", "check", "reread", "run"]} />
 
 - **The world moved.** Overnight, a teammate pushed to the branch. The transcript says `serializers.py` has 2 edits; the file now has 5. Before the next edit, check cheaply: `git status`, or re-read only the files the plan still needs. Never "resume" by re-running old tool calls, because that repeats side effects. [Idempotent tools](/c/idempotency/) make the remaining risk smaller.
 - **The file grows.** A long session can be bigger than the window. Resume has to load a summary plus the recent turns, which is [context management](/c/context_mgmt/) again.
@@ -101,5 +132,11 @@ A session file is a promise that the world still looks like the transcript. That
 ## In the real world
 
 Claude Code keeps its conversations on your machine and lets you pick them up later. Its CLI documents `claude --continue` (`-c`) to continue the most recent conversation in the current directory, and `claude --resume` (`-r`) to choose an earlier session from a list or by id. The restored session brings back the message history, so the model can see what it already did.
+
+```bash
+claude --continue            # -c: the most recent conversation in this directory
+claude --resume              # -r: choose an earlier session from a list
+claude --resume <session-id> # or pick one by id
+```
 
 In part 8 of nanoharness you will save each turn to a JSONL file and add a `--resume` flag that loads it, repairs a dangling tool call, and carries on.

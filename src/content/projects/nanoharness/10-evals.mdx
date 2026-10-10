@@ -47,6 +47,13 @@ return p.returncode == 0, (p.stdout + p.stderr)[-2000:]
 
 Keep the last 2,000 characters of output. When a task fails, that tail is the first thing you read.
 
+<Trace caption="Editing the test does not count: the grader restores the original tests before it checks." steps={[
+  { role: "model", text: 'edit_file("test_median.py", ...)  loosens the assert', tag: "tool_use", bad: true },
+  { role: "model", text: "Done, the tests pass.", tag: "end_turn" },
+  { role: "system", text: "grade(): copy test_*.py back from the task's repo/", tag: "restore" },
+  { role: "error", text: "python3 -m pytest -q: 1 failed  ->  passed=False", bad: true },
+]} />
+
 ### 2. Run each task on a throwaway copy
 
 Never let an eval touch the task folder. Copy `repo/` into a temp dir, run the agent there, grade it, and let the `with` block delete it. A crash inside the agent is a failed task, not a crashed eval run:
@@ -67,6 +74,8 @@ with tempfile.TemporaryDirectory(prefix=f"nh-eval-{task['name']}-") as tmp:
 ```
 
 `agent.child_usage` is the subagent spend from part 9. Leave it out and a harness that hands all its work to subagents looks free.
+
+<Flow steps={[{ label: "copytree", sub: "repo/ to temp" }, { label: "agent.run", sub: "task prompt", kind: "hl" }, { label: "grade", sub: "restore tests, check" }, { label: "TaskResult", sub: "turns, tokens, cost", kind: "good" }]} caption="One task, start to finish, on a throwaway copy that the with block deletes." />
 
 ### 3. Summarize
 
@@ -105,11 +114,22 @@ IMPL=starter python3 evals/run_evals.py --min-pass 10   # the capstone pass bar
 <Callout type="math" label="Let us check the math">
 The mock run: 15 tasks, 5 turns each, **72,919 tokens** in total, priced at the harness's illustrative rates of $2 per million input and $10 per million output (check your provider's pricing page for real numbers): about **$0.16** for the whole suite, about a cent per task.<br />
 A real model reads more and retries more, so expect several times that. Even at 10× it is under $2 per run, cheap enough to run after every change to the harness.
+
+<Bars caption="Cost of one full 15-task suite at the harness's illustrative rates." unit="$" bars={[
+  { label: "Mock run", value: 0.16, kind: "good", note: "$0.16 · 72,919 tokens" },
+  { label: "Real model, 10×", value: 1.6, kind: "hl", note: "~$1.60, under $2" },
+]} />
+
 </Callout>
 
 ### 5. Run it more than once
 
 Models are not deterministic, so one run of 15 tasks is a noisy measurement. 11/15 and 13/15 can be the same harness on two different days. Run the suite three times before you believe a difference of one or two tasks, and look at which tasks flip. A task that passes sometimes is telling you where the harness is fragile.
+
+<Bars caption="The same harness on two different days: a gap of two tasks can be noise." unit="" max={15} bars={[
+  { label: "Day 1", value: 11, note: "11/15" },
+  { label: "Day 2", value: 13, note: "13/15" },
+]} />
 
 ## Run the test
 

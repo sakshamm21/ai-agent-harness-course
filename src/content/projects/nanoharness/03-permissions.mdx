@@ -27,6 +27,8 @@ A rule looks like Claude Code's: a tool name, and optionally a glob in parenthes
 
 Each call gets one of three decisions. **Deny** wins over everything, then **ask**, then **allow**. If no rule matches, read-only tools run and everything else asks. You already wired `self.permissions.decide` into `Agent.execute` in part 1, so the loop needs no change.
 
+<Flow steps={[{ label: "deny rules", kind: "bad" }, { label: "ask rules" }, { label: "allow rules", kind: "good" }, { label: "read-only tool?", sub: "allow" }, { label: "--yes?", sub: "allow" }, { label: "default", sub: "ask", kind: "hl" }]} caption="check stops at the first match, top to bottom, so a deny rule beats everything below it." />
+
 ## Steps
 
 ### 1. Parse a rule
@@ -72,6 +74,11 @@ return "ask", "default: ask before writes and commands"
 
 Notice where `--yes` sits: after the rules. It approves calls that would be *asked by default*, but a deny rule still denies. `DEFAULT_DENY` puts `sudo`, `rm -rf /` and `git push` in the deny list, so not even `--yes` lets those through.
 
+<Compare caption="The same calls under the defaults, with and without --yes: only the deny list never moves." cols={[
+  { title: "Default", rows: ["+ read_file: allow", "- bash ls: ask", "- git push: deny"] },
+  { title: "With --yes", kind: "hl", rows: ["+ read_file: allow", "+ bash ls: allow", "- git push: deny"] },
+]} verdict="--yes answers the asks. It never overrides a deny." />
+
 ### 4. Ask the human
 
 On "ask", `decide` prints `Allow bash: make test? [y/N/a]` and reads the answer. `y` allows once. `a` allows and adds a rule for this exact subject, so the same call is not asked again. Anything else, including just pressing Enter, is no:
@@ -92,11 +99,27 @@ self.log.append((tool, subject, decision))
 return decision == "allow", reason
 ```
 
+<States caption="An ask ends in one of three places, and only a typed y or a lets the call run." states={[
+  { id: "ask", label: "Ask", sub: "[y/N/a]", kind: "hl" },
+  { id: "once", label: "Allowed once", kind: "good" },
+  { id: "always", label: "Allowed + rule", sub: "exact subject", kind: "good" },
+  { id: "no", label: "Denied", sub: "user declined", kind: "bad" },
+]} edges={[
+  { from: "ask", to: "once", label: "y" }, { from: "ask", to: "always", label: "a" }, { from: "ask", to: "no", label: "N, Enter, EOF" },
+]} path={["ask", "always"]} />
+
 `glob.escape` matters: approving `make test[1]` must not approve every command that the glob `test[1]` happens to match. And `self.prompt` is a parameter, not a hard-coded `input`, so tests (and a future web UI) can answer for you. With no terminal at all, the default prompt reads EOF as "no".
 
 ### 5. Tell the model what happened
 
 A denied call never reaches the tool. Part 1's `execute` returns `Permission denied (user declined). Do not retry this call; tell the user what you needed instead.` as an error result. The second sentence matters: without it, models often ask for the same call again with slightly different wording.
+
+<Trace caption="A denied call never runs, and the reason tells the model to explain instead of retrying." steps={[
+  { role: "model", text: 'edit_file("calc.py", ...)', tag: "tool_use" },
+  { role: "human", text: "Allow edit_file: calc.py? [y/N/a]  n" },
+  { role: "error", text: "Permission denied (user declined). Do not retry this call; tell the user what you needed instead.", bad: true },
+  { role: "model", text: "I needed to edit calc.py to fix the divisor. It was not allowed.", tag: "end_turn" },
+]} />
 
 ## Run the test
 

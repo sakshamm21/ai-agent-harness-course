@@ -43,11 +43,31 @@ You queue five tasks before leaving on Friday. Three are ordinary bug fixes that
 
 One was asked to wait for CI run 4812 to go green. The job was hung, so it polled `check_ci` 60 times. The other was asked to find an error in a 5,000-line log. The error was not in the log, so it read the file again, and again, from the top.
 
+
+<Trace caption="The CI job was hung, so the agent polled until the platform killed it at 60 turns." steps={[
+  { role: "user", text: "Wait for CI run 4812 to go green, then report." },
+  { role: "model", text: 'check_ci({"run": 4812})', tag: "tool_use", meta: "turn 1" },
+  { role: "tool", text: "status: running" },
+  { role: "model", text: 'check_ci({"run": 4812})', tag: "tool_use", meta: "turn 2" },
+  { role: "tool", text: "status: running" },
+  { role: "note", text: "the same call and the same answer, again and again" },
+  { role: "error", text: "killed by the platform after 60 turns", bad: true },
+]} />
+
 ## The loop only stops when the model says so
 
 The loop from [The Agent Loop](/c/agent_loop/) has exactly one exit: the model answers without calling a tool. That is a fine done signal when the task can be finished. When it cannot, the model rarely gives up. A hung job always looks like it might finish on the next poll. A missing error always might be on the next read.
 
 So "the model will decide when to stop" is a hope, not a stop condition. And the two loops fail differently. The poll loop is cheap: 60 tokens a turn. The log loop is expensive: 5,000 tokens a turn, and every turn resends everything before it.
+
+
+<States caption="With one exit, a task that cannot finish keeps the loop spinning until something outside kills it." states={[
+  { id: "call", label: "Call model", kind: "hl" }, { id: "tools", label: "Run tools" },
+  { id: "done", label: "Done", sub: "no tool call", kind: "good" }, { id: "kill", label: "Killed", sub: "platform, 60 turns", kind: "bad" },
+]} edges={[
+  { from: "call", to: "tools", label: "tool_use" }, { from: "tools", to: "call", label: "next turn" },
+  { from: "call", to: "done", label: "final answer" }, { from: "tools", to: "kill", label: "outside limit" },
+]} path={["call", "tools", "call", "tools", "call", "tools", "kill"]} />
 
 ## Give the loop more than one way out
 
@@ -62,6 +82,24 @@ The harness checks a list of stop conditions after every turn, and stops on the 
 <Flow steps={["Model turn", "Run tools", { label: "Done?", sub: "no tool call" }, { label: "Turns ≥ 15?", kind: "hl" }, { label: "Cost ≥ $0.25?", kind: "hl" }, { label: "Graceful stop", sub: "report progress", kind: "good" }]} loop loopLabel="no cap hit: next turn" caption="Stop checks run after every turn. Hitting a cap is a planned exit, not a crash." />
 
 When a cap fires, stop *gracefully*: tell the model it is out of budget, give it one last turn with no tools to write what it did, what is left and what it would try next, and save the state so a person or a later run can resume ([Sessions](/c/sessions/)).
+
+
+```python
+def stop_reason(run):
+    if not run.last.tool_calls:    return "done"
+    if run.turns >= 15:            return "max_turns"
+    if run.cost_usd >= 0.25:       return "budget"
+    if run.same_call_streak >= 3:  return "repeating"
+    if run.minutes >= MAX_MINUTES: return "timeout"
+    return None
+
+reason = stop_reason(run)
+if reason and reason != "done":
+    messages.append({"role": "user", "content": f"Stopped: {reason}. Without tools, "
+                     "say what you did, what is left and what you would try next."})
+    report = model(messages, tools=[])
+    save_session(run, messages)
+```
 
 ## Let us check the math
 
@@ -78,6 +116,13 @@ About 7.96M input tokens ≈ **$24 for one run** that found nothing.<br />
 
 Each cap catches the loop the other one misses. The turn cap catches cheap loops early; the budget cap catches expensive loops early. Set both loose enough that a normal 5-turn, $0.05 fix never comes close. In the lab, 15 turns and $0.25 take the average from over $4 to about $0.11 per task, with zero runaways and the three fixes still done.
 
+
+<Bars caption="On the log loop, the $0.25 cap stops at about $0.26; with no caps the same run costs about $24." unit="$" bars={[
+  { label: "No caps", value: 24, kind: "bad", note: "≈ $24 · 60 turns" },
+  { label: "15-turn cap only", value: 1.67, kind: "hl", note: "≈ $1.67" },
+  { label: "$0.25 budget cap", value: 0.26, kind: "good", note: "≈ $0.26 · turn 6" },
+]} />
+
 ## The tradeoff: caps also stop good runs
 
 A cap cannot tell a stuck agent from a slow one.
@@ -86,6 +131,16 @@ A cap cannot tell a stuck agent from a slow one.
 - **A stopped run is still a failed task.** The CI job is still hung. The win is that you lose $0.09 and get a report instead of losing $24 and getting nothing. Make the report good enough to act on.
 - **Repeat detectors need care.** Polling the same endpoint three times can be correct while you wait for a deploy. Compare arguments *and* results, or back off between polls instead of stopping.
 
+
+<Compare caption="A cap cannot tell stuck from slow, so it trades a few lost good runs for no runaways." cols={[
+  { title: "Stuck: hung CI", sub: "capped", kind: "good", rows: ["+ Lose $0.09, not $24", "+ Get a report, not nothing", "- The task still failed"] },
+  { title: "Slow: 200-turn migration", sub: "capped at 15", kind: "bad", rows: ["- Dies at turn 15", "+ Set caps per task type", "+ Or ask a human for more budget"] },
+]} verdict="Caps per task type, and a report worth acting on." />
+
 ## In the real world
 
 Agent frameworks make the turn cap a first-class setting. The OpenAI Agents SDK takes a `max_turns` argument when you run an agent and raises a `MaxTurnsExceeded` error when the run passes it. Claude Code's non-interactive mode has both caps from this lesson: `--max-turns` limits agentic turns, and `--max-budget-usd` stops the run once estimated spend reaches a dollar amount. Its docs note that spend can pass the cap, so leave headroom. The lab behaves the same way: the check runs after each turn, so the $0.25 cap stops at about $0.26. OpenHands includes a stuck detector that, like the lab's repeat check, looks for the agent repeating the same action and observation.
+
+```bash
+claude -p "Find the error in build.log" --max-turns 15 --max-budget-usd 0.25
+```

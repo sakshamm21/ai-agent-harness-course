@@ -43,9 +43,20 @@ The payments team is retiring `charge_v1`. You ask your coding agent to find eve
 
 The agent greps for `charge_v1` and gets 20k tokens of matches. It opens 40 files to see how each call is built, about 4k tokens each: another 160k. That is 60k + 180k = 240k tokens, 40k more than fits. The oldest messages fall out first, and the oldest message is your task. The agent migrates the callers it can still see and reports "Done". Four callers are never touched.
 
+<Stack blocks={[
+  { label: "Task + conversation so far", tokens: 60000 },
+  { label: "grep matches", tokens: 20000, kind: "hl" },
+  { label: "40 files read", tokens: 160000, kind: "bad" },
+]} budget={200000} caption="240k tokens in a 200k window: the oldest message, the task, falls out first." />
+
 ## The main agent needed the answer, not the search
 
 Look at what those 180k tokens were for. The agent needed one thing from them: a list of call sites and how each one builds `amount` and `card`. Written down, that list is about 2k tokens. The other 178k are grep noise, imports, unrelated functions and test fixtures.
+
+<Compare caption="Of 180k tokens of search output, the main agent needed about 2k." cols={[
+  { title: "What came back", sub: "180k tokens", kind: "bad", rows: ["- grep noise and imports", "- Unrelated functions", "- Test fixtures"] },
+  { title: "What was needed", sub: "about 2k tokens", kind: "good", rows: ["+ Every charge_v1 call site", "+ How each builds amount and card"] },
+]} verdict="Keep the search out of the main transcript and keep only the answer." />
 
 But in a single loop, every tool result goes into the one transcript, and it stays there. The noise from step 2 rides along on every turn after it, pushing out the parts that matter: the task, the plan and the edits. [Compaction](/c/context_mgmt/) can shrink it later, but by then the model has already been working with a crowded window.
 
@@ -91,11 +102,25 @@ Carrying a 2k summary on 10 main turns: 20k × $3/M = $0.06.<br />
 Total **$0.78**, and the main context peaks at about 62k.
 </Callout>
 
+<Bars caption="Cost of the search material alone: about ten times less with a small-tier subagent." unit="$" bars={[
+  { label: "All in the main agent", value: 7.56, kind: "bad", note: "$7.56 · does not fit" },
+  { label: "Subagent, small tier", value: 0.78, kind: "good", note: "$0.78 · peaks at 62k" },
+]} />
+
 About ten times cheaper, and the task never leaves the window. The saving comes from two places: the cheaper model, and not paying again and again for noise.
 
 ## The tradeoff: a summary is a lossy copy
 
 The main agent now trusts a report it cannot check against the raw output.
+
+<Trace caption="A 50-token grep catches what the child's summary missed." steps={[
+  { role: "model", text: 'task("List every charge_v1 call site as file:line")', tag: "tool_use" },
+  { role: "tool", text: "7 call sites, one line each", meta: "~2k tok" },
+  { role: "model", text: "Migrates the 7 listed callers to charge_v2", tag: "edit_file" },
+  { role: "model", text: "grep -c charge_v1", tag: "tool_use" },
+  { role: "tool", text: "4 matches left", meta: "50 tok", bad: true },
+  { role: "note", text: "The child listed 7 of 11. The check found the other 4.", good: true },
+]} />
 
 - **The child can miss things.** If it lists 7 of 11 callers, the main agent migrates 7. Ask for a checkable result, and verify it cheaply: one `grep -c charge_v1` after the edits costs 50 tokens.
 - **Delegation has overhead.** Each child pays for its own system prompt and its own first turns, and it adds latency. A 3-file search is faster done directly. Independent children can run at the same time, as in [parallel tool calls](/c/parallel_tools/) and the [orchestrator–workers](/c/orchestrator/) pattern.
@@ -104,5 +129,16 @@ The main agent now trusts a report it cannot check against the raw output.
 ## In the real world
 
 Claude Code documents subagents publicly. Each one is a Markdown file with YAML frontmatter, in `.claude/agents/` for a project or `~/.claude/agents/` for you, with a name, a description that tells Claude when to use it, an optional list of tools and an optional model. The docs say each subagent runs in its own context window, and Claude can delegate to one on its own based on the description, or when you ask by name.
+
+```markdown
+---
+name: caller-finder
+description: Finds every call site of a function. Use for searches that read many files.
+tools: Grep, Glob, Read
+model: haiku
+---
+Search the codebase for the function in the brief.
+Reply with file:line and one line on how each call is built.
+```
 
 In part 9 of nanoharness you will add a `task` tool that runs a child loop with a fresh context and returns its summary.

@@ -43,11 +43,23 @@ Your app is launching in Germany. A model translates each UI string: "Your free 
 
 You try the large model. It gets 7 in 10 right at five times the price. Still not shippable.
 
+<Trace caption="One call, no check: the draft breaks the placeholder and nothing notices." steps={[
+  { role: "system", text: "Translate to German. Use Sie. Keep placeholders." },
+  { role: "user", text: "Your free trial ends in {days} days." },
+  { role: "model", text: "Deine kostenlose Testphase endet in {Tage} Tagen.", tag: "end_turn" },
+  { role: "error", text: "Informal du, and {Tage} is not a key: the template shows a raw key", bad: true },
+]} />
+
 ## The model writes once and never looks back
 
 A single call has no second look. The model produces the most likely translation and stops. It knew the rules. They were in the system prompt. But following four rules while also choosing good German is several jobs at once, and nothing checks the result.
 
 A human translator would reread the draft against a checklist. "Did I keep the placeholders? Is this formal? Does the idiom make sense in German?" That reread is a different task from writing, and it is easier. Spotting `{Tage}` is simpler than producing perfect German.
+
+<Compare caption="Rereading against a checklist is an easier job than writing." cols={[
+  { title: "Writing", sub: "one call, many jobs", kind: "bad", rows: ["- Good German and four rules at once", "- Nothing checks the result"] },
+  { title: "Rereading", sub: "a separate pass", kind: "good", rows: ["+ Placeholders kept?", "+ Formal Sie?", "+ Idiom makes sense?"] },
+]} verdict="The second look is a different, simpler task, so give it its own step." />
 
 ## Add a critic and a loop
 
@@ -84,11 +96,25 @@ Cost: 1.32 × $0.003 + 1.32 × $0.002 ≈ **$0.0066 per string**, about 2.2 time
 The large model alone: 70% right for about $0.015.
 </Callout>
 
+<Bars caption="One evaluator round beats a model five times the price." unit="%" max={100} bars={[
+  { label: "Medium, one draft", value: 60, kind: "bad", note: "60% · $0.003" },
+  { label: "Large, one draft", value: 70, note: "70% · $0.015" },
+  { label: "Medium + evaluator", value: 89, kind: "good", note: "89% · $0.0066" },
+]} />
+
 So for roughly double the cost of one draft, you go from 60% to about 89%, beating a model five times the price. A second round adds a little more, because some revisions also fail and get caught.
 
 ## The tradeoff: the critic costs money and can be wrong
 
 Every round is another draft and another grade. The loop has three failure modes:
+
+<States caption="Cap the rounds: a draft that keeps failing goes to a human, not round four." states={[
+  { id: "draft", label: "Draft", sub: "optimizer" }, { id: "grade", label: "Grade", sub: "evaluator", kind: "hl" },
+  { id: "ship", label: "Ship", sub: "score above bar", kind: "good" }, { id: "human", label: "Escalate", sub: "retry cap hit", kind: "bad" },
+]} edges={[
+  { from: "draft", to: "grade", label: "submit" }, { from: "grade", to: "draft", label: "fail + issues" },
+  { from: "grade", to: "ship", label: "pass" }, { from: "grade", to: "human", label: "cap hit" },
+]} path={["draft", "grade", "draft", "grade", "draft", "grade", "human"]} />
 
 - **The bar is too high.** A grader that wants perfection rejects good drafts too, and each rejection costs a full round. Calibrate the bar against strings people already judged, and cap retries at 2 or 3 ([LLM-as-Judge](/c/llm_judge/)).
 - **The critic misses things.** In the math, 7.6% of strings were bad and passed. The evaluator only checks what the rubric names. Measure its catch rate on a labelled set ([Why Evals Come First](/c/evals/)).
@@ -98,4 +124,15 @@ Latency also grows with each round. For a batch translation job nobody notices. 
 
 ## In the real world
 
-Coding agents run this loop constantly: write code, run the tests, read the failures, revise. The test runner is the evaluator, and its feedback is the failing assertion. Research shows the same idea with a model as its own critic: the Self-Refine paper had one model draft, critique and revise its own output, and reported gains across tasks from code to dialogue. You will build an evaluator that checks citations in part 4 of the deepresearch project.
+Coding agents run this loop constantly: write code, run the tests, read the failures, revise. The test runner is the evaluator, and its feedback is the failing assertion.
+
+<Trace caption="In a coding agent the test runner is the evaluator and the failing assertion is the feedback." steps={[
+  { role: "model", text: 'edit_file({"path": "app/orders.py", ...})', tag: "tool_use", meta: "draft" },
+  { role: "model", text: "run_tests()", tag: "tool_use" },
+  { role: "tool", text: "1 failed: assert page(2)[0] != page(1)[-1]", bad: true, meta: "feedback" },
+  { role: "model", text: 'edit_file({"path": "app/orders.py", ...})', tag: "tool_use", meta: "revision" },
+  { role: "model", text: "run_tests()", tag: "tool_use" },
+  { role: "tool", text: "all tests passed", good: true },
+]} />
+
+Research shows the same idea with a model as its own critic: the Self-Refine paper had one model draft, critique and revise its own output, and reported gains across tasks from code to dialogue. You will build an evaluator that checks citations in part 4 of the deepresearch project.

@@ -43,11 +43,25 @@ You ask a research assistant: "Did Acme raise the price of its Pro plan last qua
 
 The transcripts show the pattern. It calls `calculator("49 * 1.2")` before it has looked up a single price. It searches twice for the same thing. Or it reads one search snippet from a 2024 blog post and answers "yes, about 20%" without opening the pricing page.
 
+<Trace caption="Without a thought between actions, the agent reaches for tools by reflex and answers from a snippet." steps={[
+  { role: "user", text: "Did Acme raise the price of its Pro plan last quarter?" },
+  { role: "model", text: 'calculator("49 * 1.2")', tag: "tool_use", bad: true, meta: "no price yet" },
+  { role: "model", text: 'web_search("Acme Pro price")', tag: "tool_use" },
+  { role: "model", text: 'web_search("Acme Pro price")', tag: "tool_use", bad: true, meta: "same search" },
+  { role: "tool", text: "snippet from a 2024 blog post" },
+  { role: "model", text: "Yes, about 20%.", tag: "end_turn", bad: true, meta: "pricing page never read" },
+]} />
+
 ## It acts before it has decided what to do
 
 Each turn, the model reads the conversation and picks the next action. Nothing forces it to work out *why* first. The most likely next token after a pricing question might be a calculator call, because pricing questions often involve arithmetic. That is a reflex, not a plan.
 
 The evidence it has also goes unexamined. A search result comes back with five links. Which one is the vendor's own page? Which is stale? If the model never writes that down, the next action is chosen from the raw result, and the cheapest move, answering from the snippet, often wins.
+
+<Compare caption="A reflex picks the likeliest next token; a decision first names what is missing." cols={[
+  { title: "Reflex", sub: "act straight away", kind: "bad", rows: ["- Calculator before any price", "- Answers from a stale snippet"] },
+  { title: "Decide first", sub: "write why, then act", kind: "good", rows: ["+ Names what is still missing", "+ Picks the vendor's own page"] },
+]} />
 
 ## Make it think out loud between actions
 
@@ -86,11 +100,21 @@ At medium sim prices ($3 / $15 per million, illustrative): $0.1395 + $0.0090 = *
 $0.0777 + $0.0150 = **$0.093**, about 38% cheaper, because two fewer turns means two fewer resends of a 10k-token context.
 </Callout>
 
+<Bars caption="Reasoning costs more per turn but saves two turns, so the task is about 38% cheaper." unit="$" bars={[
+  { label: "No reasoning, 6 turns", value: 0.149, kind: "bad", note: "$0.149 · 46.5k in" },
+  { label: "ReAct, 4 turns", value: 0.093, kind: "good", note: "$0.093 · 25.9k in" },
+]} />
+
 The saving comes from fewer turns, not from the thinking. On a one-step task there are no turns to save, and the 150 tokens per thought are pure overhead.
 
 ## The tradeoff: thinking is not free
 
 Reasoning costs tokens and time on every turn, and it only pays off when it prevents wrong moves:
+
+<Fan caption="Route by task: pay for thoughts on multi-step work, skip them on simple questions." root={{ label: "Router", sub: "how many steps?" }} items={[
+  { label: "ReAct agent", sub: "multi-step, thinks each turn", kind: "hl" },
+  { label: "Cheap path", sub: "one step, no thoughts" },
+]} pick={0} fanLabel="route" />
 
 - **Latency.** Each thought is generated before the action, so every turn gets slower. Turn reasoning on for multi-step tasks, and route simple ones to a cheaper path ([Routing](/c/routing/)).
 - **Plans that drift.** A thought per step is a local plan. For long tasks, write the whole plan up front and update it ([Planning](/c/planning/)).
@@ -98,4 +122,12 @@ Reasoning costs tokens and time on every turn, and it only pays off when it prev
 
 ## In the real world
 
-Coding and research agents built on Claude show this pattern openly: a sentence like "Let me check how pagination is handled first" appears before the `read_file` call. Anthropic has also described a "think" tool, a tool with no side effects that simply gives the model a place to reason mid-task, and reported gains on customer-service benchmarks where the agent must follow policy across many tool calls.
+Coding and research agents built on Claude show this pattern openly: a sentence like "Let me check how pagination is handled first" appears before the `read_file` call.
+
+<Trace caption="In practice the thought is a plain sentence written just before the tool call." steps={[
+  { role: "user", text: "Page 2 of /orders repeats an item. Fix it." },
+  { role: "model", text: "Let me check how pagination is handled first.", tag: "thought" },
+  { role: "model", text: 'read_file({"path": "app/orders.py"})', tag: "tool_use" },
+  { role: "note", text: "A think tool does the same mid-task: no side effects, just room to reason" },
+]} />
+ Anthropic has also described a "think" tool, a tool with no side effects that simply gives the model a place to reason mid-task, and reported gains on customer-service benchmarks where the agent must follow policy across many tool calls.

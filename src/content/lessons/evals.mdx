@@ -45,6 +45,13 @@ Your support agent handles 2,000 tickets a day. A teammate rewrites the system p
 
 By Friday finance asks why refunds jumped 40%. The new prompt quietly dropped the 30-day window check, so the agent now refunds a lamp delivered 45 days ago. Nobody tried that question, because nobody had a list of questions to try.
 
+<Trace caption="The friendlier prompt dropped the 30-day check, and no case was there to catch it." steps={[
+  { role: "user", text: "I want my money back for the lamp, order A-1002." },
+  { role: "model", text: 'lookup_order("A-1002")', tag: "tool_use" },
+  { role: "tool", text: "lamp · delivered 45 days ago" },
+  { role: "model", text: "So sorry about that! I've started a refund for your lamp.", tag: "end_turn", bad: true },
+]} />
+
 ## Five questions you pick by hand are not a measurement
 
 When you test by hand you ask the questions you were thinking about. You were thinking about tone, so you asked tone questions. The refund window was not on your mind, so it was not in your test.
@@ -54,6 +61,11 @@ Three things go wrong with eyeballing:
 - **Coverage.** You test the change, not the rest of the system. Regressions live in the rest.
 - **Memory.** You cannot compare today's answers with last month's if you never wrote last month's down.
 - **Noise.** A model is not deterministic (see [Taming Nondeterminism](/c/determinism/)). One good answer can be luck.
+
+<Compare caption="Hand-picked questions test what you were thinking about. A written set tests everything, every time." cols={[
+  { title: "Five by hand", sub: "eyeballing", kind: "bad", rows: ["- Tests the change, not the rest", "- Nothing to compare with later", "- One good answer can be luck"] },
+  { title: "Written eval set", sub: "cases + grader", kind: "good", rows: ["+ Same cases on every change", "+ A baseline to compare with", "+ A pass rate, not one answer"] },
+]} />
 
 ## Write the cases down before you change anything
 
@@ -91,6 +103,14 @@ Here is the lab's 20-case set, run on the production agent (v1) and the friendli
 
 <Callout type="math" label="Let us check the math">
 v1: 18 of 20 pass = **90%**. It fails two account cases ("I'm locked out", "I can't log in").<br />
+
+<Bars caption="Same 90% average, but the refund category fell from 100% to 60%." unit="%" max={100} bars={[
+  { label: "v1 overall", value: 90 },
+  { label: "v2 overall", value: 90 },
+  { label: "v1 refund", value: 100, kind: "good", note: "5/5" },
+  { label: "v2 refund", value: 60, kind: "bad", note: "3/5" },
+]} />
+
 v2: 18 of 20 pass = **90%**. It fixed both account cases and broke two refund cases (A-1002 at 45 days, A-1005 at 31 days).<br />
 Same average. But refund went from 5/5 = 100% to 3/5 = **60%**, and each wrong refund costs you the order price.<br /><br />
 How much can you trust 90% on 20 cases? Standard error = √(0.9 × 0.1 / 20) = √0.0045 ≈ 0.067. The 95% interval is about ±1.96 × 0.067 ≈ **±13 points**.<br />
@@ -100,6 +120,11 @@ Running 200 cases at about 4 turns of 3k input tokens each is 200 × 12k = 2.4M 
 
 Two lessons from those numbers. Read the per-category score card, because averages hide trades. And a one-case move on a small set is noise: grow the set until the change you care about is bigger than the interval.
 
+<Bars caption="A score from 20 cases can move 13 points by chance. At 200 cases, about 4." unit="points" bars={[
+  { label: "20 cases", value: 13, kind: "bad", note: "±13 points" },
+  { label: "200 cases", value: 4, kind: "good", note: "±4 points · $7.20 a run" },
+]} />
+
 ## The tradeoff: evals cost time and can lie to you
 
 A good eval set takes a day to write and keeps costing money every run. Worse, it can mislead:
@@ -108,8 +133,23 @@ A good eval set takes a day to write and keeps costing money every run. Worse, i
 - **The answer is not the whole story.** An agent can say the right thing after doing the wrong thing. Grade the tool calls too ([Trajectory and Tool-Use Evals](/c/trajectory_evals/)).
 - **You can overfit the set.** If you tweak the prompt until these 20 pass, you have tuned for 20 questions. Hold some cases back, and keep adding real tickets from your logs ([Tracing and Observability](/c/tracing/)).
 
+```python
+case = {"must_include": ["cannot refund"], "must_not_include": []}
+
+grade(case, "Sorry, we cannot refund after 30 days.")  # True
+grade(case, "Sorry, we can't refund after 30 days.")   # False: same answer, failed
+```
+
 ## In the real world
 
 SWE-bench is an eval set for coding agents built the same way. Each of its 2,294 tasks is a real GitHub issue from a popular Python repository. The agent gets the repo and the issue; the grader applies its patch and runs the repo's own tests: tests that should now pass must pass, and tests that passed before must still pass. SWE-bench Verified is a 500-task subset that people checked by hand so that every task is solvable and fairly graded. The idea is the one you just used: fixed inputs, an automatic check, a score you can compare across versions.
+
+<Trace caption="SWE-bench grades with the repo's own tests: fixed inputs, an automatic check, a comparable score." steps={[
+  { role: "user", text: "A real GitHub issue + the repo it was filed against" },
+  { role: "model", text: "a patch", tag: "output" },
+  { role: "system", text: "grader applies the patch and runs the repo's tests" },
+  { role: "result", text: "tests that should now pass: pass", good: true },
+  { role: "result", text: "tests that passed before: still pass", good: true },
+]} />
 
 In the code lab you write 20 cases for a small support agent and find out whether v2 should ship.

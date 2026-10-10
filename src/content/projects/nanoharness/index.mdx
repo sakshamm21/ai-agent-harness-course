@@ -14,6 +14,18 @@ import { SITE } from '../../../lib/site';
 
 `nanoharness` is a small coding agent you run in a terminal. You type "fix the bug in calc.py". It lists the files, reads `calc.py`, makes an exact edit, runs the tests, and tells you what it changed. Before it writes a file or runs a command, it asks you.
 
+<Trace caption="The demo run: look, read, edit, test, report, and you approve the two calls that change things." steps={[
+  { role: "user", text: "fix the bug in calc.py" },
+  { role: "model", text: 'list_dir(".")', tag: "tool_use" },
+  { role: "model", text: 'read_file("calc.py")', tag: "tool_use" },
+  { role: "tool", text: "return sum(numbers) / (len(numbers) + 1)", bad: true },
+  { role: "model", text: 'edit_file("calc.py", "(len(numbers) + 1)" to "len(numbers)")', tag: "tool_use" },
+  { role: "human", text: "Allow edit_file: calc.py? [y/N/a]  y" },
+  { role: "model", text: 'bash("python3 -m pytest -q")', tag: "tool_use" },
+  { role: "human", text: "Allow bash: python3 -m pytest -q? [y/N/a]  y" },
+  { role: "model", text: "Fixed the bug in calc.py. Tests: 1 passed", tag: "end_turn", good: true },
+]} />
+
 The model is the easy part. Everything around it is the harness, and the harness is what you build: about 930 lines of Python with no dependencies, the same parts a production coding agent has, at a size you can read in an evening.
 
 By the end of part 10 it has:

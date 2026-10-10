@@ -8,10 +8,27 @@ An LLM does one thing: given the tokens so far, it scores every possible next to
 
 `NEXT` is the toy model. For each token it lists the probabilities of the next one. After `"The"`, the model thinks `"cat"` is 50% likely, `"dog"` 30% and `"model"` 20%.
 
+<Bars caption="After the token The, the toy model gives cat a 50% chance of coming next." unit="%" max={100} bars={[
+  { label: "cat", value: 50, kind: "hl" },
+  { label: "dog", value: 30 },
+  { label: "model", value: 20 },
+]} />
+
 ## Your task
 
 1. Finish `apply_temperature(probs, t)`. With `t == 0`, give the most likely token probability 1.0 and every other token 0.0. Otherwise raise each probability to the power `1/t` and divide by the total so they sum to 1. Low `t` sharpens the distribution; high `t` flattens it.
+
+<Compare caption="The same three probabilities after The, reshaped by four temperatures." cols={[
+  { title: "t = 0", sub: "always the top token", rows: ["cat 100%", "dog 0%", "model 0%"] },
+  { title: "t = 0.5", sub: "sharper", rows: ["cat 66%", "dog 24%", "model 11%"] },
+  { title: "t = 1", sub: "unchanged", rows: ["cat 50%", "dog 30%", "model 20%"] },
+  { title: "t = 2", sub: "flatter", rows: ["cat 42%", "dog 32%", "model 26%"] },
+]} verdict="Low t picks the likely token more often; high t gives rare tokens a real chance." />
+
 2. Finish `generate(t, rng)`. Start from `"<start>"`, sample the next token from `apply_temperature(NEXT[prev], t)`, append it, and stop at `"."`. This loop is how every LLM writes, one token at a time.
+
+<Flow steps={[{ label: "prev", sub: "starts at <start>" }, { label: "NEXT[prev]", sub: "next-token odds" }, { label: "apply_temperature", kind: "hl" }, { label: "sample", sub: "pick one" }, { label: "append", sub: "stop at ." }]} loop loopLabel="new prev" caption="Generation is one loop: score the next token, pick one, append it, repeat until the full stop." />
+
 3. In the streaming loop at the bottom, append each `text_delta` piece to `pieces` and print it as it arrives. Keep the `done` event's response in `final`.
 
 Press **Run** and compare the `t=0` and `t=1.0` lines. Then try `t=2.0` and see the odd sentences get more common. If you switch on a real model, the streaming part calls it instead of the mock.

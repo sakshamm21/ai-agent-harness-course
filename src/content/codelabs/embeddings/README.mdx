@@ -7,7 +7,15 @@ realModel: false
 
 A shop has **50 FAQs**. Customers never use the FAQ's words: they type "terminate membership", not "cancel my subscription", and "the lamp arrived faulty", not "my item arrives broken". The current search counts shared words and finds the right FAQ for only 2 of the 8 test queries.
 
+<Trace caption="The query and the FAQ that answers it share zero words, so keyword search never finds it." steps={[
+  { role: "user", text: "terminate membership" },
+  { role: "tool", text: "keyword_search: 0 words shared with cancel-sub", tag: "score 0" },
+  { role: "error", text: "cancel-sub not in the top 3", bad: true },
+]} />
+
 You will replace it with semantic search: turn every FAQ into a vector with the bundled `embed()` model, turn the query into a vector, and rank FAQs by cosine similarity.
+
+<Flow steps={[{ label: "50 FAQs", sub: "question + answer" }, { label: "embed()", sub: "once each" }, { label: "Index", sub: "50 × 256 numbers" }, { label: "Query", sub: "embed() once", kind: "hl" }, { label: "cosine × 50", sub: "keep top k" }]} caption="Embed the FAQs once, then each query costs one embedding and 50 cosine scores." />
 
 The bundled model is tiny and runs in your browser. It hashes words and three-letter pieces of words into 256 numbers, plus a small synonym table ("refund" and "reimburse" share a feature). A real embedding model learns these relations from billions of sentences, but the search code you write is the same.
 
@@ -24,3 +32,8 @@ The bundled model is tiny and runs in your browser. It hashes words and three-le
 - The index holds 50 vectors of 256 numbers.
 - `semantic_search` returns `k` ids, best first, and puts `password-reset` first for "i can't log in".
 - Semantic search finds the right FAQ in the top 3 for at least 75% of test queries, and beats keyword search.
+
+<Bars caption="Keyword search finds 2 of 8 queries; your semantic search needs at least 6 of 8 to pass." unit="%" max={100} bars={[
+  { label: "Keyword search", value: 25, kind: "bad", note: "25% · 2 of 8" },
+  { label: "Needed to pass", value: 75, kind: "good", note: "75% · 6 of 8" },
+]} />

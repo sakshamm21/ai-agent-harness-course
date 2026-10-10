@@ -13,6 +13,17 @@ updated: 2026-10-10
 
 The three Velmora sub-questions do not depend on each other, so there is no reason to research them one after another. With a real model each worker spends most of its time waiting on the network. Run them on a thread pool and the question takes about as long as its slowest worker, not the sum of all three.
 
+<Lanes caption="With example timings, a thread pool finishes when the slowest worker does, not after the sum of all three." unit="s" total={9} lanes={[
+  { heading: "One after another" },
+  { label: "opened", start: 0, end: 3 },
+  { label: "length", start: 3, end: 5 },
+  { label: "cost", start: 5, end: 9, kind: "bad" },
+  { heading: "Thread pool" },
+  { label: "opened", start: 0, end: 3, kind: "good" },
+  { label: "length", start: 0, end: 2, kind: "good" },
+  { label: "cost", start: 0, end: 4, kind: "good", note: "slowest one" },
+]} marks={[{ at: 4, label: "parallel done" }]} />
+
 Parallel agents spend money in parallel too. Four workers, each free to search and fetch for six turns, can burn through a budget faster than you can read the log. So every model call goes through one shared meter, and once the cap is spent, workers stop at their next call. Whatever finished is kept. A partial report beats a crash, and it beats a bill.
 
 <Flow steps={["Sub-questions", { label: "Thread pool", sub: "max_workers" }, { label: "BudgetedModel", sub: "check, call, charge", kind: "hl" }, { label: "Results", sub: "ok / budget / skipped" }]} caption="Every worker call is checked against and charged to one Budget." />
@@ -22,6 +33,15 @@ You write `Budget.charge`, `Budget.exhausted`, `BudgetedModel.complete` and `run
 ## Steps
 
 1. **Meter tokens and dollars under a lock.** Several threads charge the same budget. `self.usd += ...` is a read, an add and a write, and two threads can interleave them and lose a charge. A lock makes each charge one step.
+
+<Trace caption="Without a lock, two threads read the same total and one charge disappears." steps={[
+  { role: "note", text: "budget.usd = 0.010" },
+  { role: "tool", text: "thread A reads 0.010", meta: "worker 1" },
+  { role: "tool", text: "thread B reads 0.010", meta: "worker 2" },
+  { role: "tool", text: "thread A writes 0.010 + 0.003 = 0.013", meta: "worker 1" },
+  { role: "tool", text: "thread B writes 0.010 + 0.003 = 0.013", meta: "worker 2" },
+  { role: "error", text: "two charges, one recorded: should be 0.016", bad: true },
+]} />
 
    ```python
    def charge(self, input_tokens: int, output_tokens: int, tier: str = "medium") -> None:
@@ -57,6 +77,21 @@ You write `Budget.charge`, `Budget.exhausted`, `BudgetedModel.complete` and `run
 
 4. **Fan out, and never let an error escape.** `pool.map` keeps results in input order. Each worker is wrapped so its failure becomes a status, not an exception: `BudgetExceeded` is `budget`, anything else is `failed`, and a worker whose turn comes after the money is gone is `skipped` without being called. One broken worker must not sink the other three.
 
+<States caption="Every worker ends in a status, never an exception, so the orchestrator can act on it." states={[
+  { id: "start", label: "Worker's turn" },
+  { id: "run", label: "Running", kind: "hl" },
+  { id: "ok", label: "ok / empty", kind: "good" },
+  { id: "budget", label: "budget", kind: "bad" },
+  { id: "failed", label: "failed", kind: "bad" },
+  { id: "skip", label: "skipped" },
+]} edges={[
+  { from: "start", to: "run", label: "money left" },
+  { from: "start", to: "skip", label: "budget spent" },
+  { from: "run", to: "ok", label: "returns" },
+  { from: "run", to: "budget", label: "BudgetExceeded" },
+  { from: "run", to: "failed", label: "any other error" },
+]} path={["start", "run", "ok"]} />
+
    ```python
    def one(q: str) -> WorkerResult:
        if budget is not None and budget.exhausted:
@@ -91,6 +126,13 @@ One mock worker on the small tier: about 2,000 input and 130 output tokens.<br /
 The full run, with the planner, verifier and writer, costs **$0.021**. The default cap of $0.50 covers about 24 such questions.<br />
 With `--max-usd 0.005` the run spends $0.0083. The cap is checked before each worker call, so calls already in flight finish, and the soft roles keep going to write the report. A cap is a stop line, not a ceiling: set it below the most you are willing to spend.
 </Callout>
+
+<Bars caption="One worker costs about $0.0026, and a cap is a stop line: the capped run still ends above $0.005." unit="$" bars={[
+  { label: "one worker", value: 0.0026 },
+  { label: "--max-usd cap", value: 0.005, kind: "hl" },
+  { label: "capped run spent", value: 0.0083, kind: "bad", note: "$0.0083 · PARTIAL" },
+  { label: "full run", value: 0.021, kind: "good", note: "$0.021 · all ok" },
+]} />
 
 ## Run the test
 

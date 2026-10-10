@@ -42,6 +42,13 @@ reading:
 
 You ask a chat model for three papers that support a claim. It gives you three titles, authors, years and journals, formatted perfectly. You search for them. Two of the three were never written.
 
+<Trace caption="Three perfectly formatted citations, and only one of them points at a real paper." steps={[
+  { role: "user", text: "Give me three papers that support this claim." },
+  { role: "model", text: "Three titles, with authors, years and journals, neatly formatted.", tag: "end_turn" },
+  { role: "result", text: "Paper 1: found.", good: true },
+  { role: "error", text: "Papers 2 and 3: no such paper was ever written.", bad: true },
+]} />
+
 This is not rare and it is not a glitch. In 2023 lawyers in a New York case, Mata v. Avianca, filed a brief that cited six court decisions that did not exist. A chatbot had written them, and the judge sanctioned the lawyers. To see why it happens, and why it will keep happening unless you design for it, you need to know what the model is actually doing.
 
 ## It is autocomplete, run one token at a time
@@ -49,6 +56,11 @@ This is not rare and it is not a glitch. In 2023 lawyers in a New York case, Mat
 A large language model (LLM) does one thing. It reads a sequence of **tokens**, which are words or pieces of words, and gives every possible next token a probability. Then one token is picked, added to the end, and the whole thing runs again.
 
 After "The capital of France is", the token " Paris" might get 0.96. After "A good paper on this is", there is no single right answer, so the probability spreads across thousands of plausible author names and titles. The model picks one, then the next, then the next. Each choice is locally reasonable. Nothing in the process checks that the finished citation points at a real paper.
+
+<Compare caption="The model scores plausible next tokens; nothing checks that the result is true." cols={[
+  { title: '"The capital of France is"', sub: "one clear next token", kind: "good", rows: ['+ " Paris" gets 0.96', "+ Plausible and true overlap"] },
+  { title: '"A good paper on this is"', sub: "no single right answer", kind: "bad", rows: ["- Odds spread over thousands of names", "- Each pick is locally reasonable", "- No check that the paper exists"] },
+]} verdict="Plausible and true only overlap where the model saw enough evidence." />
 
 That is the key idea of this whole course: the model produces **plausible text**. It is very good plausible text, often correct, because the training data is full of correct facts. But "plausible" and "true" only overlap where the model saw enough evidence.
 
@@ -82,9 +94,21 @@ Lower temperature made the favourite more likely (0.5 to 0.66).
 **Time.** If a model writes about 50 tokens per second, a 400-token answer takes 400 / 50 = **8 seconds** to finish. Streaming shows the first words in well under a second instead of a blank screen for 8.
 </Callout>
 
+<Bars caption="Temperature 0.5 lifts cat from 0.5 to 0.66 and shrinks dog and model." unit="" bars={[
+  { label: "cat, T = 1", value: 0.5 }, { label: "cat, T = 0.5", value: 0.66, kind: "hl" },
+  { label: "dog, T = 1", value: 0.3 }, { label: "dog, T = 0.5", value: 0.24, kind: "hl" },
+  { label: "model, T = 1", value: 0.2 }, { label: "model, T = 0.5", value: 0.11, kind: "hl" },
+]} />
+
 ## The tradeoff: low temperature buys repeatability, not truth
 
 Setting temperature to 0 makes the output more repeatable. It does not make it more correct. A greedy model invents a citation just as fluently; it simply invents the same one every time. And you lose variety you sometimes want, like several draft subject lines to pick from.
+
+<Compare caption="Temperature 0 makes the answer repeat; only facts or a lookup make it true." cols={[
+  { title: "Temperature 0", sub: "same pick every time", kind: "bad", rows: ["+ Repeatable output", "- Invents the same citation each run", "- Loses variety you sometimes want"] },
+  { title: "Give it the facts", sub: "source in the prompt", kind: "good", rows: ["+ Quotes text in its context", "+ Far more reliable than recall"] },
+  { title: "Let it check", sub: "a search tool", kind: "good", rows: ["+ Looks the paper up", "+ No guessing at titles"] },
+]} verdict="Repeatable is not the same as correct." />
 
 The real fixes change what the model is predicting from:
 
@@ -95,3 +119,16 @@ The real fixes change what the model is predicting from:
 ## In the real world
 
 The Claude API exposes this loop directly. You set `temperature` (0 to 1) and `max_tokens` on each request, and when you ask for a stream you receive the answer as a series of small text deltas. If the response ends with `stop_reason: "max_tokens"`, the loop hit your cap before the model chose to stop. Every agent in this course is built on calls like this one.
+
+```python
+with client.messages.stream(
+    model=MODEL, max_tokens=400, temperature=0,
+    messages=[{"role": "user", "content": "Name three papers on this claim."}],
+) as stream:
+    for text in stream.text_stream:   # small deltas, as they are made
+        print(text, end="", flush=True)
+    final = stream.get_final_message()
+
+if final.stop_reason == "max_tokens":
+    print("\n[cut off: hit the 400-token cap]")
+```

@@ -42,6 +42,13 @@ Your support bot has one firm rule: no refunds after 30 days, offer store credit
 
 In production, conversations run long. By turn 41 a customer writes, "I bought these boots 45 days ago, I want my money back," and the bot replies, "I've started a full refund to your card." In the lab, about half of the late refund requests get exactly that answer.
 
+<Trace caption="A rule pasted into turn 1 loses to a frustrated customer in turn 41." steps={[
+  { role: "user", text: "No refunds after 30 days. Offer store credit instead.", tag: "turn 1" },
+  { role: "note", text: "Turns 2 to 40: a long support conversation" },
+  { role: "user", text: "I bought these boots 45 days ago, I want my money back.", tag: "turn 41" },
+  { role: "model", text: "I've started a full refund to your card.", bad: true },
+]} />
+
 ## Every message has a role, and roles carry weight
 
 A request to a chat model is not one block of text. It is a list of **messages**, each with a **role**:
@@ -53,6 +60,12 @@ A request to a chat model is not one block of text. It is a list of **messages**
 Models are trained to treat these differently. The system prompt is the standing brief: who you are, what you may and may not do. User messages are the conversation it is serving.
 
 Your refund rule was a user message. By turn 41 it is one message among 40, written a long time ago, and the newest message, a frustrated customer asking for money, pulls hardest. Recent, specific text tends to win over old, general text. Nothing was forgotten; the window is not full. The rule just lost the argument.
+
+<Compare caption="Three roles, three jobs: the system prompt is the only standing brief." cols={[
+  { title: "system", sub: "you, the operator", kind: "good", rows: ["+ Role, rules, tone, format", "+ Read as standing instructions"] },
+  { title: "user", sub: "the person, or your code", rows: ["The conversation it serves", "- A rule here is one message of 40"] },
+  { title: "assistant", sub: "the model, earlier", rows: ["Sent back every call", "The model remembers nothing"] },
+]} verdict="Put each instruction where its job says it belongs." />
 
 ## Put standing rules in the system prompt
 
@@ -95,9 +108,19 @@ Pass rate: (3 × 0.96 + 0.90) / 4 = **0.945**.
 **In money:** at 1,000 late refund requests a month and $80 per order, 50% wrong is 500 × $80 = **$40,000** refunded against policy. At 4% wrong it is 40 × $80 = **$3,200**.
 </Callout>
 
+<Bars caption="Moving one sentence into the system prompt lifts the pass rate from 60% to 94.5%." unit="%" max={100} bars={[
+  { label: "Rule in turn 1", value: 60, kind: "bad", note: "60% · $40,000 a month refunded" },
+  { label: "Rule in system prompt", value: 94.5, kind: "good", note: "94.5% · $3,200 a month" },
+]} />
+
 ## The tradeoff: the system prompt rides on every call
 
 The system prompt is resent with every request. A 1,500-token prompt over a 40-turn conversation is 40 × 1,500 = 60,000 input tokens, about $0.18 at the illustrative sim price of $3 per million. And as it grows, rules start to conflict: "always be helpful" and "never refund after 30 days" pull in opposite directions on exactly the hard tickets.
+
+<Compare caption="A system prompt that only grows costs tokens on every call and starts to argue with itself." cols={[
+  { title: "One growing prompt", kind: "bad", rows: ["- 1,500 tokens on all 40 turns", "- 60,000 input tokens, about $0.18", "- Rules start to conflict"] },
+  { title: "Cached, assembled, tested", kind: "good", rows: ["+ Stable prefix billed at a fraction", "+ Built from parts each turn", "+ Tricky conversations rerun"] },
+]} verdict="Keep the rules stable, small and tested." />
 
 Ways to keep it under control:
 
@@ -108,3 +131,16 @@ Ways to keep it under control:
 ## In the real world
 
 The Claude Messages API takes the system prompt as a separate `system` field, not as a message in the list, and the `messages` list alternates `user` and `assistant` turns. Anthropic's prompt engineering guide recommends using the system prompt to give Claude a role, and putting long documents near the top with the question at the end. In part 6 of the nanoharness project you load a project's `AGENTS.md` file into the system prompt, so its rules apply on every turn.
+
+```json
+{
+  "model": "your-model-id",
+  "max_tokens": 500,
+  "system": "You are the support assistant for Northwind Outfitters. Refund policy: no refunds after 30 days from delivery; offer store credit instead.",
+  "messages": [
+    { "role": "user", "content": "Where is my order?" },
+    { "role": "assistant", "content": "It shipped yesterday." },
+    { "role": "user", "content": "I bought these boots 45 days ago, I want my money back." }
+  ]
+}
+```

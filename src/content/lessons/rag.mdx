@@ -45,11 +45,24 @@ You launch a docs chatbot for Acme's API. A customer asks how long they have to 
 
 In the lab, the bot answers 4 test questions with **0% correct and cited**. Three answers come from training data that is out of date. The fourth question asks about an SAP integration that does not exist, and the bot describes where to find it in Settings.
 
+<Trace caption="With no docs in front of it, the bot answers confidently and wrongly." steps={[
+  { role: "user", text: "How long do I have to request a refund?" },
+  { role: "model", text: "You have 30 days.", tag: "end_turn", bad: true },
+  { role: "note", text: "The docs say 14 days, and have since March." },
+  { role: "user", text: "Where do I set up the SAP integration?" },
+  { role: "model", text: "You'll find it in Settings.", tag: "end_turn", meta: "no such integration", bad: true },
+]} />
+
 ## The model answers from memory, and its memory is not your docs
 
 A model knows what was in its training data, frozen at its training cutoff. Your docs are newer than that, or private, so they were never in it. When asked, the model does what it always does: it writes the most likely answer. For "refund window", the most likely answer across the internet is 30 days.
 
 Two problems follow. The answer is often wrong, and even when it is right, nobody can check it, because it has no source.
+
+<Compare caption="The model answers from its training data, which never held your docs." cols={[
+  { title: "What the model knows", sub: "training data, frozen at cutoff", kind: "bad", rows: ["- Most likely answer: 30 days", "- No source anyone can check"] },
+  { title: "What your docs say", sub: "newer, or private", kind: "good", rows: ["+ billing.md: 14 days", "+ A source id you can cite"] },
+]} verdict="Put the docs in the prompt, and the answer can come from them." />
 
 ## Retrieve first, then generate
 
@@ -82,11 +95,25 @@ Top k is the dial. Using the lab's numbers and the sim price for a medium model 
 **Top k = 20, chunks of 2,000 tokens.** 20 × 2,000 = 40,000 extra tokens. 41,400 × $3/M ≈ $0.124 for the answer turn alone, about **$0.13** per question, 7 times the cost. Accuracy falls to **81%**, because the right chunk is buried among 19 others.
 </Callout>
 
+<Bars caption="Top k is a dial: 4 good chunks beat 1, and beat 20 big ones at a seventh of the cost." unit="%" max={100} bars={[
+  { label: "Top k = 1", value: 61, kind: "bad", note: "61% · $0.014" },
+  { label: "Top k = 4", value: 91, kind: "good", note: "91% · $0.019" },
+  { label: "Top k = 20, 2k-token chunks", value: 81, note: "81% · $0.13" },
+]} />
+
 More context is not free and not always better. Models are measurably worse at using facts in the middle of a long prompt than at its start or end, so a few good chunks beat many mediocre ones.
 
 ## The tradeoff: retrieval is now your single point of failure
 
 RAG makes the answer only as good as what the retriever finds.
+
+<Trace caption="A citation is a claim too, so check that the source says it." steps={[
+  { role: "user", text: "How long do I have to request a refund?" },
+  { role: "tool", text: "top k: billing.md#refunds, limits.md#pro, ...", meta: "retrieved" },
+  { role: "model", text: "Refunds within 30 days [billing.md#refunds]", tag: "end_turn" },
+  { role: "tool", text: 'exact-match check: "30 days" not in billing.md#refunds', bad: true },
+  { role: "note", text: "Flag the answer, or search again", good: true },
+]} />
 
 - **Missed retrieval means a wrong answer.** If the right chunk is not in the top k, the model either says "not found" or, worse, stitches together something from the wrong chunks. How you split documents decides much of this: [Chunking and Indexing](/c/chunking/).
 - **Citations can be decorative.** A model can cite a chunk that does not support its claim. Check them: an exact-match test that the quoted text exists, or a grader ([LLM-as-Judge](/c/llm_judge/)).
@@ -97,3 +124,8 @@ Retrieval also adds a moving part to keep fresh: when the docs change, the index
 ## In the real world
 
 Anthropic's own write-up on contextual retrieval reports that adding a short, chunk-specific context to each chunk before embedding, combined with keyword (BM25) search, cut failed retrievals by 49%, and by 67% with a reranking step on top. The Claude API also has a citations feature: you pass documents in the request and the response marks which passages each claim came from, so you do not have to parse `[source]` tags yourself.
+
+<Bars caption="Anthropic's contextual retrieval: fewer failed retrievals at each added step." unit="%" max={100} bars={[
+  { label: "Context + BM25", value: 49, kind: "hl", note: "49% fewer failures" },
+  { label: "+ reranking", value: 67, kind: "good", note: "67% fewer failures" },
+]} />

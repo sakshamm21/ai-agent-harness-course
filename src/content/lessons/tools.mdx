@@ -44,11 +44,24 @@ A user types "Do I need an umbrella in Paris today?" Ask a plain model that ques
 
 The same thing happens with "What's on my calendar at 3pm?" The right answer depends on data the model has never seen, so the honest success rate is 0 out of 10.
 
+<Trace caption="Without tools, every answer about today comes from memory, so none of them can be right." steps={[
+  { role: "user", text: "Do I need an umbrella in Paris today?" },
+  { role: "model", text: "Paris gets rain about 1 day in 3, so maybe.", tag: "end_turn", bad: true },
+  { role: "user", text: "What's on my calendar at 3pm?" },
+  { role: "model", text: "A fluent answer about a calendar it has never seen.", tag: "end_turn", bad: true },
+  { role: "note", text: "Honest success rate: 0 out of 10" },
+]} />
+
 ## The model only writes text
 
 A language model reads text and predicts more text. It has no clock, no network and no access to your calendar. Everything it knows was frozen into its weights at training time, plus whatever you put in the prompt.
 
 So the problem is not intelligence. The model would happily check the forecast if it could. It just has no way to reach outside the conversation. What it can do is write a precise request for someone else to act on.
+
+<Compare caption="The model can only read and write text, so reaching the world has to be someone else's job." cols={[
+  { title: "What it has", kind: "good", rows: ["+ Text in, text out", "+ Weights frozen at training", "+ Whatever is in the prompt"] },
+  { title: "What it lacks", kind: "bad", rows: ["- No clock", "- No network", "- No access to your calendar"] },
+]} verdict="It cannot check the forecast, but it can ask you to." />
 
 ## Give it tools, and keep the hands for yourself
 
@@ -99,14 +112,28 @@ Without the tool: 570 input + 50 output ≈ $0.0025. So the tool roughly doubles
 Now scale it. 20 tools at 250 tokens = 5,000 tokens per call. At 10,000 questions a day, two calls each: 5,000 × 2 × 10,000 = **100M tokens a day**, or $300 a day, spent on definitions alone.
 </Callout>
 
+<Bars caption="One tool roughly doubles the cost of a question, to about half a cent, and adds a second round trip." unit="$" bars={[
+  { label: "No tool, 1 call", value: 0.0025, note: "≈ $0.0025" },
+  { label: "1 tool, 2 calls", value: 0.0054, kind: "hl", note: "≈ $0.0054" },
+]} />
+
 Half a cent buys a correct answer instead of a confident guess, so the trade is usually worth it. The schemas are what you watch.
 
 ## The tradeoff: every tool is a prompt and a risk
 
 Tools make the model useful, and they cost you in three ways:
 
+<Stack blocks={[{ label: "System prompt", tokens: 300 }, { label: "20 tool definitions", tokens: 5000, kind: "bad" }, { label: "Question", tokens: 20, kind: "hl" }]} caption="With 20 tools, the definitions are 5,000 of the 5,320 tokens sent on every call." />
+
 - **Tokens on every call.** Definitions are resent each turn. Keep the list short, and cache the stable prefix ([Prompt Caching](/c/caching/)).
 - **Wrong picks and bad arguments.** With many look-alike tools the model chooses badly. Names, descriptions and error messages are design work ([Designing Good Tools](/c/tool_design/), [Tool Errors and Recovery](/c/tool_errors/)).
 - **The model chooses the arguments.** If a tool can delete files or send email, the model can ask for that too. Decide what runs without asking ([Permissions](/c/permissions/)).
+
+<Trace caption="The model picks the arguments, so a tool that can send email needs a rule about what runs without asking." steps={[
+  { role: "user", text: "Tell the team the launch moved to Friday." },
+  { role: "model", text: 'send_email({"to": "team", "body": "Launch moved to Friday"})', tag: "tool_use" },
+  { role: "note", text: "Permission check: send_email needs approval before it runs" },
+  { role: "human", text: "Approved, so your code sends it", good: true },
+]} />
 
 So far there is exactly one tool call and one answer. Real tasks need many calls in a row, where each result shapes the next request. That is [The Agent Loop](/c/agent_loop/).

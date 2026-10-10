@@ -15,6 +15,14 @@ Customers write about four kinds of thing: they want money back, they want to kn
 
 A router makes that decision first, with a small, fast model (`claude-haiku-5-5` by default). Then the agent loop runs with the route's tools only. A product question never sees `issue_refund`, so no amount of clever wording in that conversation can make it refund. That is least privilege, and it costs one cheap call.
 
+<Fan caption="One cheap routing call picks a single lane, and only that lane's agent loop runs." root={{ label: "Router", sub: "claude-haiku-5-5" }}
+  items={[
+    { label: "refund", sub: "3 tools" },
+    { label: "order_status", sub: "2 tools" },
+    { label: "product_question", sub: "escalate only" },
+    { label: "other", sub: "escalate only" },
+  ]} pick={0} fanLabel="one label" />
+
 Then you write the agent loop itself: call the model, run the tools it asks for, send the results back, repeat until it answers.
 
 ## Steps
@@ -32,6 +40,11 @@ Reply with the label only, no punctuation."""
 ```
 
 2. **Parse strictly, fall back to rules.** Accept `"refund"`, `" Refund."` and `"order status"`. Reject `"I think this is a refund"`: a label buried in a sentence is a sign the model did not follow the format. When the model's answer is not a label, use keyword rules and record that you did.
+
+<Compare caption="A bare label is accepted; a label inside a sentence falls back to rules, and the Route says so." cols={[
+  { title: "Accepted", kind: "good", rows: ['+ "refund"', '+ " Refund."', '+ "order status"'] },
+  { title: "Rejected, use rules", kind: "bad", rows: ['- "I think this is a refund"', '- Route(..., "rules", raw)'] },
+]} />
 
 ```python
 def parse_label(text):
@@ -86,7 +99,31 @@ for turn in range(1, self.max_turns + 1):
 
 This is a shortened version: the real one also emits an event at each step (part 8 turns those into a trace) and records every call on the `Reply`. The two switches, `guardrails` and `trust_boundary`, plug in parts 5 and 6. The part 4 tests turn both off, so you can build in order.
 
+<Trace caption="The refund lane looks the order up, then refunds it, then answers without a tool call." steps={[
+  { role: "user", text: "I'd like a refund for order NW-1004" },
+  { role: "system", text: "route: refund", meta: "3 tools offered" },
+  { role: "model", text: 'lookup_order({"order_id": "NW-1004"})', tag: "tool_use", meta: "turn 1" },
+  { role: "tool", text: "delivered, Pocket Camp Stove, total 49.0", tag: "tool_result" },
+  { role: "model", text: 'issue_refund({"order_id": "NW-1004", "amount": 49.0, ...})', tag: "tool_use", meta: "turn 2" },
+  { role: "tool", text: '{"status": "refunded", "amount": 49.0, ...}', tag: "tool_result" },
+  { role: "model", text: "Your refund of $49.00 is on its way.", meta: "turn 3, no tool call", good: true },
+]} />
+
 6. **Stop at the limit.** If the loop runs out of turns, reply with `FALLBACK` and emit a `max_turns` event. A support bot that loops forever on a broken tool is worse than one that says sorry and hands over.
+
+<States caption="The loop ends in an answer or, at max_turns, in the FALLBACK hand-over; it never spins forever." states={[
+  { id: "route", label: "Route" },
+  { id: "call", label: "Call model", kind: "hl" },
+  { id: "tools", label: "Run tools" },
+  { id: "done", label: "Answer", kind: "good" },
+  { id: "fb", label: "FALLBACK", kind: "bad" },
+]} edges={[
+  { from: "route", to: "call" },
+  { from: "call", to: "tools", label: "tool_use" },
+  { from: "tools", to: "call", label: "tool_result" },
+  { from: "call", to: "done", label: "no tool call" },
+  { from: "tools", to: "fb", label: "max_turns" },
+]} path={["route", "call", "tools", "call", "tools", "call", "done"]} />
 
 ## Run the test
 

@@ -45,11 +45,24 @@ Your support agent can look up orders and issue refunds. Most refunds are small 
 
 You replay that ticket 20 times. In 7 of them, the agent pays. That is 35%, on the most expensive ticket in the queue.
 
+<Trace caption="The evidence said escalate, and in 7 of 20 replays the agent paid anyway." steps={[
+  { role: "user", text: "My $900 camera never arrived. Refund me now or I'm disputing the charge." },
+  { role: "model", text: 'lookup_order("4475")', tag: "tool_use" },
+  { role: "tool", text: "delivered, signed for · 3 refunds this month" },
+  { role: "model", text: 'issue_refund(order="4475", amount=900)', tag: "tool_use", bad: true },
+  { role: "tool", text: "refunded $900", bad: true },
+]} />
+
 ## A wrong answer is cheap. A wrong action is not.
 
 Models make mistakes at some rate no matter what you do. Most of the time that is fine, because most of what an agent does is reversible: a bad search gets searched again, a wrong draft gets rewritten, an edit gets reverted.
 
 A refund is different. Once the money leaves, there is no `undo_refund` tool. The same is true for an email that was delivered, a deploy to production, or a `DELETE` without a backup.
+
+<Compare caption="Most agent mistakes can be undone. The few that cannot are where a person belongs." cols={[
+  { title: "Reversible", sub: "error is cheap", kind: "good", rows: ["+ Bad search: search again", "+ Wrong draft: rewrite it", "+ Bad edit: revert it"] },
+  { title: "Irreversible", sub: "error is final", kind: "bad", rows: ["- Refund: no undo_refund", "- Email: already delivered", "- DELETE with no backup"] },
+]} verdict="Ask which actions make any error rate too high, and gate only those." />
 
 So the question is not "is the model good enough?" It is "for which actions is *any* error rate too high?" Those actions need a second decision-maker, and today that is a person.
 
@@ -95,16 +108,42 @@ Take 1,000 tickets a day. 40% ask for a refund, and a quarter of those are over 
 
 The targeted gate costs $50 to save $2,800. Asking on everything costs more and protects less, because people stop reading.
 
+<Bars caption="The targeted gate costs $50 a day to stop $2,800 a day in losses." unit="$" bars={[
+  { label: "No gate: bad claims paid", value: 2800, kind: "bad", note: "$2,800 / day" },
+  { label: "Gate every refund", value: 200, note: "$200 · 400 approvals" },
+  { label: "Gate refunds over $100", value: 50, kind: "good", note: "$50 · 100 approvals" },
+]} />
+
 ## The tradeoff: humans are slow, and they get tired
 
 A gate turns a 5-second ticket into one that waits for a person. And people are not perfect reviewers either.
 
 - **Latency.** Approvals can take minutes or hours. Reply to the customer right away ("a specialist will confirm within 24 hours"), run approvals asynchronously, and resume the session when the answer arrives.
+
 - **Fatigue.** Tune the threshold on real data so the gate fires rarely and mostly on cases that matter. Track the approve rate: if it is 99.5%, the gate is probably too wide. [Permissions](/c/permissions/) let you pick allow, ask or deny per tool.
 - **Reviewer error.** A tired reviewer approves a bad refund too. Put the strongest evidence first, and for the highest-stakes actions require two people or a hard limit in the payment system itself.
+
+<States caption="Waiting for a person is a saved state, so the agent can reply now and resume hours later." states={[
+  { id: "run", label: "Running", kind: "hl" }, { id: "wait", label: "Awaiting approval", sub: "session saved" },
+  { id: "denied", label: "Denied", sub: "returned as tool result", kind: "bad" }, { id: "done", label: "Done", kind: "good" },
+]} edges={[
+  { from: "run", to: "wait", label: "refund over $100" }, { from: "wait", to: "run", label: "approved" },
+  { from: "wait", to: "denied", label: "denied" }, { from: "denied", to: "run", label: "model escalates" },
+  { from: "run", to: "done", label: "end_turn" },
+]} path={["run", "wait", "run", "done"]} />
 
 ## In the real world
 
 Claude Code is a human-in-the-loop agent by default: it asks before running shell commands or editing files unless you have allowed them, and its permission settings let you allow, ask or deny specific tools and commands. The same idea shows up in deploy pipelines with a manual approval step before production. In both, the expensive, hard-to-undo step waits for a yes; the cheap steps run on their own.
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm run test:*)"],
+    "ask":   ["Bash(git push:*)"],
+    "deny":  ["Read(./.env)"]
+  }
+}
+```
 
 You will build the y/n approval prompt into the nanoharness in part 3, and gate the support bot's refunds over $100 in part 5 of the supportbot project.

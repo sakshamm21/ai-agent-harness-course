@@ -41,11 +41,24 @@ Your support agent should take 3 turns per ticket: look up the order, check the 
 
 You read the final answers. They tell you nothing. A wrong answer looks like a right one, only wrong. You need to see what happened on the way.
 
+<Trace caption="All you have is the final answer, and it reads as confidently as a right one." steps={[
+  { role: "user", text: "Where is my order?" },
+  { role: "model", text: "Your order has shipped and should arrive tomorrow!", tag: "end_turn", meta: "turn 20" },
+  { role: "note", text: "The order is stuck at the depot. Nothing here says which turn went wrong.", bad: true },
+]} />
+
+
 ## Logs of answers are not a record of the run
 
 An agent run is a chain of decisions. Each turn depends on what the previous tool returned. When the run goes wrong, the cause is usually early and the symptom is late: a tool returns something unhelpful on turn 2, and the model spends turns 3 to 20 reacting to it.
 
 If you only store the final answer, or one log line per request, the cause is gone. You also cannot add up costs per turn, so you cannot see that the slow runs are where the money goes.
+
+<Compare caption="An answer log keeps the symptom; a record of every turn keeps the cause." cols={[
+  { title: "Answer log", sub: "one line per request", kind: "bad", rows: ["- Only the final answer", "- The turn 2 cause is gone", "- No cost per turn"] },
+  { title: "Record of the run", sub: "every model and tool call", kind: "good", rows: ["+ Each turn and what it returned", "+ The first bad turn is visible", "+ Cost adds up per turn"] },
+]} verdict="The cause is usually early and the symptom late, so keep every step." />
+
 
 ## Record every call as a span in a trace
 
@@ -81,9 +94,22 @@ Sum = 20 × (1,400 + 18,500) / 2 = 199,000 input tokens.<br />
 **If 1 ticket in 10 spirals:** 0.9 × $0.024 + 0.1 × $0.64 = $0.022 + $0.064 ≈ **$0.086 per ticket**, 3.6 times the normal cost. The average tells you something is off; only the trace shows which turn.
 </Callout>
 
+<Bars caption="One spiralling ticket costs about 27 normal ones, so 1 in 10 lifts the average 3.6 times." unit="$" bars={[
+  { label: "Normal, 3 turns", value: 0.024, kind: "good", note: "$0.024" },
+  { label: "Spiral, 20 turns", value: 0.64, kind: "bad", note: "$0.64" },
+  { label: "Average, 1 in 10 spirals", value: 0.086, kind: "hl", note: "$0.086 · 3.6×" },
+]} />
+
+
 ## The tradeoff: traces cost storage and can hold secrets
 
 Recording everything is the point, and also the problem.
+
+<Compare caption="Keep cheap metadata for every run and full traces only where you will debug." cols={[
+  { title: "Full trace", sub: "prompts and tool results", rows: ["+ Shows exactly what the model saw", "- Megabytes for 20 turns", "- Holds emails, addresses, keys"] },
+  { title: "Span metadata", sub: "tokens, cost, timing, errors", kind: "good", rows: ["+ Small enough for all runs", "+ No customer text to leak", "- Not enough to replay a turn"] },
+]} verdict="Full traces for failed, slow or expensive runs and a sample of normal ones; metadata for all." />
+
 
 - **Volume.** A 20-turn trace with full prompts can be megabytes. Keep full traces for a sample of normal runs and for every failed, slow or expensive one; keep span metadata (tokens, cost, timing, errors) for all runs.
 - **Sensitive data.** Prompts and tool results contain customer emails, addresses and sometimes keys. Redact before you store, and restrict who can read traces (see [Guardrails](/c/guardrails/)).
@@ -92,3 +118,18 @@ Recording everything is the point, and also the problem.
 ## In the real world
 
 OpenTelemetry is the open standard most tracing tools speak. A trace is a tree of spans sharing a trace id; each span has a name, a start and end time, a parent span id and key-value attributes. Its semantic conventions for generative AI define attribute names like `gen_ai.request.model` and `gen_ai.usage.input_tokens`, so a model call shows up in your tracing backend like any other operation. Agent tracing products follow the same shape: one trace per task, one span per model or tool call, and a timeline view where you click the first red span.
+
+```json
+{
+  "trace_id": "T-5521",
+  "span_id": "turn-1-model",
+  "parent_span_id": "ticket",
+  "name": "model.call",
+  "start": "10:42:07.120", "end": "10:42:08.910",
+  "attributes": {
+    "gen_ai.request.model": "medium",
+    "gen_ai.usage.input_tokens": 1400
+  }
+}
+```
+

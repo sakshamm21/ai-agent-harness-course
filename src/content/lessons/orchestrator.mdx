@@ -43,11 +43,27 @@ Your research agent gets this: "Should we enter the German heat pump market in 2
 
 By turn 6 its context holds about 20,000 tokens of raw web pages. It writes a fine section on demand and subsidies, then gives installer capacity and competitors one line each: "more research needed." In the lab, about 7 reports in 10 come back like that.
 
+<Trace caption="One agent researching four parts runs out of steam and waves off the last two." steps={[
+  { role: "user", text: "Enter the German heat pump market in 2027? Demand, subsidies, installers, competitors." },
+  { role: "model", text: 'web_search({"query": "German heat pump demand"})', tag: "tool_use" },
+  { role: "tool", text: "Five pages on demand", meta: "raw pages" },
+  { role: "model", text: 'web_search({"query": "heat pump demand Germany 2027"})', tag: "tool_use" },
+  { role: "model", text: 'web_search({"query": "German heat pump subsidies"})', tag: "tool_use" },
+  { role: "note", text: "Turn 6: about 20,000 tokens of raw web pages in context" },
+  { role: "model", text: "Installer capacity: more research needed. Competitors: more research needed.", tag: "end_turn", bad: true },
+]} />
+
 ## One context is doing two jobs
 
 The agent is trying to be a manager and a researcher in the same window. As a researcher it needs deep, messy context: whole pages, dead ends, numbers to compare. As a manager it needs a clean view: four parts, which are done, what is missing.
 
 Those needs fight. Every page it reads for part 1 is still in the transcript while it works on part 4. The longer it goes, the more each turn costs and the more the early instructions get buried ([Context Management and Compaction](/c/context_mgmt/)). So it does what a tired person does: it wraps up early.
+
+<Stack caption="By the later parts the window is mostly old pages, and the task sits buried under them." blocks={[
+  { label: "Task + instructions", tokens: 2000, kind: "hl" },
+  { label: "Pages from earlier parts", tokens: 14000, kind: "bad" },
+  { label: "Pages for the current part", tokens: 3500 },
+]} />
 
 You could hard-code the split ("always search demand, subsidies, capacity, competitors"). That is [sectioning](/c/parallelization/), and it works when every input has the same shape. Research questions do not. A database comparison has different parts from a drug review, and you cannot know them until you read the question.
 
@@ -74,6 +90,11 @@ Three details make or break it:
 - **Workers return summaries, not transcripts.** The lead never sees the 10,000 tokens a worker read, only the brief it wrote.
 - **The lead checks the merge.** Missing parts and conflicting numbers are the lead's job to catch, because only it sees all four results.
 
+<Compare caption="A worker knows only its brief, so a vague brief invites overlap." cols={[
+  { title: "Vague brief", kind: "bad", rows: ['- "Research subsidies"', "- Overlaps other workers", "- No clear end"] },
+  { title: "Specific brief", kind: "good", rows: ["+ 2027 federal and state rules", "+ Return amounts, eligibility, sources", "+ Do not cover installers"] },
+]} verdict="The brief is the whole interface between lead and worker." />
+
 ## Let us check the math
 
 Sim prices (illustrative): medium $3/$15, small $1/$5 per million input/output tokens. Each search returns about 3,500 tokens, and the question needs about 12 searches in total.
@@ -90,7 +111,22 @@ Lead (medium): plan (2,000 in, 500 out) + merge (4,100 in, 1,200 out) = 6,100 ×
 Total ≈ **$0.17**, and the lead's context never passes about 5,300 tokens.
 </Callout>
 
+<Bars caption="Four short contexts cost about a fifth of one long one." unit="$" bars={[
+  { label: "Single agent (medium)", value: 0.82, kind: "bad", note: "$0.82 · 44k-token context" },
+  { label: "4 workers (small)", value: 0.13 },
+  { label: "Lead (medium)", value: 0.044 },
+  { label: "Orchestrator total", value: 0.17, kind: "good", note: "$0.17 · lead stays near 5.3k" },
+]} />
+
 The saving comes from the shape, not from magic. One long context pays for every old page on every turn. Four short contexts each pay for only their own three pages. Latency drops too: four workers in parallel take about as long as one.
+
+<Lanes caption="Twelve searches in a row versus four workers doing three each at the same time." unit="searches" total={12} lanes={[
+  { heading: "Single agent" },
+  { label: "12 searches", start: 0, end: 12, kind: "bad" },
+  { heading: "Orchestrator-workers" },
+  { label: "demand", start: 0, end: 3, kind: "good" }, { label: "subsidies", start: 0, end: 3, kind: "good" },
+  { label: "installers", start: 0, end: 3, kind: "good" }, { label: "competitors", start: 0, end: 3, kind: "good", note: "done after 3" },
+]} marks={[{ at: 3, label: "workers done" }]} />
 
 ## The tradeoff: more agents, more ways to go wrong
 
@@ -100,8 +136,17 @@ Orchestration buys coverage and clean contexts. It costs you control:
 - **Bad briefs fail silently.** Two workers on the same subtopic and no one on part 3 looks like a finished report. Ask the lead to list which part each brief covers, and check coverage before the merge ([Evaluator–Optimizer](/c/evaluator_optimizer/)).
 - **Debugging is harder.** A wrong report could come from the plan, one worker, or the merge. Trace every worker as its own span with its brief and result ([Tracing and Observability](/c/tracing/)).
 
+<Fan caption="A bad plan sends two workers to subsidies and none to installers, and the report still looks finished." root={{ label: "Lead", sub: "plans 4 briefs", kind: "hl" }}
+  items={[{ label: "Worker", sub: "demand" }, { label: "Worker", sub: "subsidies" }, { label: "Worker", sub: "subsidies again", kind: "bad" }, { label: "Worker", sub: "competitors" }]}
+  merge={{ label: "Report", sub: "no installer section", kind: "bad" }} fanLabel="briefs" />
+
 Use it when the parts are truly independent and the job is broad. A task where every step needs the last step's result is a [chain](/c/chaining/) or a single agent.
 
 ## In the real world
 
 Anthropic described its Research feature this way: a lead agent (Claude Opus 4) plans, then starts subagents (Claude Sonnet 4) that search in parallel and return condensed findings. On its internal research eval, the multi-agent setup beat a single Opus 4 agent by 90.2%. It also used about 15 times the tokens of a chat, which is why Anthropic says it fits valuable, broad tasks and not every question. You will build the planning half of this in part 1 of the deepresearch project.
+
+<Compare caption="Anthropic's multi-agent Research beat a single agent but used far more tokens." cols={[
+  { title: "Single agent", sub: "Claude Opus 4", rows: ["One context for every part"] },
+  { title: "Lead + subagents", sub: "Opus 4 lead, Sonnet 4 workers", kind: "good", rows: ["+ 90.2% better on internal eval", "- About 15× the tokens of a chat"] },
+]} verdict="Worth it for valuable, broad tasks, not for every question." />

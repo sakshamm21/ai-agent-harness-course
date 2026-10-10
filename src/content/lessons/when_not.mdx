@@ -42,6 +42,16 @@ Your team built one agent for every back-office job: a large model, a loop, and 
 
 It searches the wiki for "order number format conventions", runs a SQL query for similar orders, and then answers. The answer is right. It took 3 model calls and cost about $0.155. The line of code that does the same job is `re.search(r"ORD-\d{8}", email)`. It costs nothing, takes a microsecond, and has never once looked up the wrong order.
 
+<Trace caption="Three large-model calls and two lookups to do what one line of regex does for free." steps={[
+  { role: "user", text: "Find the order number in this email." },
+  { role: "model", text: 'search_wiki("order number format conventions")', tag: "tool_use" },
+  { role: "tool", text: "Wiki page on order formats", meta: "+1.2k tok" },
+  { role: "model", text: "run_sql: orders similar to this one", tag: "tool_use" },
+  { role: "tool", text: "Rows of similar orders", meta: "+1.5k tok" },
+  { role: "model", text: "The right order number, after three calls.", tag: "end_turn", meta: "3 calls · $0.155" },
+  { role: "note", text: 're.search(r"ORD-\\d{8}", email): no calls, $0', good: true },
+]} />
+
 ## Freedom only helps when there is something to explore
 
 An agent is a model that chooses its own next step ([Chatbot vs Workflow vs Agent](/c/chat_vs_agent/)). That freedom is valuable when you cannot know the steps in advance. When you can, it is pure overhead:
@@ -49,6 +59,11 @@ An agent is a model that chooses its own next step ([Chatbot vs Workflow vs Agen
 - **Cost.** Every extra step resends the whole context. Three calls cost far more than three times one call, because each one is bigger.
 - **Latency.** Steps run one after another. Three calls on a large model is about 10 seconds for an answer a regex gives instantly.
 - **New ways to fail.** Give a model tools and a loop, and it will use them. In the lab, the agent sometimes "helpfully" looks up similar orders and answers for the wrong one. A single call cannot make that mistake because it has nowhere to wander.
+
+<Lanes caption="Three large-model calls run one after another, about 10 seconds for an answer a regex gives instantly." unit="s" total={10} lanes={[
+  { heading: "Agent, large model" }, { label: "call 1", start: 0, end: 3.3 }, { label: "call 2", start: 3.3, end: 6.7 }, { label: "call 3", start: 6.7, end: 10, kind: "bad", note: "≈ 10 s" },
+  { heading: "Plain code" }, { label: "regex", start: 0, end: 0.05, kind: "good", note: "a microsecond" },
+]} />
 
 Most jobs that teams hand to agents are classification, extraction, translation or rewriting: one input, one output, a known path.
 
@@ -85,9 +100,19 @@ Illustrative sim prices per million input/output tokens: medium $3/$15, large $1
 **Routed mix of all five jobs:** (4 × $0.0065 + $0.048) / 5 ≈ **$0.015** a job, against about $0.17 a job for the all-agent setup.
 </Callout>
 
+<Bars caption="At 10,000 emails a day the agent costs $1,550, one call $65, and the regex about nothing." unit="$" bars={[
+  { label: "Agent, large", value: 1550, kind: "bad", note: "$1,550 a day" },
+  { label: "One call, medium", value: 65, kind: "hl", note: "$65 a day" },
+  { label: "Regex", value: 0, kind: "good", note: "about $0" },
+]} />
+
 ## The tradeoff: now you have two paths and a decision to get right
 
 Splitting the work means something has to choose the path. A router that sends the export job to a single call gets a confident guess ("probably a timeout") instead of a diagnosis. You also maintain two code paths, two prompts and two sets of tests instead of one.
+
+<Fan caption="The router is a new decision to get right: the export job must reach the agent, or it gets a guess instead of a diagnosis." root={{ label: "Router", sub: "job type or a cheap classifier" }}
+  items={[{ label: "Plain code", sub: "ID format" }, { label: "One call", sub: "order no., sentiment, translate" }, { label: "Agent", sub: "why the export failed", kind: "hl" }]}
+  pick={2} fanLabel="one path per job" />
 
 Ways to manage it:
 
@@ -98,3 +123,8 @@ Ways to manage it:
 ## In the real world
 
 Anthropic's "Building effective agents" makes the same argument: find the simplest solution that works and add complexity only when it clearly improves results, which "might mean not building agentic systems at all". It notes that a single call with retrieval and good examples is often enough, and that agents trade latency and cost for better performance on open-ended tasks. The skill this section ends on is knowing which kind of task is in front of you.
+
+<Compare caption="Anthropic's advice: the simplest solution that works, and an agent only when it clearly improves results." cols={[
+  { title: "One call", sub: "with retrieval and good examples", kind: "good", rows: ["+ Often enough", "+ Lower latency and cost"] },
+  { title: "Agentic system", sub: "open-ended tasks", kind: "hl", rows: ["+ Better on open-ended tasks", "- Trades latency and cost for it"] },
+]} verdict="Add complexity only when it clearly improves results." />

@@ -45,6 +45,11 @@ You wire a medium model into the loop from [The Agent Loop](/c/agent_loop/), giv
 
 Nobody retrained anything. The weights are identical. The only difference is the program around the model, and that program has a name: the harness.
 
+<Bars caption="Same model, same ten tasks: only the program around it changed." unit="%" max={100} bars={[
+  { label: "Your loop", value: 47, kind: "bad", note: "47% solved" },
+  { label: "A better harness", value: 94, kind: "good", note: "about 94% solved" },
+]} />
+
 ## The model was never the bottleneck
 
 Read the failing transcripts and the failures fall into four groups. None of them is the model being unable to code.
@@ -55,6 +60,16 @@ Read the failing transcripts and the failures fall into four groups. None of the
 - **It ran `rm -rf`.** Faced with a broken build and a raw shell, it wiped `.git/` along with the cache.
 
 Each of these is a decision the harness made, or failed to make. What the model sees, which tools it can call, how long it may run and what it is allowed to touch are not properties of the weights. They are code you write.
+
+<Trace caption="Four failing transcripts, and each one is a gap in the harness, not in the model." steps={[
+  { role: "model", text: 'read_file("orders")', tag: "tool_use", meta: "no descriptions" },
+  { role: "error", text: "guessing at arguments until something works", bad: true },
+  { role: "model", text: "run_tests()", tag: "turn 60", meta: "no stop rule" },
+  { role: "error", text: "killed by the platform at 60 turns", bad: true },
+  { role: "note", text: "Big refactor: the task falls out of the window", meta: "no compactor" },
+  { role: "model", text: 'shell("rm -rf ...")', tag: "tool_use", meta: "raw shell" },
+  { role: "tool", text: ".git/ wiped along with the cache", bad: true },
+]} />
 
 ## A harness is everything that is not the model
 
@@ -82,6 +97,17 @@ So on turn 6 the oldest messages fall out, task included, three turns before the
 With a compactor at 75% (12,000 tokens), compaction fires after turn 4 at 12,600 tokens and summarizes it to the 2,200-token prefix and task, an 800-token summary, and 10% of the other 10,400 tokens ≈ **4,040 tokens**. The task survives.
 </Callout>
 
+<Bars caption="Without a compactor the context passes the 16,000-token window on turn 6." unit="k" max={18} bars={[
+  { label: "Turn 1", value: 4.8 }, { label: "Turn 2", value: 7.4 }, { label: "Turn 3", value: 10.0 },
+  { label: "Turn 4", value: 12.6, kind: "hl", note: "12.6k · compactor fires" }, { label: "Turn 5", value: 15.2 },
+  { label: "Turn 6", value: 17.8, kind: "bad", note: "17.8k · over 16k" },
+]} />
+
+<Stack blocks={[
+  { label: "Prefix: system + tools", tokens: 2000 }, { label: "Task", tokens: 200, kind: "good" },
+  { label: "Summary", tokens: 800, kind: "hl" }, { label: "10% of the rest", tokens: 1040 },
+]} budget={16000} caption="After compaction at turn 4: about 4,040 tokens, with the task still in place." />
+
 Now the whole batch. In preset A, roughly 2 of the 10 tasks die from guessing, about 2 from `rm -rf`, the long refactors from overflow, and the stuck one from a runaway. That is how you land near 47%. Preset B removes each cause with one harness change, and success roughly doubles while average cost goes *down* (about $0.18 to $0.14 per task at sim prices: medium tier, $3 per million input and $15 per million output tokens, illustrative), because fewer turns are wasted.
 
 ## The tradeoff: every harness part is a decision you now own
@@ -92,8 +118,18 @@ A harness gives you control, and control means more decisions that can be wrong.
 - **Compaction loses detail.** A summary keeps the task but drops exact lines the model read 40 turns ago. Offloading to files keeps them retrievable at the cost of extra reads ([Context Management](/c/context_mgmt/)).
 - **Permissions add friction.** Denying the shell blocks `rm -rf`, and also blocks the harmless `ls` the model wanted. Ask rules put a human in the loop, and too many of them train the human to click yes without reading ([Permissions](/c/permissions/)).
 
+<Compare caption="Each harness part fixes one failure and brings a new decision you have to tune." cols={[
+  { title: "Turn cap", sub: "25 turns", rows: ["+ Kills the flaky-test loop", "- Stops a real 30-turn migration"] },
+  { title: "Compaction", sub: "summarize old turns", rows: ["+ Keeps the task", "- Drops exact lines read long ago"] },
+  { title: "Permissions", sub: "deny the shell", rows: ["+ Blocks rm -rf", "- Also blocks a harmless ls"] },
+]} verdict="Tune each part per task type." />
+
 The rest of this section takes the harness apart one piece at a time.
 
 ## In the real world
 
 Claude Code, Codex CLI, Cursor's agent and OpenHands can all be pointed at the same frontier models, and they behave differently because their harnesses differ. Claude Code loads `CLAUDE.md` files into the prompt, auto-compacts long sessions, and has permission modes plus allow, ask and deny rules for tools. Codex CLI reads `AGENTS.md` and runs commands inside an OS-level sandbox. OpenHands runs the agent's actions in a Docker container. Benchmark papers call this layer the scaffold, and a model's score on a coding benchmark is always a score for a model *plus* a scaffold.
+
+<Fan caption="Point the same model at different harnesses and you get different agents." root={{ label: "Same frontier model", kind: "hl" }}
+  items={[{ label: "Claude Code", sub: "CLAUDE.md, auto-compact, rules" }, { label: "Codex CLI", sub: "AGENTS.md, OS sandbox" }, { label: "OpenHands", sub: "Docker container" }]}
+  fanLabel="different scaffolds" />

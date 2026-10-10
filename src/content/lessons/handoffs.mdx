@@ -43,6 +43,13 @@ Your sales agent closes a deal: Acme moves to the Team plan, 40 seats, annual bi
 
 In the lab, about 1 setup in 4 goes wrong. Sometimes support reads the sales instructions in the transcript and keeps pitching the Enterprise add-on. Sometimes the 15% discount, mentioned once in message 23, never makes it onto the invoice.
 
+<Trace caption="Support got 9,000 tokens of sales transcript and still lost the one fact that mattered." steps={[
+  { role: "model", text: "Sales: Team plan, 40 seats, annual, 15% off year 1, SSO with Okta", tag: "handoff" },
+  { role: "system", text: "Support receives all 41 messages", meta: "≈ 9,000 tok" },
+  { role: "model", text: "Support: Have you considered the Enterprise add-on?", bad: true },
+  { role: "tool", text: "create_invoice: Team, 40 seats, annual, no discount", bad: true },
+]} />
+
 ## The next agent inherits everything, or nothing
 
 A **handoff** is when one agent passes the conversation to another, which then talks to the user directly. It differs from a [subagent](/c/subagents/): a subagent does a job and reports back, while a handoff transfers ownership. So the question is what the new owner gets to see.
@@ -53,6 +60,11 @@ The two easy answers both fail:
 - **A one-line note.** "Customer upgraded, please finish setup." It is cheap, but the discount and the billing email are gone. Support either asks the customer again or sets up the wrong thing.
 
 The real problem is that nobody decided what the handoff must carry.
+
+<Compare caption="Both easy handoffs fail: one carries too much, the other too little." cols={[
+  { title: "Everything", sub: "full transcript", kind: "bad", rows: ["- Paid for on every turn", "- Sales instructions leak in"] },
+  { title: "One-line note", sub: "finish setup", kind: "bad", rows: ["+ Cheap", "- Discount and billing email gone"] },
+]} verdict="Decide what the handoff must carry." />
 
 ## Make the handoff a contract
 
@@ -94,11 +106,24 @@ At 10,000 handoffs a month: **$810 vs $40**.<br /><br />
 **Accuracy in the lab:** the full-transcript starter gets about 77% of handoffs right; the structured record gets about 97%.
 </Callout>
 
+<Bars caption="The handoff record costs about 20 times less per handoff and gets more setups right." unit="$" bars={[
+  { label: "Full transcript", value: 0.081, kind: "bad", note: "$0.081 · 77% right" },
+  { label: "Handoff record", value: 0.004, kind: "good", note: "$0.004 · 97% right" },
+]} />
+
 The record is both cheaper and more accurate. The full transcript loses to it on both counts, because more context is not the same as the right context.
 
 ## The tradeoff: a schema only carries what you thought of
 
 A structured handoff is a design decision, and it can be wrong:
+
+<States caption="Cap handoffs per conversation so a sales and support ping-pong ends with a human." states={[
+  { id: "sales", label: "Sales agent" }, { id: "support", label: "Support agent", kind: "hl" },
+  { id: "done", label: "Setup done", kind: "good" }, { id: "human", label: "Human", sub: "handoff cap hit", kind: "bad" },
+]} edges={[
+  { from: "sales", to: "support", label: "hand off" }, { from: "support", to: "sales", label: "hand back" },
+  { from: "support", to: "done", label: "resolved" }, { from: "support", to: "human", label: "cap hit" },
+]} path={["sales", "support", "sales", "support", "human"]} />
 
 - **Missing fields.** If sales promises something the schema has no field for ("you can pay in euros"), it vanishes. Keep a free-text `notes` field and an `open_questions` list, and review real handoffs that went wrong ([Trajectory and Tool-Use Evals](/c/trajectory_evals/)).
 - **Stale shared state.** Two agents writing the same record can overwrite each other. Give each field one owner, and validate writes ([Writing Memory Safely](/c/memory_write/)).
@@ -106,4 +131,23 @@ A structured handoff is a design decision, and it can be wrong:
 
 ## In the real world
 
-The OpenAI Agents SDK makes handoffs a first-class feature. A handoff appears to the model as a tool, such as `transfer_to_refund_agent`. You can attach an `input_type` so the model must fill structured data when it hands off, and an `input_filter` to control which history the next agent sees, for example removing all previous tool calls. That is this lesson's contract and filter, built in. In part 5 of the deepresearch project, the research agents hand their findings to a report writer the same way: as structured notes, not raw transcripts.
+The OpenAI Agents SDK makes handoffs a first-class feature. A handoff appears to the model as a tool, such as `transfer_to_refund_agent`. You can attach an `input_type` so the model must fill structured data when it hands off, and an `input_filter` to control which history the next agent sees, for example removing all previous tool calls. That is this lesson's contract and filter, built in.
+
+```python
+from agents import Agent, handoff
+from agents.extensions import handoff_filters
+from pydantic import BaseModel
+
+class RefundRequest(BaseModel):
+    order_id: str
+    reason: str
+
+triage = Agent(name="Triage", handoffs=[handoff(
+    refund_agent,                                 # tool: transfer_to_refund_agent
+    input_type=RefundRequest,                     # the contract
+    on_handoff=log_refund,
+    input_filter=handoff_filters.remove_all_tools,  # the filter
+)])
+```
+
+In part 5 of the deepresearch project, the research agents hand their findings to a report writer the same way: as structured notes, not raw transcripts.

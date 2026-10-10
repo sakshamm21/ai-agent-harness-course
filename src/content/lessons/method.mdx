@@ -41,6 +41,15 @@ reading:
 
 Your team gets 400 new GitHub issues a day and wants an agent to triage them: find duplicates, read the issue, add a label. You wire up the largest model, give it every tool the GitHub API has, and run it on a sample. The labels look good. Then you read the bill: $0.42 per issue, $170 a day, against a budget of $40. And on issue #4815 it closed a real bug as a duplicate.
 
+<Trace caption="The labels looked good, but the bill was four times the budget and a real bug got closed." steps={[
+  { role: "user", text: "Triage issue #4815" },
+  { role: "model", text: 'search_issues("…")', tag: "tool_use", meta: "largest model" },
+  { role: "model", text: 'close_issue(4815, reason="duplicate")', tag: "tool_use", bad: true },
+  { role: "error", text: "#4815 was a real bug, now closed", bad: true },
+  { role: "note", text: "$0.42 per issue, $170 a day, against a $40 budget", bad: true },
+]} />
+
+
 Nothing in that design was wrong in isolation. You just skipped the questions that would have ruled it out before you wrote any code.
 
 ## Agents fail where nobody asked the question
@@ -65,6 +74,12 @@ So answer them in a fixed order. Each step uses the answers from the one before.
 
 **6. Tradeoffs, then build.** Write down what you gave up and why. Then build the smallest version and run the evals.
 
+<Compare caption="Each step replaces a default nobody chose with a decision you can defend." cols={[
+  { title: "Defaults", sub: "nobody asked", kind: "bad", rows: ["- The biggest model", "- Every tool", "- No cap", "- No evals"] },
+  { title: "The method", sub: "steps 2 to 5", kind: "good", rows: ["+ Tier from napkin math", "+ Fewest tools, allow/ask/deny", "+ Normal turns and a cap", "+ 20 to 50 test tasks first"] },
+]} />
+
+
 ## Let us check the math
 
 Back to the triage agent. A typical issue takes 5 turns: read, search, maybe read a duplicate, label, answer. The context starts at 2.5k tokens (system prompt, tool schemas, the issue number) and each turn adds about 1.2k (issue text, search results).
@@ -79,11 +94,45 @@ Budget: $40 / 400 = **$0.10 per issue**. Medium fits with 15% headroom. Large is
 
 Prices are this course's illustrative sim prices. The shape is what matters: the budget per task decides the tier, and the tier decides how much reasoning you can buy per turn.
 
+<Bars caption="Only the medium tier fits the $0.10 per issue budget, with 15% headroom." unit="$" bars={[
+  { label: "Large", value: 0.42, kind: "bad", note: "$0.42 · $170/day" },
+  { label: "Budget", value: 0.10, kind: "hl", note: "$0.10 · $40/day" },
+  { label: "Medium", value: 0.085, kind: "good", note: "$0.085 · $34/day" },
+  { label: "Small", value: 0.03, note: "$0.03 · mislabels more" },
+]} />
+
+
 Now the other steps fall out. Step 1 said a wrong closure is expensive and a wrong label is cheap, so step 3 denies `close_issue` and allows `add_label`. Step 4 notices that vague issues ("how do i do the thing") tempt the model into re-running the same search, so it caps the loop at 12 turns. Step 5 builds 40 past issues with the labels your maintainers actually chose.
+
+```yaml
+# triage agent: the one-page design
+job: "Find duplicates, read each new issue, add a label"
+failure_cost: { wrong_label: "10 s of a maintainer", wrong_close: "a user's trust" }
+napkin_math: { issues_per_day: 400, turns: 5, tier: medium, per_issue: "$0.085" }
+tools:
+  add_label: allow
+  close_issue: deny
+loop: { normal_turns: 5, max_turns: 12 }
+evals: "40 past issues, labels your maintainers chose"
+```
+
 
 ## The tradeoff: the method costs you a day up front
 
 Writing six answers before building feels slow, and some answers will be wrong. Three ways to keep it cheap:
+
+<States caption="The design is a draft: evals bring back real numbers, and you redo step 2 until they hold." states={[
+  { id: "draft", label: "One-page design", sub: "one hour", kind: "hl" },
+  { id: "build", label: "Smallest build" },
+  { id: "evals", label: "Run 20 evals", sub: "read traces" },
+  { id: "ship", label: "Loosen slowly", sub: "ask before allow", kind: "good" },
+]} edges={[
+  { from: "draft", to: "build", label: "timeboxed" },
+  { from: "build", to: "evals", label: "run" },
+  { from: "evals", to: "draft", label: "estimates off: redo step 2" },
+  { from: "evals", to: "ship", label: "numbers hold" },
+]} path={["draft", "build", "evals", "draft", "build", "evals", "ship"]} />
+
 
 - **Timebox it.** One page, one hour. The goal is to rule out bad designs, not to predict everything.
 - **Let evals correct the math.** Your turn and token estimates are guesses. Run 20 eval tasks, read the real numbers from your traces ([Tracing and Observability](/c/tracing/)), and redo step 2.

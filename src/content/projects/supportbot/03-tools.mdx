@@ -18,6 +18,11 @@ Two properties matter more than the happy path:
 - **A refund happens exactly once.** Networks time out and agents retry. If the second `issue_refund` pays again, you have lost money. An idempotency key makes the retry harmless.
 - **Errors are messages, not exceptions.** "No order NW-9999. Ask the customer to check the number on their confirmation email." lets the model recover. A stack trace does not.
 
+<Compare caption="An error written for the model lets it recover in the next turn; a crash ends the conversation." cols={[
+  { title: "Raised exception", kind: "bad", rows: ["- Stack trace, or the loop dies", "- Model cannot tell what to fix"] },
+  { title: "Error message", kind: "good", rows: ["+ No order NW-9999.", "+ Ask the customer to check", "+ is_error=True, loop goes on"] },
+]} />
+
 `OrderStore` (the schema, seeding and row helpers) is given to you. You write the tools.
 
 ## Steps
@@ -68,6 +73,15 @@ with store.db:   # one transaction: both writes happen, or neither does
 
 The `idempotency_key` column is `UNIQUE`, so even a race between two threads cannot write two rows for one key.
 
+<Trace caption="A retry with the same key returns the first refund and changes nothing." steps={[
+  { role: "model", text: 'issue_refund({"order_id": "NW-1004", "amount": 20.0})', tag: "tool_use" },
+  { role: "tool", text: "INSERT refund RF-0001, refunded_amount = 20.0", meta: "key-1" },
+  { role: "error", text: "network timeout, the agent retries", bad: true },
+  { role: "model", text: 'issue_refund({"order_id": "NW-1004", "amount": 20.0})', tag: "tool_use" },
+  { role: "tool", text: 'same key found: RF-0001, "duplicate": true', meta: "key-1", good: true },
+  { role: "note", text: "still 1 refund row, refunded_amount still 20.0" },
+]} />
+
 4. **Derive the key.** The model does not choose the key; your code does. The same conversation asking for the same refund gets the same key. A different conversation gets a different one.
 
 ```python
@@ -79,6 +93,23 @@ def make_idempotency_key(conversation_id, name, args):
 5. **Escalate.** `escalate_to_human` inserts a ticket and returns its id and an ETA. An empty summary is an error: a person picking up the ticket needs to know what the customer wants.
 
 6. **One door for every call.** `run_tool` is the only way the agent calls a tool. It checks the tool exists, validates the arguments against the JSON schema (`validate_args`, given), runs it, and wraps the result. A `ToolError` becomes `"Error: ..."` with `is_error=True`. It never raises.
+
+<States caption="Every path through run_tool ends in a ToolResult, so a bad call never crashes the agent." states={[
+  { id: "call", label: "Tool call" },
+  { id: "known", label: "Known tool?" },
+  { id: "valid", label: "Args valid?" },
+  { id: "run", label: "Run tool", kind: "hl" },
+  { id: "ok", label: "JSON result", kind: "good" },
+  { id: "err", label: "Error: ... is_error", kind: "bad" },
+]} edges={[
+  { from: "call", to: "known" },
+  { from: "known", to: "valid", label: "yes" },
+  { from: "valid", to: "run", label: "yes" },
+  { from: "run", to: "ok", label: "success" },
+  { from: "known", to: "err", label: "no" },
+  { from: "valid", to: "err", label: "no" },
+  { from: "run", to: "err", label: "ToolError" },
+]} path={["call", "known", "valid", "run", "ok"]} />
 
 ```python
 elif name == "issue_refund":

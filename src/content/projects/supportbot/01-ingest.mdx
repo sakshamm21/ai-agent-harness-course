@@ -15,6 +15,14 @@ The bot can only cite what it can find. Part 1 turns `data/help_center/` into so
 
 There is no vector database and no numpy. 74 vectors of 512 floats is a linear scan that takes well under a millisecond. You will see why chunk size and the embedding matter much more than the index at this scale.
 
+<Flow caption="Ingest is four plain steps, and at 74 chunks the index is just a list you scan." steps={[
+  { label: "60 articles", sub: "help_center/*.md" },
+  { label: "parse", sub: "front matter + body" },
+  { label: "74 chunks", sub: "60 words max" },
+  { label: "embed", sub: "512 floats each", kind: "hl" },
+  { label: "VectorIndex", sub: "cosine scan" },
+]} />
+
 Every article looks like this:
 
 ```markdown
@@ -97,6 +105,13 @@ cd solution && python3 -m supportbot ingest
 ```
 
 Search for "when will I get my money back". The top four are `refund-method` 0.30, `refund-timing` 0.30, `partial-refunds` 0.28 and `refund-approval` 0.23. None of them contains the word "money" near "back", and the concept table is what finds them. Now search for "zebra quantum xylophone" and look at how low the best score is. Part 2 uses that gap to decide when there is nothing worth retrieving.
+
+<Bars caption="The concept table lets 'money back' find four refund articles without sharing those words." bars={[
+  { label: "refund-method", value: 0.30, kind: "good" },
+  { label: "refund-timing", value: 0.30, kind: "good" },
+  { label: "partial-refunds", value: 0.28, kind: "good" },
+  { label: "refund-approval", value: 0.23 },
+]} max={0.4} />
 
 ## Run the test
 

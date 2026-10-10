@@ -13,6 +13,13 @@ updated: 2026-10-10
 
 The question "When did the Velmora Tunnel open? How long is it? How much did it cost?" is three questions. A single search for all of it finds pages that half-match each part. Three searches, one per part, each find the page that answers it.
 
+<Fan caption="One compound question becomes three standalone sub-questions, one worker each." root={{ label: "Orchestrator", sub: "plans, never reads" }}
+  items={[
+    { label: "Worker", sub: "When did the Velmora Tunnel open?" },
+    { label: "Worker", sub: "How long is the Velmora Tunnel?" },
+    { label: "Worker", sub: "How much did it cost to build?" },
+  ]} merge={{ label: "Results", sub: "status + claims" }} fanLabel="sub-questions" />
+
 The orchestrator is the agent that does the splitting. It calls a planner model once, gets back a JSON array of sub-questions, and hands that list to whatever runs the workers. When results come back, it looks at their status. A worker that found nothing gets one replacement sub-question, worded differently. A worker that ran out of money does not.
 
 The orchestrator never searches and never reads a page. That is the point of the pattern: its context holds the question, the plan and the results, and stays small no matter how much the workers read.
@@ -42,6 +49,11 @@ You write four functions in `orchestrator.py`. The prompts are in `prompts.py` a
 
 2. **Ask the planner.** One call with `PLANNER_SYSTEM`. Read the prompt: it tells the model that each sub-question must stand alone and repeat the names it needs, never "it". A worker only sees its own sub-question, so "How long is it?" would send it searching for nothing. If the plan is unusable, fall back to the original question: one worker on the whole question beats none.
 
+<Compare caption="A worker sees only its own sub-question, so every name it needs must be in it." cols={[
+  { title: "Leans on context", kind: "bad", rows: ['- "How long is it?"', "- Worker searches for nothing"] },
+  { title: "Stands alone", kind: "good", rows: ['+ "How long is the Velmora Tunnel?"', "+ One search finds the page"] },
+]} verdict="Repeat the names, never write it." />
+
    ```python
    def plan(question: str, model: Model, max_subquestions: int = 4) -> list[str]:
        resp = model.complete([{"role": "user", "content": plan_prompt(question, max_subquestions)}],
@@ -64,11 +76,31 @@ You write four functions in `orchestrator.py`. The prompts are in `prompts.py` a
 
 4. **Decide what is worth a retry.** A result has a status: `ok`, `empty`, `failed`, `budget` or `skipped`. Only two of those are worth new wording. `budget` and `skipped` mean the cost cap (part 3) was hit, and asking again would only spend more.
 
+<States caption="Only failed and empty results earn new wording; a budget stop is final." states={[
+  { id: "run", label: "Worker ran" },
+  { id: "ok", label: "ok", kind: "good" },
+  { id: "retry", label: "failed / empty", kind: "hl" },
+  { id: "stop", label: "budget / skipped", kind: "bad" },
+]} edges={[
+  { from: "run", to: "ok", label: "claims" },
+  { from: "run", to: "retry", label: "nothing found" },
+  { from: "run", to: "stop", label: "cost cap" },
+  { from: "retry", to: "run", label: "replan: new wording" },
+]} path={["run", "retry", "run", "ok"]} />
+
    ```python
    REPLAN_STATUSES = {"failed", "empty"}
    ```
 
 5. **Orchestrate.** Plan, run, then up to `max_replans` times: find the failures, replan them, and swap their results for the new ones. A failure with no replacement stays in the list, so the writer (part 5) can report it as a gap instead of hiding it. `run_workers` is passed in, so this function does not care whether workers run one by one or in parallel.
+
+<Trace caption="One replan round swaps a failed sub-question for new wording and keeps the rest." steps={[
+  { role: "user", text: "When did the Velmora Tunnel open? How long is it? How much did it cost?" },
+  { role: "model", text: "plan: 3 standalone sub-questions", tag: "plan" },
+  { role: "tool", text: "results: ok, ok, empty", meta: "run_workers" },
+  { role: "model", text: "failed: 1, new: 1 (different wording)", tag: "replan" },
+  { role: "tool", text: "results: ok, ok, ok", meta: "run_workers(new)", good: true },
+]} />
 
    ```python
    subs = plan(question, model, max_subquestions)

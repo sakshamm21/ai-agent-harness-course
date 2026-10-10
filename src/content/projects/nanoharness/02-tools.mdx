@@ -40,6 +40,11 @@ def resolve_path(root: str, path: str) -> str:
 
 The `+ os.sep` matters. Without it, a root of `/tmp/repo` would accept `/tmp/repo-secrets`.
 
+<Compare caption="resolve_path checks the real path after symlinks, so every escape route fails the same check." cols={[
+  { title: "Allowed", sub: "root /tmp/repo", kind: "good", rows: ["+ calc.py", "+ src/app.py", "+ . (the root itself)"] },
+  { title: "PermissionError", sub: "outside the root", kind: "bad", rows: ["- ../../etc/passwd", "- /etc/passwd", "- link -> / (a symlink)", "- /tmp/repo-secrets"] },
+]} verdict="realpath first, then compare against root + os.sep." />
+
 ### 2. Number the lines in `read_file`
 
 The model needs line numbers to talk about code, and a hint when a file is cut off:
@@ -58,6 +63,13 @@ return out or "(empty file)"
 ```
 
 The truncation note tells the model exactly which `offset` to ask for next. A tool that silently drops line 2,001 produces an agent that never finds the bug on line 2,400.
+
+<Trace caption="The truncation note names the next offset, so the model can page to line 2,400." steps={[
+  { role: "model", text: 'read_file({"path": "big.py"})', tag: "tool_use" },
+  { role: "tool", text: "lines 1 to 2000, then [... 400 more lines; use offset=2001 ...]", meta: "limit 2000" },
+  { role: "model", text: 'read_file({"path": "big.py", "offset": 2001})', tag: "tool_use" },
+  { role: "tool", text: " 2400\t...the bug...", good: true },
+]} />
 
 ### 3. Make `edit_file` exact and unique
 
@@ -78,6 +90,20 @@ return f"Edited {path}: replaced {n if replace_all else 1} occurrence(s)."
 
 "Without the line-number prefix" is there because the most common mistake is copying `   12\t` from `read_file` output into `old_string`.
 
+<Trace caption="The most common edit mistake, and an error message that tells the model exactly how to fix it." steps={[
+  { role: "model", text: 'edit_file(old_string="    3\treturn sum(numbers) / ...")', tag: "tool_use" },
+  { role: "error", text: "ValueError: old_string not found in calc.py. ... without the line-number prefix.", bad: true },
+  { role: "model", text: 'edit_file(old_string="(len(numbers) + 1)", new_string="len(numbers)")', tag: "tool_use" },
+  { role: "tool", text: "Edited calc.py: replaced 1 occurrence(s).", good: true },
+]} />
+
+<Trace caption="The most common edit mistake, and an error message that tells the model exactly how to fix it." steps={[
+  { role: "model", text: 'edit_file(old_string="    3\\t    return sum(numbers) / ...")', tag: "tool_use" },
+  { role: "error", text: "ValueError: old_string not found in calc.py. ... without the line-number prefix.", bad: true },
+  { role: "model", text: 'edit_file(old_string="(len(numbers) + 1)", new_string="len(numbers)")', tag: "tool_use" },
+  { role: "tool", text: "Edited calc.py: replaced 1 occurrence(s).", good: true },
+]} />
+
 ### 4. Write `write_file`, `list_dir` and `grep`
 
 These are short. `list_dir` skips `IGNORED_DIRS` (`.git`, `__pycache__`, `node_modules` and friends) so one listing doesn't cost thousands of tokens. `grep` walks the tree, prints paths relative to the root, skips binary files, and stops at `max_matches`:
@@ -97,6 +123,12 @@ return "\n".join(hits) or "No matches."
 ```
 
 Return `"No matches."` rather than an empty string. An empty result looks like a broken tool, and models retry it.
+
+<Compare caption="Every tool result should say what happened, even when nothing was found." cols={[
+  { title: "Empty string", kind: "bad", rows: ["- Looks like a broken tool", "- Model retries the same grep"] },
+  { title: "\"No matches.\"", kind: "good", rows: ["+ Clearly a real answer", "+ Model moves on"] },
+  { title: "[stopped at 100 matches]", rows: ["+ Says the list is cut", "+ Hints: narrow the pattern"] },
+]} />
 
 ### 5. Raise, don't return, errors
 

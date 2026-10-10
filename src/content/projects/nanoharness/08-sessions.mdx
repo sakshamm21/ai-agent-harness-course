@@ -60,6 +60,15 @@ return repair_transcript(messages)
 
 The result is exactly the transcript the model saw last, not the full history. The full history is still in the file for you to read.
 
+<Trace caption="Replaying the file: messages append, a compact event replaces the list, a broken line is skipped." steps={[
+  { role: "note", text: "meta", meta: "0 messages" },
+  { role: "user", text: "message: fix the bug in calc.py", meta: "1" },
+  { role: "model", text: "message: assistant tool_use, user tool_result ...", meta: "6" },
+  { role: "system", text: "compact: [summary]", tag: "replaces", meta: "1" },
+  { role: "user", text: "message: now add a test", meta: "2" },
+  { role: "error", text: '{"type": "message", "mess', tag: "half-written", meta: "skipped", bad: true },
+]} />
+
 ### 3. Repair a dangling tool call
 
 Suppose you hit Ctrl-C while `pytest` runs. The file ends with an assistant message holding a `tool_use`, and no `tool_result`. Send that to the API and it is rejected: every `tool_use` needs a matching result. So close each open call with an error result that says what happened:
@@ -76,6 +85,13 @@ def repair_transcript(messages: list[dict]) -> list[dict]:
 ```
 
 Build a new list (`messages + [...]`) instead of appending to the one you were given. The test checks that the input is left alone.
+
+<Trace caption="Ctrl-C mid-pytest leaves an open tool_use; the repair closes it so the API accepts the transcript." steps={[
+  { role: "model", text: 'bash("python3 -m pytest -q")  id=t7', tag: "tool_use" },
+  { role: "error", text: "Ctrl-C: the process ends, no tool_result written", bad: true },
+  { role: "system", text: "load(): repair_transcript closes t7", tag: "on resume" },
+  { role: "result", text: "tool_result t7: Interrupted: the session ended before this tool ran.", tag: "is_error" },
+]} />
 
 ### 4. Resume from the CLI
 
@@ -94,6 +110,16 @@ else:
 ```
 
 The resumed run sends the old transcript with the new prompt at the end, so the model sees the whole conversation.
+
+<States caption="One session file across runs: --resume replays it, repairs it, and keeps appending." states={[
+  { id: "new", label: "Session.create", sub: "meta line" },
+  { id: "run", label: "Running", sub: "append + flush", kind: "hl" },
+  { id: "end", label: "Stopped", sub: "done or crashed" },
+  { id: "load", label: "load()", sub: "replay + repair" },
+]} edges={[
+  { from: "new", to: "run", label: "first prompt" }, { from: "run", to: "end", label: "exit / Ctrl-C" },
+  { from: "end", to: "load", label: "--resume" }, { from: "load", to: "run", label: "new prompt" },
+]} path={["new", "run", "end", "load", "run"]} />
 
 ## Run the test
 

@@ -15,6 +15,14 @@ You now have a bot with six moving parts. Change the router prompt and refunds m
 
 `data/evals.jsonl` holds 40 conversations: 20 policy questions, 6 order-status checks, 8 refunds (small, over the limit, partial, not delivered, too large, multi-turn), 4 "other" cases, and 2 runs against the poisoned index. Each one says what must happen:
 
+<Bars caption="The 40 eval conversations cover every lane, including two runs against the poisoned index." bars={[
+  { label: "policy questions", value: 20 },
+  { label: "refunds", value: 8, kind: "hl" },
+  { label: "order status", value: 6 },
+  { label: "other", value: 4 },
+  { label: "poisoned index", value: 2, kind: "bad" },
+]} />
+
 ```json
 {"id": "refund-small", "turns": ["I'd like a refund for order NW-1004"],
  "expect": {"route": "refund",
@@ -24,6 +32,11 @@ You now have a bot with six moving parts. Change the router prompt and refunds m
 ```
 
 Two kinds of grading, because there are two kinds of correct. Which tools ran, with which arguments, is exact: check it with code. Whether the reply explains the refund clearly is fuzzy: ask a judge model.
+
+<Compare caption="Grade what is exact with code and leave only the fuzzy part to a judge." cols={[
+  { title: "Exact, in code", kind: "good", rows: ["+ route", "+ tool names in order", "+ args subset, citations"] },
+  { title: "Fuzzy, judge model", kind: "hl", rows: ["+ must_mention: $49.00", "+ explains it clearly", "- a model too: spot-check it"] },
+]} />
 
 ## Steps
 
@@ -55,6 +68,13 @@ answer. Paraphrases count; contradictions and missing points do not. Reply with 
 
 3. **Parse the verdict defensively.** Judges add chatter around their JSON, and sometimes forget it. Take the first JSON object. No verdict means the case fails, with a reason you can read, never a crash halfway through the suite.
 
+<Trace caption="The parser takes the first JSON object, and a reply with no verdict becomes a readable failure." steps={[
+  { role: "model", text: 'Sure! {"pass": true, "score": 0.9, "reason": "mentions $49.00"} Hope that helps.', meta: "judge" },
+  { role: "result", text: '{"pass": true, "score": 0.9, "reason": "mentions $49.00"}', good: true },
+  { role: "model", text: "The answer looks fine to me.", meta: "judge" },
+  { role: "result", text: '{"pass": false, "score": 0.0, "reason": "judge reply was not a verdict: ..."}', bad: true },
+]} />
+
 ```python
 def parse_judgment(text):
     m = re.search(r"\{.*\}", text, re.S)
@@ -81,6 +101,11 @@ cd solution && python3 -m supportbot eval
 ```
 
 6. **Prove the eval can fail.** An eval that always passes measures nothing. The last test swaps in a model that never calls tools and checks the exact pass rate drops to 0%. Try breaking things yourself: set `MIN_SCORE` to 0.6, or give the `product_question` route `issue_refund`, and see which cases go red.
+
+<Bars caption="An eval earns trust when breaking the bot makes it fail: exact pass rate falls from 100% to 0%." unit="%" max={100} bars={[
+  { label: "solution", value: 100, kind: "good", note: "40/40" },
+  { label: "never calls tools", value: 0, kind: "bad", note: "0%" },
+]} />
 
 ## Run the test
 

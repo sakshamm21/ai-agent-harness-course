@@ -26,6 +26,11 @@ The CLI calls them once when a session starts. The demo repo from the overview s
 
 Look for each name in `INSTRUCTION_FILES` in order. The first one that exists wins, so a repo with both files gets `AGENTS.md`. Cap the length: an instructions file that grew to 200 KB would cost 50,000 tokens on every single turn.
 
+<Bars caption="What an instructions file costs on every turn, with and without the 20,000-character cap." unit="k" bars={[
+  { label: "200 KB file", value: 50, kind: "bad", note: "~50k tokens per turn" },
+  { label: "Capped", value: 5, kind: "good", note: "20,000 chars · ~5k tokens" },
+]} />
+
 ```python
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")  # first one found wins
 MAX_INSTRUCTIONS = 20_000  # characters
@@ -60,6 +65,22 @@ def build_system_prompt(workdir: str, instructions: str | None = None, extra: st
 
 The order goes from general to specific. The base prompt says "run the tests to check your work". `AGENTS.md` then says *which* command runs the tests, and that more specific rule comes later, where the model tends to treat it as the one that applies.
 
+```text
+You are nanoharness, a coding agent working in a local repository.
+You act through tools: read files before editing them, ...
+
+<env>
+Working directory: /tmp/nh-demo
+Platform: Linux
+</env>
+
+<project_instructions source="AGENTS.md">
+# Project notes
+- Run the tests with `python3 -m pytest -q`.
+- Keep fixes minimal.
+</project_instructions>
+```
+
 ### 3. Read the base prompt you are shipping
 
 `BASE_PROMPT` is provided. It is short on purpose, and every line is there to stop a failure you would otherwise see:
@@ -78,6 +99,11 @@ what you needed instead."""
 ### 4. Freeze it for the session
 
 Build the prompt once and pass it to `Agent(system=...)`. Don't rebuild it on every turn, even if `AGENTS.md` changes on disk mid-run. A system prompt that changes between turns throws away the prompt cache (every turn pays full price again) and leaves the model unsure which version of the rules applies.
+
+<Compare caption="Build the system prompt once per session; rebuilding it every turn breaks the cache." cols={[
+  { title: "Frozen per session", kind: "good", rows: ["+ Stable prefix, cache hits", "+ One version of the rules"] },
+  { title: "Rebuilt every turn", kind: "bad", rows: ["- Cache thrown away", "- Every turn pays full price", "- Rules can change mid-run"] },
+]} />
 
 ## Run the test
 

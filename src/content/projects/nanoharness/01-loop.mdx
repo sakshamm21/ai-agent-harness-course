@@ -41,6 +41,13 @@ def call(self, name: str, args: dict) -> tuple[str, bool]:
 
 Notice the unknown-tool message lists the real tools. The model reads that string on its next turn, so the error is also the fix.
 
+<Trace caption="A bad call comes back as an error result that names the real tools, and the model fixes its own call." steps={[
+  { role: "model", text: 'open_file({"path": "calc.py"})', tag: "tool_use" },
+  { role: "error", text: "Unknown tool 'open_file'. Available tools: read_file, write_file, edit_file, ...", tag: "is_error", bad: true },
+  { role: "model", text: 'read_file({"path": "calc.py"})', tag: "tool_use" },
+  { role: "tool", text: "    1\tdef average(numbers):", good: true },
+]} />
+
 ### 2. Write the loop
 
 `Agent.run` appends the prompt, then calls the model up to `max_turns` times. Each response goes into the transcript with `resp.to_message()`. If it asked for no tools, you are done. Otherwise run every call and send all the results back in **one** user message:
@@ -65,6 +72,14 @@ return RunResult(self.messages, "", self.max_turns, usage, "max_turns", calls)
 
 Use `self.append`, not `self.messages.append`. In part 8 `append` also writes each message to the session file. `self.maybe_compact()` is already written for you. It does nothing until part 5 gives the agent a context manager.
 
+<States caption="Agent.run has two exits: the model stops asking for tools, or max_turns runs out." states={[
+  { id: "call", label: "model.complete", kind: "hl" }, { id: "tools", label: "execute calls" },
+  { id: "done", label: "Done", sub: "end_turn", kind: "good" }, { id: "cap", label: "Stopped", sub: "max_turns", kind: "bad" },
+]} edges={[
+  { from: "call", to: "tools", label: "tool calls" }, { from: "tools", to: "call", label: "one user message" },
+  { from: "call", to: "done", label: "no tool calls" }, { from: "tools", to: "cap", label: "turn limit" },
+]} path={["call", "tools", "call", "tools", "call", "done"]} />
+
 ### 3. Execute one call, with the gates in place
 
 `execute` is where parts 3 and 7 will plug in. Write the gates now, guarded by `is not None`, so later parts need no change to the loop. A denied or blocked call never reaches the tool:
@@ -88,9 +103,18 @@ return self._finish(call, out, is_error, log)
 
 `_finish` is provided: it logs the call, emits a `tool` event for the CLI to print, and builds the `tool_result` block with the matching `tool_use_id`.
 
+<Flow steps={[{ label: "permissions", sub: "part 3" }, { label: "pre_tool", sub: "part 7" }, { label: "tools.call", sub: "part 1", kind: "hl" }, { label: "post_tool", sub: "part 7" }, { label: "_finish", sub: "tool_result", kind: "good" }]} caption="Every tool call passes the same gates in the same order, and a denied call stops before the tool." />
+
 ### 4. Check the transcript shape
 
 After one tool call and one answer, the roles must be `user, assistant, user, assistant`. The API rejects anything else: every `tool_use` needs a `tool_result` with the same id in the very next user message. The tests check this, including two calls in one turn coming back in one message, in order.
+
+<Trace caption="Two calls in one turn come back as two tool_result blocks in one user message, ids matched." steps={[
+  { role: "user", text: "What is 2 + 3, and 4 + 5?" },
+  { role: "model", text: "add(2, 3) id=t1 · add(4, 5) id=t2", tag: "assistant" },
+  { role: "result", text: "tool_result t1: 5 · tool_result t2: 9", tag: "user" },
+  { role: "model", text: "5 and 9.", tag: "end_turn", good: true },
+]} />
 
 ## Run the test
 

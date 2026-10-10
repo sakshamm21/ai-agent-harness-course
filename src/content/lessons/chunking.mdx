@@ -41,6 +41,13 @@ reading:
 
 A customer paid for an annual plan 10 days ago and asks for a full refund. Your support bot answers: "Yes, refunds are available within 14 days of purchase." That is the rule. The next sentence in the handbook says annual plans are an exception and are refunded pro rata. The bot never saw it.
 
+<Trace caption="The rule and its exception sat in two chunks, and only one was retrieved." steps={[
+  { role: "user", text: "I paid for an annual plan 10 days ago. Can I get a full refund?" },
+  { role: "tool", text: '"Refunds are available within 14 days of purchase."', tag: "top chunk", meta: "100 tok" },
+  { role: "note", text: "Next chunk, not retrieved: annual plans are refunded pro rata" },
+  { role: "model", text: "Yes, refunds are available within 14 days of purchase.", tag: "end_turn", bad: true },
+]} />
+
 The handbook is about 600 pages, 420,000 tokens, indexed in 100-token chunks. In the lab, the bot gets **40%** of questions right. Every wrong answer has the same shape: the right section was found, but only half of it.
 
 ## Retrieval returns chunks, not documents
@@ -50,6 +57,11 @@ The handbook is about 600 pages, 420,000 tokens, indexed in 100-token chunks. In
 A 100-token chunk holds about three sentences. Most handbook sections are 250 to 400 tokens. So the rule lands in one chunk, the exception in the next, and the question "can I get a full refund?" matches the rule much better than it matches "annual plans are an exception".
 
 Going the other way does not work either. A 2,000-token chunk holds a whole chapter. Its single vector is an average of 40 different rules, so it matches every billing question a little and none of them well.
+
+<Compare caption="Too small splits the rule from its exception; too big blurs 40 rules into one vector." cols={[
+  { title: "100-token chunks", sub: "about three sentences", kind: "bad", rows: ["- Rule in one, exception in the next", "- Each must win its own ranking"] },
+  { title: "2,000-token chunks", sub: "a whole chapter", kind: "bad", rows: ["- One vector averages 40 rules", "- Matches every question a little"] },
+]} verdict="Most handbook sections are 250 to 400 tokens, between the two." />
 
 ## Cut along the structure, then overlap the seams
 
@@ -76,6 +88,12 @@ Say a rule and its exception together span 80 tokens, starting at a random point
 **Prompt cost, top 3:** 3 × 400 = 1,200 tokens ≈ $0.0036 per question at the $3/M sim price; 3 × 2,000 = 6,000 tokens ≈ $0.018, five times more.
 </Callout>
 
+<Bars caption="Share of 80-token rule-and-exception pairs split across two chunks." unit="%" max={100} bars={[
+  { label: "100 tokens, no overlap", value: 80, kind: "bad" },
+  { label: "400 tokens, no overlap", value: 20, kind: "hl" },
+  { label: "400 tokens, 60 overlap", value: 6, kind: "good", note: "6% · 18% more vectors" },
+]} />
+
 Overlap is cheap insurance. Here 18% more storage cuts the split rate from 20% to 6%. Splitting on headings does even better, because section boundaries are rarely in the middle of a rule.
 
 ## The tradeoff: there is no single right size
@@ -86,8 +104,24 @@ Chunk size trades precision against completeness, and the best value depends on 
 - **Large chunks** keep context but blur the vector and inflate the prompt. Fix by splitting on structure and adding the section path, so each chunk is about one thing.
 - **Re-chunking means re-embedding.** Every change to the chunker rebuilds the whole index. Measure first: keep a set of 30 to 50 real questions with known answer passages, and track how often the right chunk is in the top k ([Evals](/c/evals/)).
 
+```python
+def hit_rate(questions, k=3):
+    """Run after every chunker change, on 30 to 50 real questions."""
+    hits = 0
+    for q in questions:
+        top = search(q["text"], k=k)                  # the re-built index
+        if any(q["answer_passage"] in c.text for c in top):
+            hits += 1
+    return hits / len(questions)
+```
+
 For code, the cleanest chunk is often no chunk at all: let the agent open the file, which is [Agentic Search vs RAG](/c/agentic_search/).
 
 ## In the real world
 
 Anthropic's contextual retrieval write-up starts from the same failure. A chunk like "The company's revenue grew by 3% over the previous quarter" does not say which company or which quarter. Their fix uses a model to write 50 to 100 tokens of context for each chunk ("This chunk is from ACME Corp's Q2 2023 filing...") and prepends it before embedding and keyword indexing. With prompt caching, generating that context for a whole corpus is a one-time cost.
+
+<Compare caption="A model-written line of context tells the chunk what it is about." cols={[
+  { title: "Chunk alone", kind: "bad", rows: [`"Revenue grew by 3%..."`, "- Which company?", "- Which quarter?"] },
+  { title: "Chunk with context", kind: "good", rows: [`"From ACME Corp's Q2 2023 filing..."`, "+ 50 to 100 tokens per chunk", "+ One-time cost with caching"] },
+]} />

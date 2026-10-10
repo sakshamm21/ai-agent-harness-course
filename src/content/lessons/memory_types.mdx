@@ -43,6 +43,14 @@ reading:
 
 Priya uses a meal-planning assistant. In session 1 she says she is vegetarian, allergic to peanuts, and cooks for two. The plan is great. A week later she opens a new chat and asks for five dinners. The plan includes chicken stir-fry and satay noodles with peanut sauce.
 
+<Trace caption="Nothing from session 1 reached session 2, so the model never knew." steps={[
+  { role: "user", text: "I'm vegetarian, allergic to peanuts, and I cook for two.", meta: "session 1" },
+  { role: "model", text: "A great vegetarian, peanut-free plan for two", tag: "end_turn", good: true },
+  { role: "note", text: "A week later: new chat, empty context" },
+  { role: "user", text: "Five dinners, please.", meta: "session 2" },
+  { role: "model", text: "1. Chicken stir-fry ... 4. Satay noodles with peanut sauce", tag: "end_turn", bad: true },
+]} />
+
 In the lab, an agent with no long-term memory gets only 72% of Priya's sessions right, and in the rest she either gets a plan that could hurt her or has to type her restrictions again. The model did not forget anything. It never had it.
 
 ## The context window is the only memory a model has
@@ -55,6 +63,13 @@ So "the agent remembers" always means "the harness saved something and put it ba
 - **Episodic memory**: what happened. Old transcripts, past tool runs, "last Tuesday we tried X and it failed". Usually stored whole and searched later.
 - **Semantic memory**: what is true. "Priya is vegetarian." "Our refund window is 14 days." Stable facts, stored small.
 - **Procedural memory**: how to do things. The system prompt, a repo's `CLAUDE.md` or `AGENTS.md`, a skill file that says how to file an expense report.
+
+<Compare caption="Four kinds of memory, each something you build in the harness." cols={[
+  { title: "Working", sub: "the current context", kind: "hl", rows: ["Fast and exact", "Gone when the session ends"] },
+  { title: "Episodic", sub: "what happened", rows: ["Old transcripts, tool runs", "Stored whole, searched later"] },
+  { title: "Semantic", sub: "what is true", rows: ['"Priya is vegetarian"', "Stable facts, stored small"] },
+  { title: "Procedural", sub: "how to do things", rows: ["System prompt, CLAUDE.md", "Skill files"] },
+]} />
 
 ## Store each kind where it belongs
 
@@ -79,11 +94,31 @@ Say Priya uses the assistant 30 times a month and each session is about 3,000 to
 **Load a profile.** 150 tokens × 30 = **4,500 tokens**, about **$0.01**.
 </Callout>
 
+<Bars caption="A month of remembering Priya: the profile costs about 300 times less than pasting history." unit="$" bars={[
+  { label: "Paste every transcript", value: 3.92, kind: "bad", note: "$3.92 · 1,305k tokens" },
+  { label: "Search old transcripts", value: 0.22, kind: "hl", note: "$0.22 · 72k tokens" },
+  { label: "Load a profile", value: 0.01, kind: "good", note: "$0.01 · 4.5k tokens" },
+]} />
+
 The profile is about 300 times cheaper than pasting history, and more accurate, because it holds only the facts that matter. Episodic search still has a job. It answers "what did we decide about the venue last month?", which no profile holds.
 
 ## The tradeoff: memory you keep is memory you must maintain
 
 Every saved fact is a claim the agent will trust later, with no one checking it.
+
+<States caption="A saved fact has a lifecycle: it goes stale and must be replaced, not piled on." states={[
+  { id: "saved", label: "Saved", sub: "vegetarian" },
+  { id: "loaded", label: "Loaded", sub: "every session", kind: "hl" },
+  { id: "stale", label: "Stale", sub: "life changed", kind: "bad" },
+  { id: "replaced", label: "Replaced", sub: "old fact removed", kind: "good" },
+  { id: "deleted", label: "Deleted", sub: "by the user" },
+]} edges={[
+  { from: "saved", to: "loaded", label: "next session" },
+  { from: "loaded", to: "stale", label: "Priya changes" },
+  { from: "stale", to: "replaced", label: "update" },
+  { from: "replaced", to: "loaded", label: "next session" },
+  { from: "loaded", to: "deleted", label: "user deletes" },
+]} path={["saved", "loaded", "stale", "replaced", "loaded"]} />
 
 - **Facts go stale.** Priya moves, or stops being vegetarian. A profile needs updates that replace old facts instead of piling up contradictions. That is [Writing Memory Safely](/c/memory_write/).
 - **Facts can be wrong or planted.** If the agent saves whatever it reads, one bad web page becomes a permanent belief. The same lesson covers write policies that check where a fact came from.
@@ -94,3 +129,8 @@ Keep the always-loaded part small, and let the user see and delete what is saved
 ## In the real world
 
 ChatGPT's memory feature keeps saved memories (short facts like "prefers metric units") that you can view and delete in settings, and it can also reference past chats. That is semantic and episodic memory side by side. Claude Code's `CLAUDE.md` files are procedural memory: instructions for a project or a user, loaded at the start of every session, and editable by you or by the agent when you ask it to remember something.
+
+<Compare caption="Two real products, three kinds of memory." cols={[
+  { title: "ChatGPT memory", sub: "semantic + episodic", rows: ['Saved facts: "prefers metric units"', "You can view and delete them", "Can reference past chats"] },
+  { title: "CLAUDE.md", sub: "procedural", kind: "hl", rows: ["Instructions for a project or user", "Loaded at every session start", "Edited by you or the agent"] },
+]} />

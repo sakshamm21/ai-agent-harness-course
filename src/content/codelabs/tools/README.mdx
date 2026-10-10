@@ -1,0 +1,36 @@
+---
+title: "Function Calling"
+---
+
+## The scenario
+
+A user asks: **"Do I need an umbrella in Paris today?"** The model can't know the weather. Your job is to give it a tool and handle the call.
+
+<Trace caption="The starter's handle returns no tool_result, so the model answers without ever seeing the forecast." steps={[
+  { role: "user", text: "Do I need an umbrella in Paris today?" },
+  { role: "model", text: 'get_weather({"city": "Paris"})', tag: "tool_use", meta: "id call_1" },
+  { role: "tool", text: "handle(resp) returns []", meta: "no tool_result", bad: true },
+  { role: "model", text: "The forecast says: no tool result. Bring an umbrella if it mentions rain.", bad: true },
+]} />
+
+## Your task
+
+1. Finish `get_weather(city)` so it returns the fake weather from `WEATHER` (for example `"Paris: 14C, light rain"`). For an unknown city, return `"No data for <city>"`.
+2. Write a one-line docstring for it. The `@tool` decorator turns the docstring into the description the model reads.
+3. In `handle(resp)`, run each tool call the model asked for and return a list of `tool_result` blocks.
+
+<Flow steps={[{ label: "Docstring", sub: "becomes description" }, { label: "Model", sub: "emits tool_use", kind: "hl" }, { label: "handle(resp)", sub: "runs get_weather" }, { label: "tool_result", sub: "same tool_use_id", kind: "hl" }, { label: "Model", sub: "answers from it" }]} caption="The model only asks for the call; your code runs it and sends the result back under the same id." />
+
+Press **Run** to see what happens, then **Check**.
+
+## What the checks look for
+
+- `get_weather` has a description that says what it does.
+- The tool's schema has a required `city` string parameter.
+- `handle` runs the call and returns a `tool_result` with the matching `tool_use_id`.
+- The final answer mentions rain.
+
+<Compare caption="Every tool_result must carry the id of the tool_use it answers." cols={[
+  { title: "Model sends", sub: "in resp.tool_calls", rows: ["id: call_1", "name: get_weather", "input: city Paris"] },
+  { title: "You send back", sub: "in the next user turn", kind: "good", rows: ["type: tool_result", "tool_use_id: call_1", "content: the forecast"] },
+]} />

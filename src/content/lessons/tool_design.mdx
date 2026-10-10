@@ -41,6 +41,13 @@ reading:
 
 Your support agent has three tools: `search`, `search_docs` and `search_tickets`. A user asks "How do I export a report to CSV?" and the agent calls `search`, which queries the public web and returns ten blog posts about other products. Across a day of traffic, about 6 in 10 of its tool calls hit the wrong tool.
 
+<Trace caption="Every tool works, but the model picked web search for a help center question." steps={[
+  { role: "user", text: "How do I export a report to CSV?" },
+  { role: "model", text: 'search({"query": "export report CSV"})', tag: "tool_use" },
+  { role: "tool", text: "10 blog posts about other products", bad: true },
+  { role: "model", text: "I couldn't find export steps. Maybe try right-clicking?", tag: "end_turn", bad: true },
+]} />
+
 Nothing is broken. Every tool works. The model just keeps choosing the wrong one, and about a third of the time it then answers from the wrong results: "I couldn't find export steps. Maybe try right-clicking?"
 
 ## The model only sees the label on the box
@@ -95,6 +102,11 @@ Wrong answers: 600 ÷ 3 = **200 a day**, or 20% of users.<br />
 If wrong picks drop to 5%: 50 extra turns ($0.45) and about 17 wrong answers. You spend $0.63 to save $4.95 and about 183 wrong answers.
 </Callout>
 
+<Bars caption="Clear descriptions cut wrong answers from 200 a day to about 17." bars={[
+  { label: "Vague, 60% wrong picks", value: 200, kind: "bad", note: "200 wrong answers a day" },
+  { label: "Clear, 5% wrong picks", value: 17, kind: "good", note: "about 17 a day" },
+]} />
+
 The tokens are cheap. The wrong answers are what you are really paying for.
 
 ## The tradeoff: every word rides on every call
@@ -103,8 +115,22 @@ Good descriptions cost a little each, and the bill grows with the size of your t
 
 - **Tokens per call.** 50 tools at 150 tokens each is 7,500 tokens on every turn. Cache the stable prefix ([Prompt Caching](/c/caching/)) and send only the tools a task needs ([Routing](/c/routing/)).
 - **More tools, more overlap.** Each new tool is another look-alike to confuse. Merge small steps into one tool that does a whole job: one `schedule_meeting` instead of `list_users`, `list_events` and `create_event`.
+
+<Compare caption="One tool that does the whole job leaves fewer look-alikes to confuse." cols={[
+  { title: "Three small tools", sub: "list_users, list_events, create_event", kind: "bad", rows: ["- Three descriptions on every call", "- More overlap to confuse", "- More turns per meeting"] },
+  { title: "One job tool", sub: "schedule_meeting", kind: "good", rows: ["+ One description to read", "+ Nothing similar to mix up", "+ One call books the meeting"] },
+]} verdict="Merge steps the model always does together." />
 - **You can't eyeball accuracy.** A description that reads well can still lose. Measure which tool was called on a fixed set of questions ([Trajectory and Tool-Use Evals](/c/trajectory_evals/)).
 
 ## In the real world
 
 When Anthropic built its agent for SWE-bench, a benchmark of real GitHub issues, it reported spending more time on the tools than on the overall prompt. One fix: the model made mistakes with relative file paths after changing directory, so the tool was changed to require absolute paths, and the mistakes stopped. Its later guide on writing tools for agents recommends the same habits as this lesson: clear names with namespaces, descriptions written like docs for a new teammate, and checking accuracy with evals rather than by feel.
+
+```json
+{ "name": "edit_file",
+  "description": "Edits one file. Requires an absolute path.",
+  "input_schema": { "type": "object",
+    "properties": { "path": { "type": "string",
+      "description": "Absolute path, e.g. '/repo/src/app.py'. Relative paths are rejected." } },
+    "required": ["path"] } }
+```

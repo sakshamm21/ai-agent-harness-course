@@ -48,6 +48,8 @@ def count_messages(messages: list[dict], system: str = "", tools: list[dict] | N
 
 Tool schemas are easy to forget. nanoharness's seven schemas come to about 600 tokens, sent on every turn.
 
+<Stack blocks={[{ label: "System prompt", tokens: 200 }, { label: "Tool schemas", tokens: 600, kind: "hl" }, { label: "Messages", tokens: 10400 }]} budget={16000} caption="The request count includes the system prompt and tool schemas, not just the messages." />
+
 ### 3. Decide when
 
 Compact at 70%, not 100%. The next model response and the tool results it asks for still have to fit, and one `read_file` can add 5,000 tokens at once:
@@ -62,6 +64,12 @@ The `len(messages) > 1` guard stops an endless loop. A single huge prompt can't 
 <Callout type="math" label="Let us check the math">
 The mock model's window is 16,000 tokens, so compaction starts at 0.7 × 16,000 = **11,200 tokens**.<br />
 After a compaction the transcript is one summary of about 200 tokens. Add the system prompt (about 200 tokens on the demo repo) and the tool schemas (about 600), and the next request is about **1,000 tokens**: roughly 10,000 tokens of headroom bought for the price of one summary call.
+
+<Bars caption="Request size on the mock's 16,000-token window, just before and just after one compaction." unit="tokens" max={16000} bars={[
+  { label: "Compact at 70%", value: 11200, kind: "bad", note: "11,200" },
+  { label: "Next request", value: 1000, kind: "good", note: "~1,000" },
+]} />
+
 </Callout>
 
 ### 4. Summarize, then start fresh
@@ -79,6 +87,13 @@ def compact(self, messages: list[dict]) -> list[dict]:
 ```
 
 The summary prompt asks for the user's task *word for word*, the files touched, the commands run and the next step. Those are the things an agent needs and loses first when old turns fall out. `self.usage` lets the agent bill the summary call. The agent sets `summarizer` to its own model if you don't pass one.
+
+<Trace caption="compact sends the old transcript to the summarizer with no tools, and keeps only its reply." steps={[
+  { role: "system", text: "11,200 tokens reached: compact before this turn", meta: "70%" },
+  { role: "user", text: "SUMMARY_PROMPT + render_transcript(messages)", tag: "tools=None" },
+  { role: "model", text: "Task: fix the failing tests. Progress so far: explored the repo. Next: edit and re-test." },
+  { role: "result", text: "This session was compacted. Summary of the work so far: ... Continue the task from here.", tag: "1 message", good: true },
+]} />
 
 This is "simple compaction": nothing old is kept, so nothing old can go stale. Fancier schemes keep the last few turns verbatim. They are cheaper on the next turn and harder to get right, because the kept turns must not start with a dangling `tool_result`.
 

@@ -42,11 +42,25 @@ Your accounts team gets vendor invoices as plain text. You write a prompt, "Extr
 
 None of the four failures is the model being wrong about the invoice. One reply starts with "Here is the extracted data:". One wraps the JSON in a Markdown code fence. One ends with "Let me know if you need anything else!". One parses fine but gives the total as the text `"2,005.00"`, which your database rejects.
 
+<Trace caption="Four replies, four different breaks, and none of them is the model misreading an invoice." steps={[
+  { role: "user", text: "Extract vendor, total, currency and due date. Reply with JSON only." },
+  { role: "model", text: '"Here is the extracted data:" then the JSON', tag: "preamble", bad: true },
+  { role: "model", text: "The JSON, wrapped in a Markdown code fence", tag: "code fence", bad: true },
+  { role: "model", text: 'The JSON, then "Let me know if you need anything else!"', tag: "sign-off", bad: true },
+  { role: "model", text: '{"total": "2,005.00", ...}', tag: "wrong type", bad: true },
+  { role: "error", text: "json.loads or the database rejects 4 of 8 invoices", bad: true },
+]} />
+
 ## "JSON only" is a request, not a rule
 
 An LLM writes the most likely next tokens. Your instruction makes JSON more likely, but nothing stops a polite preamble, a code fence or a sign-off, because those are common in the text it learned from. Even valid JSON can have the wrong types: a number written as a string, a date in whatever format the invoice used.
 
 Any code that reads model output has to assume this. If 1% of replies have a stray sentence, a pipeline doing 2,000 invoices a day crashes 20 times a day.
+
+<Compare caption="An instruction raises the odds of clean JSON; at volume, the leftover odds become daily crashes." cols={[
+  { title: '"JSON only"', sub: "a request in the prompt", kind: "bad", rows: ["- Preambles and sign-offs still likely", "- Code fences still likely", "- Types not enforced"] },
+  { title: "At 2,000 invoices a day", sub: "1% stray-text rate", rows: ["2,000 × 0.01", "- 20 crashes a day"] },
+]} verdict="Any code that reads model output has to assume this." />
 
 ## Constrain the shape, then check the content
 
@@ -92,9 +106,23 @@ Say a schema-constrained call passes your validation 97% of the time, at 2,000 i
 The retries cost 60 extra calls. At about 1,000 input and 100 output tokens each, at the illustrative sim price for a medium model ($3 and $15 per million): 60 × (1,000 × $3 + 100 × $15) / 1,000,000 = 60 × $0.0045 = **$0.27 a day**.
 </Callout>
 
+<Bars caption="Schema plus one retry turns 20 daily crashes into about 2 invoices for a human, for $0.27 a day." unit="a day" bars={[
+  { label: "Plain text, no checks", value: 20, kind: "bad", note: "20 crashes" },
+  { label: "Schema, no retry", value: 60, kind: "hl", note: "60 to review" },
+  { label: "Schema + one retry", value: 2, kind: "good", note: "≈ 2 to review · $0.27" },
+]} />
+
 ## The tradeoff: valid is not the same as right
 
 A schema makes the output parseable, not true. The model can return a perfectly valid `{"total": 1240.0}` for an invoice that says $1,420. Strict schemas can also hurt: force a value into an enum of three currencies and an invoice in yen gets labelled USD instead of raising a flag.
+
+<Trace caption="The schema check passes a wrong total; a cheap cross-check against the source catches it." steps={[
+  { role: "user", text: "Invoice text: ... Total due $1,420.00 ..." },
+  { role: "model", text: 'record_invoice({"total": 1240.0, ...})', tag: "tool_use" },
+  { role: "result", text: "Schema check: valid", good: true },
+  { role: "note", text: "Cross-check: 1240.0 does not appear in the invoice text", bad: true },
+  { role: "human", text: "Routed to review, not to the ledger" },
+]} />
 
 Ways to handle it:
 
@@ -105,3 +133,22 @@ Ways to handle it:
 ## In the real world
 
 The Claude API lets you define tools with an `input_schema` and set `tool_choice` to force a call to one specific tool, a common way to get structured data out of a single request. OpenAI's API offers a strict structured-output mode that constrains generation to a JSON Schema. Either way, the validation and retry layer stays in your code. In part 5 of the deepresearch project, the report writer uses the same idea to return each finding with its sources as records your code can check.
+
+```json
+{
+  "tools": [{
+    "name": "record_invoice",
+    "description": "Records one invoice. due_date must be YYYY-MM-DD.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "vendor": { "type": "string" }, "total": { "type": "number" },
+        "currency": { "enum": ["USD", "EUR", "GBP", "other"] },
+        "due_date": { "type": "string" }, "notes": { "type": "string" }
+      },
+      "required": ["vendor", "total", "currency", "due_date"]
+    }
+  }],
+  "tool_choice": { "type": "tool", "name": "record_invoice" }
+}
+```

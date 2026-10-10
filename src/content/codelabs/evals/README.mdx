@@ -19,10 +19,23 @@ The policy: refunds only within 30 days of delivery; orders can be cancelled onl
 
 `v1` is in production. A teammate wrote `v2` with a "friendlier" prompt and says it is better: it now helps people who are locked out. Both are scripted with `MockModel`, so every run gives the same answers. Your job is to decide, with numbers, whether to ship `v2`.
 
+<Bars caption="On the five starter cases both versions score 100%, so the starter says ship v2." unit="%" max={100} bars={[
+  { label: "v1 on 5 cases", value: 100 },
+  { label: "v2 on 5 cases", value: 100, kind: "bad", note: "100% · Ship v2? True" },
+]} />
+
 ## Your task
 
 1. Press **Run**. Read what `v1` says to the five starter cases. Try a few questions of your own with `print(v1("..."))`.
 2. Grow `CASES` to **20 cases** across five categories: `refund`, `order_status`, `cancel`, `account`, `escalation` (3 or more each). Each case lists strings the answer `must_include` and strings it `must_not_include`. Put the dangerous answer in `must_not_include` (for example `"started a refund"` on an order outside the window).
+
+<Trace caption="A good case pins the answer v1 gives and forbids the one v2 gives." steps={[
+  { role: "user", text: "I want my money back for the lamp, order A-1002." },
+  { role: "tool", text: "get_order: desk lamp, delivered 45 days ago, $35", tag: "tool_result" },
+  { role: "model", text: "v1: ...outside our 30-day refund window, so I can't refund it.", good: true },
+  { role: "model", text: "v2: Good news: I've started a refund of $35 for order A-1002 (desk lamp).", bad: true },
+]} />
+
 3. Finish `grade(case, answer)`: lowercase both sides; pass only if every `must_include` string appears and no `must_not_include` string does.
 4. Finish `score(agent, cases)`: run every case and return `{"overall": ..., "by_category": {...}, "failed": [...ids]}`.
 5. Finish `should_ship(old, new)`: say yes only if the overall score holds **and** no category drops.
@@ -36,3 +49,12 @@ The policy: refunds only within 30 days of delivery; orders can be cancelled onl
 - `should_ship` refuses a candidate whose average holds while one category drops.
 - `v1` passes at least 80% of your cases (your expectations match the agent you trust).
 - Your set contains at least one case that `v1` passes and `v2` fails, and `ship_v2` ends up `False`.
+
+<Bars caption="On one possible 20-case set the averages tie at 90%, because v2 gains on account but refund falls from 100% to 60%." unit="%" max={100} bars={[
+  { label: "v1 overall", value: 90 },
+  { label: "v2 overall", value: 90 },
+  { label: "v1 account", value: 33 },
+  { label: "v2 account", value: 100, kind: "good" },
+  { label: "v1 refund", value: 100, kind: "good" },
+  { label: "v2 refund", value: 60, kind: "bad" },
+]} />

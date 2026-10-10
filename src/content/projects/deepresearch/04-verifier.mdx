@@ -31,6 +31,11 @@ You write five functions in `verifier.py`. `research.py` runs this on every `ok`
 
 1. **Verify one citation.** One call per (claim, page) pair, with `VERIFIER_SYSTEM`. Read its wording: paraphrase is fine, but a claim that adds numbers, names or causes the page does not give is unsupported. An unreadable reply counts as unsupported, not supported. When the checker breaks, fail closed.
 
+<Compare caption="A verifier reply you cannot read is a rejection, so a broken checker never lets a citation through." cols={[
+  { title: "Fail open", kind: "bad", rows: ["- Garbled reply counts as yes", "- Bad citations slip through"] },
+  { title: "Fail closed", kind: "good", rows: ["+ Garbled reply counts as no", "+ Reviser gets another look"] },
+]} />
+
    ```python
    def verify_claim(claim: str, doc: dict, model: Model) -> Verdict:
        resp = model.complete([{"role": "user", "content": verify_prompt(claim, doc)}], system=VERIFIER_SYSTEM)
@@ -103,12 +108,25 @@ You write five functions in `verifier.py`. `research.py` runs this on every `ok`
 
    With `--trace` each sub-question now prints `"failures_per_round": [1, 0]`: one bad citation in round 1, none after the revision.
 
+<Trace caption="Round 1 catches the length claim cited to the cost audit; the reviser moves it to vt-02 and round 2 passes." steps={[
+  { role: "result", text: "The Velmora Tunnel is 31.4 km long ... [vt-03]", meta: "draft claim" },
+  { role: "model", text: '{"supported": false, "reason": "vt-03 is about cost, not length"}', tag: "verifier", meta: "round 1", bad: true },
+  { role: "model", text: "re-cite to vt-02, a page the worker read", tag: "reviser" },
+  { role: "model", text: '{"supported": true}', tag: "verifier", meta: "round 2", good: true },
+  { role: "note", text: 'failures_per_round: [1, 0]' },
+]} />
+
 <Callout type="math" label="Let us check the math">
 The 10 eval questions on the mock, from part 6:<br />
 Without the verifier: 67,186 tokens, $0.130, citation precision **58%**.<br />
 With it: 101,847 tokens, $0.179, citation precision **100%**.<br />
 About 52% more tokens but only 37% more money, because the verifier and reviser run on the small tier. For a research report, a wrong citation costs more than $0.005 a question.
 </Callout>
+
+<Bars caption="Over the 10 eval questions the verifier lifts citation precision from 58% to 100% for 37% more money." unit="%" max={100} bars={[
+  { label: "precision, no verifier", value: 58, kind: "bad", note: "58% · $0.130" },
+  { label: "precision, with verifier", value: 100, kind: "good", note: "100% · $0.179" },
+]} />
 
 ## Run the test
 

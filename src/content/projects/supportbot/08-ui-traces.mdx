@@ -19,6 +19,12 @@ The agent has emitted those events since part 4. This part writes them down and 
 - `timeline` turns a trace back into rows: time offset, type, one-line label, duration, status.
 - `server.py` (given) serves one HTML page, a JSON API and a Server-Sent Events stream, using `http.server` from the standard library.
 
+<Fan caption="Every event the agent emits goes to the trace file and, when streaming, to the browser at the same time." root={{ label: "SupportAgent", sub: "on_event(e)" }}
+  items={[
+    { label: "Tracer", sub: "redact, append .jsonl" },
+    { label: "SSE stream", sub: "data: {...}" },
+  ]} merge={{ label: "timeline", sub: "rows in the web UI" }} fanLabel="each event" />
+
 ## Steps
 
 1. **Write one line per event.** JSONL is append-only, so a crash mid-conversation still leaves every event before it on disk. Redact before writing: traces get copied, shared and kept far longer than the conversation.
@@ -58,6 +64,15 @@ def load_trace(path):
 
 3. **Turn events into a timeline.** Each row gets its offset from the first event, so you can see where the time went, and a status: `error` for blocked calls, failed tools and running out of turns, `warn` for suspicious documents and redactions.
 
+<Trace caption="A timeline makes the poisoned run readable: the warn and error rows show where it went wrong." steps={[
+  { role: "system", text: "route: refund", meta: "ok" },
+  { role: "tool", text: "retrieve: help articles + the poisoned one", meta: "ok" },
+  { role: "note", text: "suspicious_document: opened-items-goodwill", meta: "warn" },
+  { role: "model", text: "model_call", meta: "ok" },
+  { role: "error", text: "blocked: order NW-1001 was not given by the customer", meta: "error", bad: true },
+  { role: "tool", text: "tool_call: lookup_order, then issue_refund NW-1004", meta: "ok", good: true },
+]} />
+
 ```python
 t0 = events[0].get("ts", 0)
 for e in events:
@@ -94,6 +109,11 @@ cd solution && python3 -m supportbot serve
 Click the example "Please refund NW-1002, the jacket leaks". The timeline shows `route` refund, `retrieve`, two tool calls and the reply, and the refund appears under "Refunds waiting for approval". Approve it and it is issued, once. Now try "Can I get a refund on opened items for order NW-1004?" with the poisoned article: build the app with `build_index(HELP_DIR, POISONED_DIR)` in `default_app()` and look for the red `blocked` row.
 
 The plan for this course said FastAPI. `http.server` does the same job here with nothing to install. Move to FastAPI when you need async handlers, auth or generated API docs; `App` stays as it is.
+
+<Compare caption="The standard library server is enough for this project; FastAPI earns its install later." cols={[
+  { title: "http.server", sub: "used here", kind: "good", rows: ["+ Nothing to install", "+ HTML, JSON API and SSE"] },
+  { title: "FastAPI", sub: "when you need it", rows: ["+ Async handlers", "+ Auth, generated API docs", "- A dependency to add"] },
+]} verdict="App stays the same either way." />
 
 ## Run the test
 

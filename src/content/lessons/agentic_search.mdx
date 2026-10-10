@@ -41,11 +41,23 @@ reading:
 
 A developer asks your agent: "What is the maximum delay between webhook retries, and where is it set?" The codebase has 2,400 files. A retriever embeds the question and pastes in the 3 most similar chunks. The top hit is `http/client.py`, the HTTP client's exponential backoff for outgoing API calls. The agent answers "30 seconds, line 88". The real cap is 15 minutes, in `webhooks/dispatcher.py`.
 
+<Trace caption="One-shot retrieval returned the most similar retry code, which was the wrong retry code." steps={[
+  { role: "user", text: "What is the max delay between webhook retries, and where is it set?" },
+  { role: "tool", text: "Top 3 similar chunks, #1 http/client.py", tag: "retriever", meta: "backoff for API calls" },
+  { role: "model", text: "30 seconds, line 88.", tag: "end_turn", bad: true },
+  { role: "note", text: "Real cap: 15 minutes, in webhooks/dispatcher.py" },
+]} />
+
 In the lab, this setup gets **45%** of codebase questions right. The retriever is working as designed. It returned the most similar code. Similar was the problem.
 
 ## Code has names, and similarity ignores them
 
 Embeddings compare meaning and topic. Two retry loops with backoff look almost the same, whatever they retry. What separates them is exact names: `WEBHOOK_MAX_BACKOFF`, `dispatch_with_retry`, `validate_api_key`. Those are precisely what embeddings blur.
+
+<Compare caption="To an embedding the two retry loops look alike; only the names tell them apart." cols={[
+  { title: "http/client.py", sub: "retry with backoff, API calls", kind: "bad", rows: ["Very similar to the question", "- Retries outgoing API calls"] },
+  { title: "webhooks/dispatcher.py", sub: "retry with backoff, webhooks", kind: "good", rows: ["Very similar to the question", "+ Uses WEBHOOK_MAX_BACKOFF", "+ dispatch_with_retry"] },
+]} verdict="Exact names separate them, and exact names are what grep finds." />
 
 Code also breaks the other assumptions of [RAG](/c/rag/):
 
@@ -66,6 +78,15 @@ Code also breaks the other assumptions of [RAG](/c/rag/):
 
 Each step uses what the last one found. That is the advantage over one-shot retrieval: the agent can refine its query, follow a reference, and notice when a matching line is not the whole story. In the lab, grep alone gets to 35% (the agent answers from the grep hit without opening the file). Grep plus `read_file` gets **98%**.
 
+<Trace caption="Each search uses what the last one found, and the answer cites file and line." steps={[
+  { role: "model", text: 'grep -rn "MAX_BACKOFF" src/', tag: "tool_use" },
+  { role: "tool", text: "config/settings.py, webhooks/dispatcher.py", meta: "with line numbers" },
+  { role: "model", text: 'read_file("webhooks/dispatcher.py")', tag: "tool_use" },
+  { role: "tool", text: "min(WEBHOOK_MAX_BACKOFF, 900)", meta: "the clamp" },
+  { role: "model", text: 'grep -rn "dispatch_with_retry" src/', tag: "tool_use", meta: "callers" },
+  { role: "model", text: "Capped at 900 s (15 min) in webhooks/dispatcher.py; set in config/settings.py", tag: "end_turn", good: true },
+]} />
+
 There is no index to build. The search runs against the files as they are right now.
 
 ## Let us check the math
@@ -81,11 +102,24 @@ Cost per correct answer: 0.035 / 0.98 ≈ **$0.036**.<br />
 **The index you skip:** 2,400 files × about 1,500 tokens = 3.6 million tokens to embed, then re-embed the changed files on every commit.
 </Callout>
 
+<Bars caption="Agentic search costs more per question and less per correct answer." unit="$" bars={[
+  { label: "RAG", value: 0.044, kind: "bad", note: "$0.044 · 45% right" },
+  { label: "Agentic search", value: 0.036, kind: "good", note: "$0.036 · 98% right" },
+]} />
+
 Agentic search costs 75% more per question and is cheaper per right answer, because a wrong answer about code costs a developer far more than three cents.
 
 ## The tradeoff: the agent has to know what to look for
 
 Grep is exact, which is both its strength and its weakness.
+
+<Trace caption="When the words differ, grep finds nothing, and a semantic tool can find a candidate." steps={[
+  { role: "user", text: "Where do we handle login?" },
+  { role: "model", text: 'grep -rn "login" src/', tag: "tool_use" },
+  { role: "tool", text: "0 matches", bad: true },
+  { role: "model", text: 'semantic_search("login")', tag: "tool_use" },
+  { role: "tool", text: "def authenticate(...)", good: true },
+]} />
 
 - **Vocabulary mismatch.** If the user says "login" and the code says `authenticate`, grep finds nothing. Good agents try synonyms and patterns, but on a large prose corpus (support tickets, legal documents) a semantic index still finds candidates grep cannot. Many systems give the agent both: grep plus a `semantic_search` tool.
 - **More turns, more tokens.** Each search adds results to the context. Delegate wide searches to a [subagent](/c/subagents/) that returns a short summary, and set [stop conditions](/c/stop_conditions/) so a fruitless search ends.
@@ -94,3 +128,8 @@ Grep is exact, which is both its strength and its weakness.
 ## In the real world
 
 Claude Code searches a repository with tools (Grep, Glob, Read) in its loop, and does not build an embedding index of your code. Its developers have said publicly that they tried vector-database RAG early on and found agentic search worked better for code. The SWE-agent research project reached a related conclusion: giving the model compact search and file-viewing commands with clear output improved how many real GitHub issues it could fix.
+
+<Compare caption="Claude Code tried vector-database RAG for code and kept agentic search." cols={[
+  { title: "Vector-database RAG", sub: "tried early on", kind: "bad", rows: ["- An embedding index of the code", "- One search before answering"] },
+  { title: "Agentic search", sub: "what it uses", kind: "good", rows: ["+ Grep, Glob, Read in the loop", "+ No index to build or keep fresh"] },
+]} />

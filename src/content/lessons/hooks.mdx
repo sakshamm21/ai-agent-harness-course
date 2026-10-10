@@ -43,6 +43,14 @@ reading:
 
 Your coding agent makes about 500 file writes a week. The system prompt says, in capitals, "Never edit `.env`". On Thursday it "switched the app to test keys" by overwriting `.env`, and your live Stripe key was gone.
 
+<Trace caption="The rule was in the prompt, and the write went through anyway." steps={[
+  { role: "system", text: 'System prompt: "NEVER edit .env"' },
+  { role: "user", text: "Switch the app to test keys." },
+  { role: "model", text: 'write_file(".env", "STRIPE_KEY=sk_test_...")', tag: "tool_use" },
+  { role: "tool", text: "ok", meta: "nothing checked it" },
+  { role: "error", text: "The live Stripe key is gone.", bad: true },
+]} />
+
 The same week, 3 of its edits failed CI on formatting. Each time it ran the linter, read the output, and spent two more turns fixing tabs and trailing spaces.
 
 Neither failure was the model being careless. Both came from asking the model to do a job that your code should do.
@@ -54,6 +62,11 @@ An instruction in the prompt changes the odds. It does not change the outcome. A
 Formatting is the same story. You could remind the model to format every file. Or you could run the formatter yourself, every time, in a few milliseconds.
 
 The harness already sits at the one place where both rules can be enforced: the moment between "the model asked for a tool" and "the tool ran". In [The Agent Loop](/c/agent_loop/), your code runs every tool call. So your code can also check it, change it or follow it up.
+
+<Compare caption="A prompt rule changes the odds; a check in the harness changes the outcome." cols={[
+  { title: "Rule in the prompt", sub: "the model decides", kind: "bad", rows: ["- Followed 99% of the time", "- Several misses a week at 500 writes", "- Formatting costs extra turns"] },
+  { title: "Check in the harness", sub: "your code decides", kind: "good", rows: ["+ Runs before every tool call", "+ Same result every time", "+ Formatter runs in milliseconds"] },
+]} verdict="Enforce the rule between the tool request and the tool run." />
 
 ## Give the harness hooks
 
@@ -89,6 +102,11 @@ Tool calls are not the only lifecycle events. Harnesses also expose session star
 
 Compare the prompt rule with the hook, using a week of 500 writes.
 
+<Bars caption="Expected bad writes to .env in a week of 500 writes." bars={[
+  { label: "Prompt only, 99%", value: 5, kind: "bad", note: "5 a week" },
+  { label: "Pre-tool hook", value: 0, kind: "good", note: "0, whatever the model does" },
+]} />
+
 <Callout type="math" label="Let us check the math">
 **Prompt only, 99% compliance per write.**<br />
 Chance of a clean week: 0.99^500 ≈ 0.0066, so **99.3%** of weeks have at least one bad write. Expected bad writes: 500 × 0.01 = **5 per week**.<br /><br />
@@ -102,6 +120,11 @@ The hook is cheaper, faster, and exact. The prompt rule is still worth keeping, 
 
 A hook runs with your permissions, on every tool call, without the model deciding. That is the point, and also the risk.
 
+<Compare caption="The same hook can be a safety net or a hidden cost, depending on how you write it." cols={[
+  { title: "Careless hook", kind: "bad", rows: ["- 2 s on all 40 calls: +80 s", "- Runs unreviewed from a cloned repo", "- Rewrites results silently"] },
+  { title: "Careful hook", kind: "good", rows: ["+ Fast, with a timeout and a matcher", "+ Reviewed like any other code", "+ Logs every change to the trace"] },
+]} />
+
 - **Slow hooks slow everything.** A 2 s hook on 40 tool calls adds 80 s to a session. Keep hooks fast, give each a timeout, and match them to the tools that need them.
 - **Hooks are trusted code.** A hook from a cloned repo runs shell commands on your machine. Review hook config like any other code, and pair hooks with [permissions and sandboxing](/c/permissions/) rather than replacing them.
 - **Hidden behaviour is hard to debug.** When a hook rewrites inputs or results, log it, so a [trace](/c/tracing/) shows why the agent saw what it saw. For checks on the model's text rather than its tool calls, see [guardrails](/c/guardrails/).
@@ -109,5 +132,20 @@ A hook runs with your permissions, on every tool call, without the model decidin
 ## In the real world
 
 Claude Code documents hooks publicly. You configure them in a settings file, keyed by events such as `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop` and `SessionStart`, with a matcher like `Edit|Write` that picks the tools. Each hook is a shell command that receives the event as JSON on stdin. For `PreToolUse`, exiting with code 2 blocks the tool call and the hook's stderr is shown to Claude as the reason, which is the "block loudly" rule from above. The docs' own examples include formatting files after edits and protecting sensitive files.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "python3 .claude/hooks/protect_env.py" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "python3 .claude/hooks/format.py" }] }
+    ]
+  }
+}
+```
 
 In part 7 of nanoharness you will load `pre_tool` and `post_tool` hooks from a config file and run them around every tool call.

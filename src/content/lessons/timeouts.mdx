@@ -45,6 +45,11 @@ It is 2pm and your model provider is overloaded: 30% of calls come back with HTT
 
 Over 60 tickets, 15% fail outright, and a ticket takes 40 seconds on average instead of 11. Nothing in your code is broken. You just had one dependency, and it went down.
 
+<Bars caption="One dependency went down, and an 11 second ticket became a 40 second one." unit="s" bars={[
+  { label: "Normal hour", value: 11, kind: "good", note: "11 s per ticket" },
+  { label: "Bad hour", value: 40, kind: "bad", note: "40 s · 15% of tickets fail" },
+]} />
+
 ## Waiting is not a plan
 
 An agent is a chain of calls: the model, then a tool, then the model again. Each link can be slow or down, and each turn of the loop multiplies the exposure. A 3-turn ticket makes 3 model calls; with 30% of calls failing, the chance of hitting at least one failure is 1 − 0.7³ ≈ 66%, two tickets in three.
@@ -54,6 +59,15 @@ Three things go wrong at once:
 - **Hung calls.** Without a timeout, one stuck request blocks the agent forever. A tool call that never returns is just as bad.
 - **Retrying the same overloaded thing.** A 529 means the provider is out of capacity. It will usually still be out of capacity in 30 seconds.
 - **No second option.** If the only model you can call is down, you are down.
+
+<Trace caption="Retrying the same overloaded provider just waits, then fails." steps={[
+  { role: "user", text: "Where is my order?" },
+  { role: "error", text: "529 overloaded", bad: true },
+  { role: "system", text: "wait 30 s, retry the same model" },
+  { role: "error", text: "529 overloaded", bad: true },
+  { role: "system", text: "wait 30 s, retry the same model" },
+  { role: "error", text: "529 overloaded · third failure, ticket abandoned", bad: true },
+]} />
 
 ## Time out, retry briefly, then fail over
 
@@ -80,6 +94,14 @@ def call_model(messages, tools):
 
 Add a **circuit breaker** so that after, say, 5 failures in a minute you skip the primary for a while and go straight to the fallback. That spares you the retry delay on every call, and spares the provider your extra load. Put timeouts on tools too, and a deadline on the whole task.
 
+<States caption="A circuit breaker stops paying the retry delay once the primary is clearly down." states={[
+  { id: "closed", label: "Use primary", sub: "retry, then fall back", kind: "good" },
+  { id: "open", label: "Skip primary", sub: "fallback only", kind: "bad" },
+]} edges={[
+  { from: "closed", to: "open", label: "5 failures in a minute" },
+  { from: "open", to: "closed", label: "after a while" },
+]} path={["closed", "open", "closed"]} />
+
 ## Let us check the math
 
 Take a 3-turn ticket on the large tier, 30% of primary calls failing.
@@ -93,6 +115,15 @@ Take a 3-turn ticket on the large tier, 30% of primary calls failing.
 
 The lab shows the same shape: 85% of tickets at 40.6 s without a fallback, 95% at 13.7 s with one.
 
+<Lanes caption="Expected time per 3-turn ticket: the fallback turns 39 s of waiting into about 3 s." unit="s" total={52} lanes={[
+  { heading: "No fallback" },
+  { label: "real work", start: 0, end: 11 },
+  { label: "waiting on failures", start: 11, end: 50, kind: "bad", note: "~50 s" },
+  { heading: "With fallback" },
+  { label: "real work", start: 0, end: 11 },
+  { label: "retry + fallback", start: 11, end: 14.2, kind: "good", note: "~14 s" },
+]} />
+
 ## The tradeoff: the fallback is a different model
 
 Failover keeps you answering, but the answers come from somewhere else.
@@ -103,6 +134,28 @@ Failover keeps you answering, but the answers come from somewhere else.
 
 A [router](/c/routing/) that already sends easy work to a smaller model gives you a natural fallback, and [deploying](/c/deploy/) with per-provider health metrics tells you when the breaker trips.
 
+<Compare caption="Failover keeps you answering, but during an outage the answers come from another model." cols={[
+  { title: "Primary only", kind: "bad", rows: ["+ One model to tune and test", "- Down whenever it is down"] },
+  { title: "With a fallback", kind: "good", rows: ["+ Answers through the bad hour", "- Prompt tuned for another model"] },
+]} verdict="Run your evals on the fallback too, so you know the quality you get during an outage." />
+
 ## In the real world
 
 Anthropic's API reports `overloaded_error` with status 529 and `rate_limit_error` with 429, and its official SDKs retry certain errors (connection errors, 408, 409, 429 and 5xx) twice by default with exponential backoff before raising. Gateways such as OpenRouter and LiteLLM let you list fallback models so a failing call is retried on the next one in the list. The pattern is the same in all of them: a short, bounded retry, then somewhere else to go.
+
+```python
+import anthropic
+
+client = anthropic.Anthropic(max_retries=2, timeout=30.0)  # 2 is the default
+RETRYABLE = {429, 500, 503, 529}
+
+try:
+    resp = client.messages.create(model=PRIMARY, max_tokens=1024,
+                                  messages=messages, tools=tools)
+except anthropic.APIConnectionError:          # includes timeouts
+    resp = fallback.create(messages, tools, timeout=30)
+except anthropic.APIStatusError as e:         # raised after the SDK's retries
+    if e.status_code not in RETRYABLE:
+        raise                                 # 400, 401, 404: fix it
+    resp = fallback.create(messages, tools, timeout=30)
+```

@@ -8,6 +8,13 @@ Your team keeps its notes in a small service. You want any agent (yours, Claude 
 
 `agentkit_mini` has a tiny in-process version of both. The messages are real JSON-RPC 2.0 with the same `tools/list` and `tools/call` methods as the MCP spec; only the transport (stdio or HTTP in real MCP) is replaced by a function call.
 
+<Trace caption="Until the tools are registered and connected, the server lists nothing and the agent cannot read the notes." steps={[
+  { role: "system", text: "tools/list", tag: "JSON-RPC" },
+  { role: "tool", text: "[]", meta: "no tools registered", bad: true },
+  { role: "user", text: "When is standup on Thursday?" },
+  { role: "model", text: "I don't have any way to read your notes.", bad: true },
+]} />
+
 ## Your task
 
 1. Finish `search_notes(query)`: return every `"title: body"` line whose title or body contains the query (case-insensitive), joined by newlines, or `"No notes match '<query>'."`.
@@ -16,9 +23,21 @@ Your team keeps its notes in a small service. You want any agent (yours, Claude 
 4. Register both tools on the server with `server.add_tool(...)`. Press **Run**: the `tools/list` line should show both names.
 5. Connect the agent: `client = MCPClient(server)`, then `agent_tools = client.list_tools()`. The loop now calls the server's tools without knowing how they are implemented.
 
+<Flow steps={[{ label: "run_loop", sub: "the agent" }, { label: "MCPClient", sub: "list_tools()", kind: "hl" }, { label: "JSON-RPC 2.0", sub: "tools/list, tools/call" }, { label: "MCPServer", sub: "notes", kind: "hl" }, { label: "Your tools", sub: "search_notes, add_note" }]} caption="The agent only talks to the client; the client and server speak JSON-RPC, so any MCP host could plug in." />
+
 Press **Run** to see the agent answer, then **Check**.
 
 ## What the checks look for
+
+The checks talk to your server the way any host would, with raw JSON-RPC messages like this pair:
+
+```json
+{"jsonrpc": "2.0", "id": 102, "method": "tools/call",
+ "params": {"name": "search_notes", "arguments": {"query": "standup"}}}
+
+{"jsonrpc": "2.0", "id": 102,
+ "result": {"content": [{"type": "text", "text": "standup: Standup moved to 10:15 ..."}], "isError": false}}
+```
 
 - A raw `tools/list` request returns exactly `search_notes` and `add_note`, each with a description of 30+ characters, and `add_note` requires `title` and `body`.
 - A raw `tools/call` for `search_notes` with `"standup"` returns the 10:15 note, and a query with no hits says so.

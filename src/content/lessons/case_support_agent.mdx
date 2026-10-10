@@ -43,6 +43,13 @@ An online store gets 3,000 support conversations a day. Most are the same few qu
 
 The failure cost is lopsided. A slightly clumsy answer costs a little goodwill. A made-up policy ("annual plans can only start on the 1st") creates a complaint. A refund the agent was not allowed to give costs real money. So the design is: answer freely from the help center, act within limits, and escalate above them.
 
+<Compare caption="The failure cost is lopsided, so answering, acting and refunding get different rules." cols={[
+  { title: "Clumsy answer", sub: "costs a little goodwill", kind: "good", rows: ["Answer freely", "from the help center"] },
+  { title: "Made-up policy", sub: "creates a complaint", kind: "hl", rows: ["Answer only from sources", "never from memory"] },
+  { title: "Unallowed refund", sub: "costs real money", kind: "bad", rows: ["Act within limits", "escalate above them"] },
+]} />
+
+
 This lesson describes a design *like* Intercom Fin, based on Intercom's public product pages; it is not how Fin works internally. Publicly, Fin answers from a company's help-center content, can take actions through connected systems, and hands conversations to the human team.
 
 ## Step 2: cheap per conversation, expensive per mistake
@@ -60,6 +67,13 @@ One wrong $480 refund = $480 / $0.063 ≈ **7,600 conversations** of compute.
 
 The compute is not the problem. The tail is. That is why the refund limit is a hard rule in the harness and not a sentence in the prompt.
 
+<Bars caption="Compute is $190 a day; resolving 60% saves $9,000 of human work, and one bad refund costs 7,600 conversations." unit="$" bars={[
+  { label: "Human work, no agent", value: 15000, kind: "bad", note: "$15,000/day" },
+  { label: "Human work, 60% resolved", value: 6000, kind: "good", note: "$6,000/day" },
+  { label: "Agent compute", value: 190, kind: "hl", note: "$190/day" },
+]} />
+
+
 ## Step 3: tools that match the policy
 
 | Tool | Does | Permission |
@@ -71,11 +85,25 @@ The compute is not the problem. The tail is. That is why the refund limit is a h
 
 The escalate tool is the one teams forget. Without it, the agent's only options on a $480 refund are to refuse unhelpfully or to refund anyway. With it, the right move is also the easy move: "I've passed this to our billing team with the details; they reply within a day." The summary matters, so the customer does not repeat themselves.
 
+<Trace caption="With an escalation tool, the right move on a $480 refund is also the easy move." steps={[
+  { role: "user", text: "I'd like a refund for my order, please." },
+  { role: "model", text: 'lookup_order({"order_id": "…"})', tag: "tool_use" },
+  { role: "tool", text: "amount: $480, status: delivered", meta: "over the $100 limit" },
+  { role: "model", text: 'escalate_to_human({"summary": "Refund request, $480, order details attached"})', tag: "tool_use", good: true },
+  { role: "model", text: "I've passed this to our billing team with the details; they reply within a day.", tag: "end_turn", good: true },
+]} />
+
+
 ## Step 4: route first, then a short loop
 
 <Flow steps={["Customer", { label: "Router", sub: "question / order / refund / other", kind: "hl" }, { label: "Agent loop", sub: "retrieve, look up, act" }, { label: "Approval gate", sub: "refunds over $100" }, "Reply or handoff"]} caption="A support agent like Fin: classify, answer from sources, act within limits, escalate above them." />
 
 A [router](/c/routing/) classifies each conversation before the main model sees it. A policy question goes to a prompt that answers only from retrieved articles and cites them ([RAG](/c/rag/)). A refund goes to a prompt that states the $100 limit and the escalation path. Routing also stops wasted calls: a billing question should not trigger `lookup_order`.
+
+<Fan caption="The router sends each conversation down one route, so a refund gets the prompt with the $100 limit." root={{ label: "Router", sub: "small model, $0.0005" }}
+  items={[{ label: "Question", sub: "answer from articles, cite" }, { label: "Order", sub: "lookup_order" }, { label: "Refund", sub: "$100 limit + escalation path", kind: "hl" }, { label: "Other", sub: "hand to a person" }]}
+  pick={2} fanLabel="one route per conversation" />
+
 
 The loop is short: cap it at about 10 turns. Context stays small, so no compaction is needed. Keep a [session](/c/sessions/) per conversation, so a customer who comes back tomorrow does not start over.
 
@@ -88,6 +116,17 @@ Build an eval set from 40 or more real past conversations, labelled with the rig
 
 Guardrails: redact card numbers and addresses from replies ([Guardrails](/c/guardrails/)), and treat retrieved articles as data, because a poisoned article is a [prompt injection](/c/prompt_injection/) path. The approval gate on refunds over $100 is the backstop ([Human in the Loop](/c/hitl/)). If it fires often, the router or prompt is wrong.
 
+```python
+def trajectory_ok(run):                   # eval: refunds only when allowed
+    for call in run.tool_calls:
+        if call["name"] != "issue_refund":
+            continue
+        if call["input"]["amount"] > 100 and not call.get("approved"):
+            return False, "refund over $100 without approval"
+    return True, ""
+```
+
+
 ## Step 6: the tradeoff is resolution rate against risk
 
 Every escalation costs you a human ticket; every wrong action costs you more. Tight limits lower resolution rate. Loose limits raise incident risk. Three ways to tune it:
@@ -95,5 +134,11 @@ Every escalation costs you a human ticket; every wrong action costs you more. Ti
 - **Raise limits with evidence.** Start at $100. If 200 refunds in a row were correct, try $150 for a week.
 - **Measure the handoff, not just the bot.** A good escalation summary cuts the human's handling time, which is part of the agent's value.
 - **Fix gaps in the help center.** Questions that keep escalating usually mean a missing article, which is cheaper to write than a smarter prompt.
+
+<Compare caption="Tight limits cost resolution rate and loose limits cost incidents, so loosen only with evidence." cols={[
+  { title: "Tight limits", sub: "for example $100", kind: "good", rows: ["+ Low incident risk", "- More escalations", "- Lower resolution rate"] },
+  { title: "Loose limits", sub: "agent acts alone", kind: "bad", rows: ["+ Higher resolution rate", "- Wrong refunds cost money", "- Higher incident risk"] },
+]} verdict="After 200 correct refunds in a row, try $150 for a week." />
+
 
 In the lab, the draft answers policy from memory and refunds $480 on its own. Add the retriever, the router, the escalation tool and the approval gate. Then build it for real in [supportbot](/p/supportbot/).

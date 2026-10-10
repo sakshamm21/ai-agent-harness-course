@@ -45,11 +45,30 @@ Your coding agent runs with every tool allowed, including a raw shell. On 120 ru
 
 The model was trying to help. In both cases it took the shortest path to "done".
 
+
+<Trace caption="With every tool allowed, nothing stood between the model's shortcut and the damage." steps={[
+  { role: "user", text: "The build is stale. Fix it." },
+  { role: "model", text: 'bash("rm -rf ./ build")', tag: "tool_use", bad: true, meta: "stray space" },
+  { role: "tool", text: "whole working tree deleted", bad: true },
+  { role: "user", text: "Ship the hotfix." },
+  { role: "model", text: 'bash("git push")', tag: "tool_use" },
+  { role: "error", text: "push rejected" },
+  { role: "model", text: 'bash("git push --force origin main")', tag: "tool_use", bad: true },
+  { role: "tool", text: "three teammates' commits erased", bad: true },
+]} />
+
 ## The model picks actions. Only the harness can refuse them.
 
 A system prompt that says "never run destructive commands" is a request. The model follows it most of the time, and most of the time is not enough. Suppose a destructive command slips through on 1 shell call in 500, and your agents make 50 shell calls a day. Over a month that is 1,500 calls, and the chance of at least one disaster is 1 − (499/500)^1,500 ≈ **95%**.
 
 The model also cannot see consequences. `rm -rf ./ build` and `rm -rf ./build` differ by one character. Only code that inspects the call before it runs can catch it, and that code lives in the harness, between the model's request and the tool runtime ([What Is an Agent Harness](/c/harness/)).
+
+
+<Bars caption="At 1 slip in 500 shell calls and 50 calls a day, a disaster within a month is about 95% likely." unit="%" max={100} bars={[
+  { label: "1 day, 50 calls", value: 9.5 },
+  { label: "1 week, 350 calls", value: 50, kind: "hl" },
+  { label: "1 month, 1,500 calls", value: 95, kind: "bad", note: "≈ 95%" },
+]} />
 
 ## Sort every call into allow, ask or deny
 
@@ -98,6 +117,13 @@ That is 11 times fewer interruptions than asking for everything, with the same s
 
 Fewer asks is not only about saving time. When 1 request in 10 matters, people read them. When 1 in 50 matters, they click yes.
 
+
+<Compare caption="Tiered rules keep zero incidents with 11 times fewer approvals than asking for everything." cols={[
+  { title: "Allow everything", kind: "bad", rows: ["- 20 incidents in 120 runs (17%)", "+ Zero approvals"] },
+  { title: "Ask for everything", rows: ["+ Zero incidents", "- About 5.1 approvals per task"] },
+  { title: "Allow, ask push, deny bash", kind: "good", rows: ["+ Zero incidents", "+ About 0.46 approvals per task"] },
+]} verdict="Ask only where the answer might be no." />
+
 ## The tradeoff: tight rules block real work
 
 Every deny rule is a task the agent can no longer do on its own.
@@ -106,6 +132,22 @@ Every deny rule is a task the agent can no longer do on its own.
 - **Asks need a real human, quickly.** An agent waiting on approval at 2 a.m. is a stopped agent. Route only irreversible actions to a person, and make the request specific ([Human in the Loop](/c/hitl/)).
 - **Rules drift from reality.** New tools arrive unlisted. Default unknown tools to ask, and add a [pre-tool hook](/c/hooks/) for checks that need code, like "no writes to `.env`" or [guardrails](/c/guardrails/) for content.
 
+
+<States caption="A denied call should come back with a reason, so the model can pick a better path." states={[
+  { id: "req", label: "Tool call", kind: "hl" }, { id: "wait", label: "Waiting for a human" },
+  { id: "run", label: "Runs", kind: "good" }, { id: "block", label: "Blocked", sub: "with a reason", kind: "bad" },
+]} edges={[
+  { from: "req", to: "run", label: "allow" }, { from: "req", to: "wait", label: "ask" },
+  { from: "wait", to: "run", label: "approved" }, { from: "wait", to: "block", label: "refused" },
+  { from: "req", to: "block", label: "deny" }, { from: "block", to: "req", label: "tries another path" },
+]} path={["req", "block", "req", "wait", "run"]} />
+
 ## In the real world
 
 Claude Code has permission modes (a default mode that asks on first use of each tool, one that accepts file edits automatically, a plan mode that only explores, an auto mode where a classifier reviews risky actions, and a mode that skips prompts) plus allow, ask and deny rules, evaluated deny first, then ask, then allow. Its own docs warn that a Bash deny rule does not match a program called inside `sh -c`, and point to the sandbox for limits that must hold. It can also run shell commands in a sandbox that limits file and network access. Codex CLI sandboxes commands with OS features (Seatbelt on macOS, Landlock and seccomp on Linux) and turns network access off by default. OpenHands runs every action inside a Docker container. All three apply the same two layers you build in the lab.
+
+<Compare caption="Three agents, the same two layers: rules decide, a sandbox limits the damage." cols={[
+  { title: "Claude Code", rows: ["+ Deny, then ask, then allow", "+ Sandbox limits files and network"] },
+  { title: "Codex CLI", rows: ["+ Seatbelt on macOS", "+ Landlock and seccomp on Linux", "+ Network off by default"] },
+  { title: "OpenHands", rows: ["+ Every action in Docker"] },
+]} verdict="Rules first, then a sandbox for what rules miss." />

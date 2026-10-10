@@ -15,6 +15,11 @@ By now each sub-question has a `WorkerResult` with verified claims, or a status 
 
 Two choices make this writer hard to fool. First, it gets a clean handoff, not the workers' transcripts. Three workers with six turns each produce tens of thousands of tokens of search results and page text. The writer needs a few hundred: the claims, their doc ids and the gaps. Less input is cheaper and gives the writer nothing to invent from.
 
+<Compare caption="The writer gets a few hundred tokens of verified claims instead of the workers' transcripts." cols={[
+  { title: "Workers' transcripts", kind: "bad", rows: ["- Tens of thousands of tokens", "- Search results, raw pages", "- Plenty to invent from"] },
+  { title: "JSON handoff", kind: "good", rows: ["+ A few hundred tokens", "+ Claims, doc ids, gaps", "+ Nothing else to use"] },
+]} />
+
 Second, the writer cites by doc id, like `[vt-03]`, and code does the numbering. The model never writes `[2]`, so a number can never point at the wrong source or at one nobody read.
 
 <Flow steps={[{ label: "Results", sub: "verified claims" }, { label: "Handoff", sub: "JSON, no transcripts", kind: "hl" }, { label: "Writer", sub: "cites [doc-id]" }, { label: "Numbering", sub: "code, not model" }, "Report"]} caption="The model writes prose; code owns the citations." />
@@ -71,7 +76,20 @@ You write three functions in `writer.py`. `parse_report`, which reads a finished
 
    The second `re.sub` tidies `claim [kw-01].` into `claim.` after a removed cite. The `(vt-03)` at the end of each source line is what `parse_report` reads to map numbers back to ids.
 
+<Trace caption="Code numbers the ids in order of first use and silently drops any id that is not in the handoff." steps={[
+  { role: "model", text: "It opened on 14 June 2019 [vt-01]. It is 31.4 km long [vt-02].", meta: "writer" },
+  { role: "model", text: "Ferries expect to lose a third of passengers [vt-01, kw-01].", meta: "writer" },
+  { role: "note", text: "kw-01 is not in the handoff: removed", bad: true },
+  { role: "result", text: "... 2019 [1]. ... 31.4 km long [2]. ... passengers [1].", good: true },
+  { role: "result", text: "## Sources  1. ... (vt-01)  2. ... (vt-02)" },
+]} />
+
 3. **Write the report.** One call with `WRITER_SYSTEM` and the handoff as JSON. If no section has findings, skip the model: write a short report yourself that lists the gaps. A model asked to write a report from nothing will write one.
+
+<Compare caption="With no verified findings, code writes the report so the model has no chance to make one up." cols={[
+  { title: "Some sections", kind: "good", rows: ["+ One writer call", "+ Handoff as JSON", "+ Citations numbered after"] },
+  { title: "No sections", rows: ["+ No model call", "+ Title plus a Gaps list", "+ No Sources section"] },
+]} />
 
    ```python
    handoff = build_handoff(question, results, corpus)

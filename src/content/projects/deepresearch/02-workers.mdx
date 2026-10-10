@@ -32,6 +32,12 @@ The corpus is 80 short fictional documents in `data/corpus/`: news stories, repo
 
    Each hit is an id, a title, a URL and a one-sentence snippet, not the whole page. The model decides what to open from that.
 
+```json
+{"id": "vt-02", "title": "Inside the Velmora Tunnel: facts and figures",
+ "url": "corpus://halden-rail-authority/inside-the-velmora-tunnel-facts-and-figures",
+ "snippet": "The Velmora Tunnel is 31.4 kilometres long, ..."}
+```
+
 2. **Fetch one page.** By id or by its `corpus://` URL. An unknown id raises `KeyError` with a message written for the model, because the loop sends that message back to it as a tool error.
 
    ```python
@@ -61,6 +67,11 @@ The corpus is 80 short fictional documents in `data/corpus/`: news stories, repo
 
 4. **Parse the claims, and keep only what was read.** The worker's final reply should be a claims object. Accept a bare list too, skip empty claims, and drop every source the worker never fetched. A worker that cites a page it never opened is guessing from a search snippet or from memory. A claim left with no source is dropped.
 
+<Compare caption="A citation survives only if the worker actually fetched that page." cols={[
+  { title: "Kept", kind: "good", rows: ["+ fetched vt-02, cites vt-02", "+ cites vt-02 and vt-01: keeps vt-02"] },
+  { title: "Dropped", kind: "bad", rows: ["- cites vt-03, never fetched", "- claim with no sources left", "- empty claim text"] },
+]} />
+
    ```python
    read = set(read_ids)
    out: list[Claim] = []
@@ -76,6 +87,17 @@ The corpus is 80 short fictional documents in `data/corpus/`: news stories, repo
    ```
 
 5. **Run the worker.** Call `run_loop` with the two tools. Then read the record of tool calls: the ids of successful `fetch_page` calls are the pages this worker read. A failed fetch does not count. Do not catch model errors here. In part 3 a model call can raise `BudgetExceeded`, and the code that runs the workers decides what that means.
+
+<Trace caption="The worker's read list comes from successful fetches only, and it decides which citations stand." steps={[
+  { role: "user", text: "How long is the Velmora Tunnel?" },
+  { role: "model", text: 'search({"query": "velmora tunnel length"})', tag: "tool_use" },
+  { role: "tool", text: "vt-02 Inside the Velmora Tunnel: facts and figures, ...", tag: "tool_result" },
+  { role: "model", text: 'fetch_page({"doc_id": "vt-99"})', tag: "tool_use" },
+  { role: "error", text: "KeyError: no document 'vt-99'; use an id from search results", bad: true },
+  { role: "model", text: 'fetch_page({"doc_id": "vt-02"})', tag: "tool_use" },
+  { role: "tool", text: "The Velmora Tunnel is 31.4 kilometres long, ...", meta: "read_ids: vt-02", good: true },
+  { role: "result", text: '{"claims": [{"text": "It is 31.4 km long.", "sources": ["vt-02"]}]}', meta: "status ok" },
+]} />
 
    ```python
    run = run_loop(model, make_tools(corpus), worker_prompt(sub_question), system=WORKER_SYSTEM,

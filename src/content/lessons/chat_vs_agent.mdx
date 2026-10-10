@@ -40,6 +40,13 @@ Your billing assistant gets three tickets. "How much is my March invoice, and is
 
 The bot is a plain chat model, one call per message. It answers all three in a friendly tone, and across 20 runs it gets about 3% of them right. It cannot see an invoice, a charge or a support note, so it says what billing problems usually are: "probably a pending authorization."
 
+<Trace caption="One call and no tools: the bot answers about a charge it never saw." steps={[
+  { role: "user", text: "Two charges of $49, but only one invoice. Why?" },
+  { role: "model", text: "That is probably a pending authorization.", tag: "end_turn", meta: "1 call" },
+  { role: "error", text: "It never saw the invoice, the charges or the support notes.", bad: true },
+  { role: "note", text: "Across 20 runs: about 3% of tickets right" },
+]} />
+
 ## The question is who picks the next step
 
 There are three ways to put a model to work, and the difference is not the model. It is who decides what happens next.
@@ -59,6 +66,12 @@ Look at what each ticket needs. The first needs one lookup: the invoice. The sec
 A chatbot can do none of them. A fixed two-step workflow ("get invoices, then answer") fits the first ticket and confidently answers the other two with half the facts: "Your invoice is paid, so everything looks fine." An agent with all three tools calls only what each ticket needs.
 
 The rule: if you can write the steps down before you see the input, write a workflow. If the steps depend on what you find along the way, you need an agent. In the lab you build all three and compare steps, cost and success on the same tickets.
+
+<Compare caption="Only the agent can follow a path that depends on what the first lookup returns." cols={[
+  { title: "Chatbot", sub: "one call per message", kind: "bad", rows: ["- Sees no invoice or charge", "- Solves none of the three"] },
+  { title: "Workflow", sub: "get invoices, then answer", rows: ["+ Fits ticket 1", '- Tickets 2, 3: "everything looks fine"'] },
+  { title: "Agent", sub: "all three tools", kind: "good", rows: ["+ Ticket 1: invoices", "+ Ticket 2: invoices, payments", "+ Ticket 3: invoices, payments, notes"] },
+]} verdict="Steps known before you see the input: workflow. Steps found along the way: agent." />
 
 ## Let us check the math
 
@@ -80,9 +93,24 @@ Average: 3 turns and about **$0.026** a ticket. Success about 93%.
 
 The agent costs more per ticket and less per solved ticket. That is the number to compare.
 
+<Bars caption="The agent costs more per ticket but less per solved ticket, because it solves 93% instead of 1 in 3." unit="$" bars={[
+  { label: "Workflow, per ticket", value: 0.015 },
+  { label: "Agent, per ticket", value: 0.026, kind: "hl" },
+  { label: "Workflow, per solved", value: 0.045, kind: "bad" },
+  { label: "Agent, per solved", value: 0.028, kind: "good", note: "≈ $0.028" },
+]} />
+
 ## The tradeoff: the model now controls your bill
 
 Handing the next step to the model buys flexibility and costs predictability. A workflow always takes 2 calls. An agent takes 2, 3 or 4 here, and could take 40 if it got confused. It is harder to test, because each run can take a different path, and harder to price, because the cost depends on choices you did not make.
+
+<States caption="The model picks every edge: ticket 3 takes 4 calls, and only a cap stops a confused run from taking 40." states={[
+  { id: "call", label: "Call model", kind: "hl" }, { id: "tool", label: "Run a tool", sub: "invoices, payments, notes" },
+  { id: "done", label: "Answer", sub: "model says done", kind: "good" }, { id: "cap", label: "Stopped", sub: "max turns or cost cap", kind: "bad" },
+]} edges={[
+  { from: "call", to: "tool", label: "model picks a tool" }, { from: "tool", to: "call", label: "append result" },
+  { from: "call", to: "done", label: "no more tools" }, { from: "tool", to: "cap", label: "budget hit" },
+]} path={["call", "tool", "call", "tool", "call", "tool", "call", "done"]} />
 
 Ways to keep the benefits:
 
@@ -93,3 +121,8 @@ Ways to keep the benefits:
 ## In the real world
 
 Anthropic's "Building effective agents" draws the same line. It calls workflows systems where models and tools follow predefined code paths, and agents systems where the model directs its own process and tool use. Its advice is to start with the simplest option and add autonomy only when the task needs it, which is the subject of the next lesson.
+
+<Compare caption="Anthropic draws the line at who directs the process: predefined code, or the model itself." cols={[
+  { title: "Workflow", sub: "predefined code paths", kind: "good", rows: ["Models and tools follow your code", "+ Start here"] },
+  { title: "Agent", sub: "model directs its own process", kind: "hl", rows: ["The model chooses its tool use", "+ Add when the task needs it"] },
+]} verdict="Start with the simplest option; add autonomy only when the task needs it." />

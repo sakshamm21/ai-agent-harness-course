@@ -15,6 +15,14 @@ A model asked "do gift cards expire?" with no context will answer from whatever 
 
 A citation is only worth something if you check it. In this part the bot drops any `[id]` that was not among the retrieved documents before the customer sees it, and records it so you can count how often the model invents sources.
 
+<Flow caption="Every answer passes a score threshold before the model and a citation check after it." steps={[
+  { label: "retrieve", sub: "1 chunk per article" },
+  { label: "score >= 0.2?", sub: "else NOT_FOUND", kind: "hl" },
+  { label: "prompt", sub: "documents, then question" },
+  { label: "model", sub: "cites [id]" },
+  { label: "check_citations", sub: "drop unknown ids", kind: "good" },
+]} />
+
 ## Steps
 
 1. **Retrieve one chunk per article.** A long article can fill the whole top 3 with its own chunks. Search wider, keep the best chunk from each article, and drop anything under `MIN_SCORE` (0.2). The score gap you saw in part 1 is why that number works.
@@ -57,6 +65,11 @@ def check_citations(text, hits):
 
 4. **Put it together, and do not guess.** If nothing scores above the threshold, there is nothing to ground an answer in. Return the not-found message without calling the model at all. That saves a call and removes the chance of a confident wrong answer.
 
+<Compare caption="When nothing clears the threshold, code answers and the model is never called." cols={[
+  { title: "Hits above 0.2", kind: "good", rows: ["+ Build the prompt", "+ One model call", "+ Check citations"] },
+  { title: "No hits", rows: ["+ Return NOT_FOUND", "+ Zero model calls", "+ No confident guess"] },
+]} verdict="An empty retrieval is a result, not a prompt." />
+
 ```python
 def answer(question, index, model, k=3):
     hits = retrieve(index, question, k=k)
@@ -76,6 +89,14 @@ def answer(question, index, model, k=3):
 ```
 
 The test also uses a scripted model that cites `[free-tents]`, an article that does not exist. Your `check_citations` has to catch it.
+
+<Trace caption="An invented id is stripped before the customer sees it, and recorded so you can count it." steps={[
+  { role: "user", text: "Do gift cards expire?" },
+  { role: "system", text: "retrieved: gift-cards, ...", meta: "allowed ids" },
+  { role: "model", text: "Gift cards never expire [gift-cards]. Also we give free tents [free-tents]." },
+  { role: "note", text: "check_citations: valid [gift-cards], invalid [free-tents]", bad: true },
+  { role: "result", text: "Gift cards never expire [gift-cards]. Also we give free tents.", good: true },
+]} />
 
 ## Run the test
 

@@ -43,11 +43,24 @@ Your CI runs the agent on three refactoring tasks: rename a function, change a s
 
 It passes 75% of the time. One run in four, the agent says "Done" after missing a call site. Your team has learned to click "re-run", which means the test no longer tells anyone anything.
 
+<Fan caption="Same repo, prompt and model, yet one run in four says Done after missing a call site." root={{ label: "Same task", sub: "same repo, prompt, model" }} fanLabel="4 runs"
+  items={[{ label: "Run 1", sub: "pass", kind: "good" }, { label: "Run 2", sub: "pass", kind: "good" }, { label: "Run 3", sub: "Done, missed a call site", kind: "bad" }, { label: "Run 4", sub: "pass", kind: "good" }]} />
+
 ## Every step is a sample, and the samples compound
 
 A model does not compute one answer. At each token it produces a probability for every possible next token, and the sampler picks one. **Temperature** controls how adventurous that pick is. At 1, a 10%-likely token is picked about 10% of the time.
 
 An agent turns that small randomness into big differences. If the first turn picks "grep for callers" in one run and "just edit the file" in another, the two runs see different tool results and never meet again. Small per-step error rates also compound: 98% per step over 10 steps is 0.98¹⁰ ≈ **82%** for the whole task.
+
+<Trace caption="One different pick on turn 1 sends two runs down paths that never meet again." steps={[
+  { role: "user", text: "Rename get_user to fetch_user across the repo." },
+  { role: "note", text: "Run A" },
+  { role: "model", text: 'grep("get_user(")', tag: "tool_use" },
+  { role: "tool", text: "every caller listed, each one gets edited", good: true },
+  { role: "note", text: "Run B" },
+  { role: "model", text: 'edit_file("users.py")', tag: "tool_use" },
+  { role: "model", text: "Done.", tag: "end_turn", bad: true, meta: "callers never seen" },
+]} />
 
 Turning the temperature to 0 helps, but it does not make the agent deterministic. Anthropic's API documentation notes that even at temperature 0 results will not be fully deterministic. Part of the cause sits on the provider's side, where batching and floating-point arithmetic on shared hardware can shift a probability slightly. And temperature 0 only makes the model pick its *most likely* step every time. If the most likely step is a mistake, you now make that mistake consistently.
 
@@ -75,6 +88,12 @@ How many runs do you need before a pass rate means anything?
 
 In the lab: temperature 0 alone lifts the pass rate from 75% to about 93%. Adding `run_tests` to the loop takes it to about 97%.
 
+<Bars caption="Temperature 0 narrows the spread, and a deterministic check catches most of what is left." unit="%" max={100} bars={[
+  { label: "Starter", value: 75, kind: "bad" },
+  { label: "Temperature 0", value: 93 },
+  { label: "+ run_tests in the loop", value: 97, kind: "good" },
+]} />
+
 ## The tradeoff: less variety, more runs, more checks
 
 Each fix costs something.
@@ -83,8 +102,21 @@ Each fix costs something.
 - **Many runs cost money and time.** $6 per CI run adds up. Run the full N nightly and a small smoke set on each commit, and track pass rate over time in your [evals](/c/evals/).
 - **Not everything has a deterministic check.** Code has tests; a support reply does not. There you grade the path with [trajectory evals](/c/trajectory_evals/) and the answer with a judge, and accept a wider error bar.
 
+<Compare caption="Each fix buys consistency with something else: variety, money, or a wider error bar." cols={[
+  { title: "Temperature 0", rows: ["+ Same pick every time", "- Kills useful variety"] },
+  { title: "Many runs", rows: ["+ Pass rate you can trust", "- $6 per CI run"] },
+  { title: "Deterministic check", kind: "good", rows: ["+ Catches the missed call site", "- Not every task has one"] },
+]} verdict="Full N nightly, a smoke set per commit, and a judge where no exact check exists." />
+
 ## In the real world
 
 The tau-bench benchmark, built to test agents that talk to users and call tools, introduced **pass^k** for exactly this reason: an agent that succeeds once in a while is not one you can deploy. Its authors reported that agents' success dropped sharply as k grew, which is the gap between "can do it" and "does it every time" that you measured above.
+
+<Bars caption="pass^k with this lesson's numbers: 75% per run is only 42% three runs in a row." unit="%" max={100} bars={[
+  { label: "75% agent, pass^1", value: 75 },
+  { label: "75% agent, pass^3", value: 42, kind: "bad" },
+  { label: "97% agent, pass^1", value: 97 },
+  { label: "97% agent, pass^3", value: 91, kind: "good" },
+]} />
 
 You will build this kind of eval, with pass rates over repeated runs, in part 10 of the nanoharness project.
