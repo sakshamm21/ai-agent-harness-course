@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "description": "",
   "scripts": {
+    "postinstall": "node scripts/copy-pyodide.mjs",
+    "predev": "node scripts/copy-pyodide.mjs",
     "dev": "astro dev",
+    "prebuild": "node scripts/copy-pyodide.mjs",
     "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
+    "start": "npm run build && astro preview",
     "test": "vitest run",
     "check": "node scripts/check-links.mjs"
   },
@@ -26,7 +30,7 @@
     "@types/react-dom": "^19.3.0",
     "pagefind": "^1.5.2",
     "playwright": "^1.64.0",
-    "pyodide": "^0.27.2",
+    "pyodide": "0.27.2",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
   },

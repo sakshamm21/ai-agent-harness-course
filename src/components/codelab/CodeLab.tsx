@@ -7,32 +7,47 @@ import { AGENTKIT } from '../../lib/codelabs';
 interface Props { lab: CodeLabDef; lessonSlug: string; lessonTitle: string; nextUrl?: string; nextTitle?: string; base: string }
 
 const PYODIDE_VERSION = '0.27.2';
-// PUBLIC_PYODIDE_URL lets tests (or a self-hosted copy) point somewhere other than jsDelivr.
-const PYODIDE_URL: string = import.meta.env.PUBLIC_PYODIDE_URL || `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+// Pyodide is served from this site (scripts/copy-pyodide.mjs copies it into public/pyodide/ on npm install),
+// so code labs work offline. jsDelivr is only a fallback for copies built without it.
+// PUBLIC_PYODIDE_URL overrides the location (tests use it).
+const BASE_URL = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const PYODIDE_URLS: string[] = import.meta.env.PUBLIC_PYODIDE_URL
+  ? [import.meta.env.PUBLIC_PYODIDE_URL]
+  : [`${BASE_URL}pyodide/`, `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`];
 
 declare global {
   interface Window { loadPyodide?: (opts: { indexURL: string }) => Promise<any>; __fahPyodide?: Promise<any> }
 }
 
-function getPyodide(): Promise<any> {
-  if (window.__fahPyodide) return window.__fahPyodide;
-  window.__fahPyodide = new Promise((resolve, reject) => {
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = `${PYODIDE_URL}pyodide.js`;
-    s.onload = async () => {
-      try {
-        const py = await window.loadPyodide!({ indexURL: PYODIDE_URL });
-        py.FS.mkdirTree('/home/pyodide/agentkit_mini');
-        for (const [path, src] of Object.entries(AGENTKIT)) {
-          py.FS.writeFile(`/home/pyodide/agentkit_mini/${path.split('/').pop()}`, src);
-        }
-        py.runPython('import sys; sys.path.insert(0, "/home/pyodide")');
-        resolve(py);
-      } catch (e) { reject(e); }
-    };
-    s.onerror = () => reject(new Error('Could not load Pyodide from jsDelivr. Check your connection.'));
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => { s.remove(); reject(new Error(src)); };
     document.head.appendChild(s);
   });
+}
+
+async function loadPyodideFromFirstAvailable(): Promise<any> {
+  for (const url of PYODIDE_URLS) {
+    try { await loadScript(`${url}pyodide.js`); } catch { continue; }
+    return window.loadPyodide!({ indexURL: url });
+  }
+  throw new Error('Could not load Python (Pyodide). Run `npm install` to copy it into public/pyodide/, or check your connection.');
+}
+
+function getPyodide(): Promise<any> {
+  if (window.__fahPyodide) return window.__fahPyodide;
+  window.__fahPyodide = loadPyodideFromFirstAvailable().then((py) => {
+    py.FS.mkdirTree('/home/pyodide/agentkit_mini');
+    for (const [path, src] of Object.entries(AGENTKIT)) {
+      py.FS.writeFile(`/home/pyodide/agentkit_mini/${path.split('/').pop()}`, src);
+    }
+    py.runPython('import sys; sys.path.insert(0, "/home/pyodide")');
+    return py;
+  });
+  window.__fahPyodide.catch(() => { window.__fahPyodide = undefined; });
   return window.__fahPyodide;
 }
 

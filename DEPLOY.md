@@ -43,5 +43,5 @@ workflow sets `BASE_PATH` to match.
 
 ## Notes
 
-- Code labs load Python (Pyodide 0.27.2) from cdn.jsdelivr.net on first Run. To self-host it instead, copy `node_modules/pyodide/{pyodide.js,pyodide.asm.js,pyodide.asm.wasm,python_stdlib.zip,pyodide-lock.json}` into `public/pyodide/` and build with `PUBLIC_PYODIDE_URL=/pyodide/`.
+- Pyodide (about 14 MB) is copied into `public/pyodide/` by `npm install` and ships with the build, so a hosted copy serves its own Python. jsDelivr is only a fallback if those files are missing.
 - Search (Pagefind) is generated during `npm run build`, so it only works on a built site, not in `npm run dev`.

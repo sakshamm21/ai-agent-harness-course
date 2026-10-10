@@ -30,14 +30,19 @@ You need [Node.js](https://nodejs.org/) 22 or newer and git. Python 3.12 is only
 git clone https://github.com/sakshamm21/free-agent-harness-course.git
 cd free-agent-harness-course
 npm install
-npm run dev          # open http://localhost:4321
+npm start            # builds the site, then open http://localhost:4321
 ```
 
-Lessons, Agent Labs and code labs all work in `npm run dev`. Search needs a built copy:
+`npm start` gives you everything: lessons, Agent Labs, Python code labs, search, glossary, progress and the
+capstone pages. If you are editing lessons, `npm run dev` reloads on every save (search is the one thing that
+needs `npm start`, because its index is made during the build).
 
-```bash
-npm run build && npm run preview      # http://localhost:4321, search included
-```
+### What needs internet
+
+Only the first `npm install` (and `pip install pytest` for the capstones). After that the course works fully
+offline: Python for the code labs (Pyodide) is copied into `public/pyodide/` during install instead of being
+loaded from a CDN. The exceptions are optional: the "use a real model" switch in code labs calls the Anthropic
+API with your own key, and the further-reading links point to external sites.
 
 Your progress is tracked automatically: lessons you mark complete, labs and code labs you pass, and capstone
 parts you finish are ticked off on the home and project pages, along with your lab graphs and code lab code.
@@ -58,7 +63,7 @@ python3 -m pytest -q          # your starter code: fails until you build each pa
 IMPL=solution python3 -m pytest -q   # the reference solution: passes
 ```
 
-To get new lessons later: `git pull && npm install`.
+To get new lessons later: `git pull && npm install`, then `npm start` again.
 
 ## Checks
 
@@ -70,6 +75,8 @@ npm test                                    # lab engine + every scenario (start
 PYTHONPATH=python python3 -m pytest python/tests
 python3 scripts/check_codelabs.py           # every code lab (starter fails, solution passes)
 npm run build && npm run check              # static build + internal link check
+node tests/offline-e2e.mjs                  # with `npm start` running: every feature, internet blocked
+node tests/progress-local.mjs               # progress survives dev server and browser restarts
 (cd projects/nanoharness && IMPL=solution python3 -m pytest -q)
 ```
 
