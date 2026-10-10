@@ -1,0 +1,562 @@
+{
+  "id": "planning",
+  "title": "Planning and Replanning",
+  "brief": "Three repos need upgrading from payments SDK v2 to v3. The agent writes a plan up front: read the changelog, run the official codemod, run the tests. But the codemod does not support these repos and fails every time. An agent that sticks to its plan retries it or reports success anyway. Get at least 85% of upgrades done in 9 turns or fewer on average.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "Plan the upgrade first, then carry out the plan step by step."
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 14
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text."
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "run_codemod",
+          "description": "Runs the payments-sdk v2-to-v3 codemod over the repo."
+        },
+        "position": {
+          "x": 740,
+          "y": 100
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 200
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the test suite and returns failures."
+        },
+        "position": {
+          "x": 740,
+          "y": 300
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "Plan the upgrade first, then carry out the plan step by step."
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 14
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text."
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "run_codemod",
+          "description": "Runs the payments-sdk v2-to-v3 codemod over the repo."
+        },
+        "position": {
+          "x": 740,
+          "y": 100
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 200
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the test suite and returns failures."
+        },
+        "position": {
+          "x": 740,
+          "y": 300
+        }
+      },
+      {
+        "id": "t5",
+        "type": "tool",
+        "data": {
+          "name": "update_todos",
+          "description": "Rewrites the task list: mark steps done, failed or new. Use it whenever a step fails or you learn something that changes the plan."
+        },
+        "position": {
+          "x": 740,
+          "y": 400
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      },
+      {
+        "source": "l",
+        "target": "t5"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "r1",
+      "label": "checkout-service",
+      "prompt": "Upgrade checkout-service from payments-sdk v2 to v3. Tests must pass.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "r2",
+      "label": "billing-worker",
+      "prompt": "Upgrade billing-worker from payments-sdk v2 to v3. Tests must pass.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "r3",
+      "label": "admin-api",
+      "prompt": "Upgrade admin-api from payments-sdk v2 to v3. Tests must pass.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    }
+  ],
+  "actions": {
+    "plan": {
+      "kind": "think",
+      "text": "Plan: 1. read the v3 changelog  2. run_codemod  3. run_tests  4. report.",
+      "tokens": 200
+    },
+    "read": {
+      "kind": "tool",
+      "tool": "read_file",
+      "text": "read_file(\"node_modules/payments-sdk/CHANGELOG.md\")",
+      "tokens": 1200
+    },
+    "codemod": {
+      "kind": "tool",
+      "tool": "run_codemod",
+      "text": "run_codemod(\"v2-to-v3\") → exit 1: 'Unsupported pattern: custom wrapper PaymentsClient in src/pay.ts. 0 files changed.'",
+      "tokens": 200
+    },
+    "replan": {
+      "kind": "tool",
+      "tool": "update_todos",
+      "text": "update_todos([x] read changelog, [!] codemod failed: no support for this repo's wrapper, [ ] edit the 6 call sites by hand: charge() → payments.create(), [ ] run_tests, [ ] report)",
+      "tokens": 250
+    },
+    "edit": {
+      "kind": "tool",
+      "tool": "edit_file",
+      "text": "edit_file(\"src/pay.ts\", \"sdk.charge(\", \"sdk.payments.create(\") and 5 more call sites",
+      "tokens": 600
+    },
+    "test": {
+      "kind": "tool",
+      "tool": "run_tests",
+      "text": "run_tests()",
+      "tokens": 500
+    },
+    "skip_ahead": {
+      "kind": "tool",
+      "tool": "run_tests",
+      "text": "run_tests() (plan step 3, even though step 2 failed): 6 failures, 'sdk.charge is not a function'",
+      "tokens": 700
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Upgraded to v3. The codemod could not handle our wrapper, so I edited the 6 call sites by hand. All 112 tests pass."
+    },
+    "false_done": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Plan complete: changelog read, codemod run, tests run. Upgrade done. (The codemod failed and 6 tests still fail.)"
+    },
+    "give_up": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Step 2 of the plan (run_codemod) failed, so I cannot continue. Please run the codemod manually."
+    }
+  },
+  "policy": {
+    "base": {
+      "plan": 0,
+      "read": 0,
+      "codemod": 0,
+      "replan": 0,
+      "edit": 0,
+      "test": 0,
+      "skip_ahead": 0,
+      "done": 0,
+      "false_done": 0,
+      "give_up": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "state": "first_turn"
+        },
+        "set": {
+          "plan": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "not": {
+                "state": "first_turn"
+              }
+            },
+            {
+              "not": {
+                "called": "read_file"
+              }
+            }
+          ]
+        },
+        "set": {
+          "read": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "read_file"
+            },
+            {
+              "not": {
+                "called": "update_todos"
+              }
+            },
+            {
+              "not": {
+                "called": "run_tests"
+              }
+            },
+            {
+              "not": {
+                "called": "run_codemod"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "codemod": 6
+        },
+        "note": "The plan says codemod next, so that is what it runs."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "run_codemod"
+            },
+            {
+              "not": {
+                "called": "update_todos"
+              }
+            },
+            {
+              "not": {
+                "called": "run_tests"
+              }
+            },
+            {
+              "not": {
+                "called": "edit_file"
+              }
+            }
+          ]
+        },
+        "set": {
+          "codemod": 2.5,
+          "skip_ahead": 2,
+          "give_up": 1,
+          "edit": 0.6
+        },
+        "note": "With no way to change the plan, it retries the failed step, skips ahead, or gives up."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "run_tests"
+            },
+            {
+              "not": {
+                "called": "edit_file"
+              }
+            }
+          ]
+        },
+        "set": {
+          "codemod": 0.5,
+          "skip_ahead": 0,
+          "false_done": 3,
+          "give_up": 0.5,
+          "edit": 0.6
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tool": "update_todos"
+            },
+            {
+              "called": "run_codemod"
+            },
+            {
+              "not": {
+                "called": "update_todos"
+              }
+            }
+          ]
+        },
+        "set": {
+          "codemod": 0.2,
+          "skip_ahead": 0,
+          "give_up": 0,
+          "edit": 0,
+          "replan": 8
+        },
+        "note": "With a todo list it can rewrite, the failure becomes a new plan."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "update_todos"
+            },
+            {
+              "not": {
+                "called": "edit_file"
+              }
+            }
+          ]
+        },
+        "set": {
+          "codemod": 0.1,
+          "replan": 0,
+          "edit": 8
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "edit_file"
+            },
+            {
+              "not": {
+                "state": "ready"
+              }
+            }
+          ]
+        },
+        "set": {
+          "codemod": 0,
+          "skip_ahead": 0,
+          "replan": 0,
+          "test": 8,
+          "false_done": 0.1
+        }
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "codemod": 0,
+          "skip_ahead": 0,
+          "replan": 0,
+          "edit": 0,
+          "test": 0,
+          "give_up": 0,
+          "done": 8,
+          "false_done": 0.1
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% of upgrades done with tests passing",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "turns",
+      "label": "9 turns or fewer on average",
+      "metric": "avg_turns",
+      "op": "<=",
+      "value": 9
+    }
+  ],
+  "hints": [
+    "Read a failing transcript. What does the agent do after run_codemod fails? Is it still following a plan that no longer fits?",
+    "The plan lives only in the first message, so the agent has no way to change it. Give it a plan it can rewrite.",
+    "Add an update_todos tool on the loop (exact name). When a step fails, the agent rewrites the list and edits the call sites by hand."
+  ],
+  "explain": "A plan is a guess about the future. Keeping it as a todo list the agent rewrites turns a failed step into a new plan instead of a retry loop or a false 'done'."
+}

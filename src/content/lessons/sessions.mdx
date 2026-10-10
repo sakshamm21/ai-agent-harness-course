@@ -1,0 +1,105 @@
+---
+title: "Sessions, State and Resume"
+section: "harness"
+order: 21
+tagline: "Persist the transcript so work survives a crash."
+realWorld: "Resuming a coding session the next day"
+build:
+  type: "lab"
+  scenario: "sessions"
+terms:
+  - term: "session"
+    def: "One continuous piece of agent work: the task, every model turn and every tool result, kept together under one id."
+  - term: "resume"
+    def: "Starting a new process that loads a saved session and carries on from the last finished turn instead of starting over."
+  - term: "JSONL transcript"
+    def: "A file with one JSON object per line, one line per message, so the harness can append each turn as it happens and a crash loses at most the last line."
+usedIn: ["nanoharness/8"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Why does an agent that crashes lose all its progress, even though the files it edited are still on disk?"
+    options: ["The model forgets everything between API calls, and the only record of what happened was the messages list in the dead process's memory", "Crashes delete the edited files", "The provider deletes the conversation after a crash"]
+    answer: 0
+    why: "The model is stateless. The transcript is the agent's memory, and if it only lived in RAM it died with the process."
+  - q: "When should the harness write a turn to the session file?"
+    options: ["Once, when the task finishes", "After every model response and every tool result, as it happens", "Only when the user types /save"]
+    answer: 1
+    why: "Appending each message as it happens means a crash loses at most the step in flight. Saving at the end saves nothing when the end never comes."
+  - q: "A session is resumed the next morning. What should the agent do before its next edit?"
+    options: ["Nothing, the transcript is the truth", "Check that the world still matches the transcript, for example with git status, because files may have changed overnight", "Re-run every tool call in the transcript to rebuild state"]
+    answer: 1
+    why: "The transcript says what was true when it was written. A cheap check catches drift; re-running every call would repeat side effects like migrations."
+reading:
+  - title: "Claude Code docs: Common workflows (resume previous conversations)"
+    url: "https://docs.anthropic.com/en/docs/claude-code/common-workflows"
+  - title: "Claude Code docs: CLI reference"
+    url: "https://docs.anthropic.com/en/docs/claude-code/cli-reference"
+---
+
+## The laptop closed at turn 9. The agent started over and ran the migration twice.
+
+Your coding agent is renaming `user_id` to `account_id`. The job takes about 14 turns. At turn 9 the laptop lid closes and the process dies. By then it has read 9 files, applied migration `0042`, and edited 2 of 4 files.
+
+Next morning you run it again with the same prompt. It re-reads every file, re-plans, and calls `run_migration("latest")`. The migration had already run, so it copies 41,000 rows a second time and breaks a unique index. You paid for 9 turns twice and got an incident on top.
+
+## The agent's memory lived in a variable
+
+In [The Agent Loop](/c/agent_loop/) you saw that the transcript is the memory. The model is stateless: every call, it only knows what is in `messages`. So the state of the job is not in the model and not in the files. It is in that list.
+
+In a simple harness, that list lives in the process's RAM. When the process dies, the list dies with it. The files on disk survive, but the *story* of the files does not: which ones were already changed, what the plan was, and above all which side effects already happened. A fresh run cannot tell a half-done job from a new one, so it does the safe-looking thing and starts again. For a migration, starting again is not safe.
+
+## Write the session as it happens, load it before anything else
+
+The fix has two halves. While the agent runs, the harness appends every message to a session file, one JSON line per message. When a new process starts with `--resume`, it loads that file into `messages` before the first model call.
+
+```python
+def save(path, message):
+    with open(path, "a") as f:                 # append: a crash loses at most one line
+        f.write(json.dumps(message) + "\n")
+
+def load(path):
+    with open(path) as f:
+        msgs = [json.loads(line) for line in f if line.strip()]
+    if msgs and has_dangling_tool_use(msgs[-1]):
+        msgs.append(interrupted_results(msgs[-1]))  # "Interrupted: did not finish."
+    return msgs
+
+messages = load(SESSION) if resume else [{"role": "user", "content": task}]
+```
+
+<Flow steps={["Turn N", { label: "append to session.jsonl", sub: "after every message", kind: "hl" }, "Crash", { label: "--resume", sub: "load the file", kind: "good" }, "Turn N+1"]} caption="The harness writes as it goes, so a new process can pick up where the old one stopped." />
+
+Three details make resume trustworthy:
+
+- **Append, don't rewrite.** Writing one line per message means the file is always valid up to the last complete line.
+- **Repair the last turn.** If the crash came between a `tool_use` and its `tool_result`, the API rejects the transcript, because every tool call needs a result. Add a result that says "interrupted", so the model knows that step may or may not have happened.
+- **Save the effects, not just the words.** The tool result "migration 0042 applied" is what stops the second run. If side effects are only in logs, the model never sees them.
+
+## Let us check the math
+
+Say each turn adds about 3,000 tokens and the job starts at 3,000. Turn *k* resends about 3,000 × *k* tokens. Use the medium sim price of $3 per million input tokens (illustrative).
+
+<Callout type="math" label="Let us check the math">
+**Work done before the crash (turns 1 to 9):** 3k + 6k + ... + 27k = 3k × 45 = **135k tokens**.<br />
+**The last 5 turns (10 to 14):** 30k + 33k + 36k + 39k + 42k = **180k tokens**.<br /><br />
+**Restart:** redo 1 to 9, then 10 to 14: 135k + 180k = 315k tokens ≈ **$0.95**, plus the second migration.<br />
+**Resume:** load the 27k transcript, which is simply turn 10's context, then 10 to 14: 180k tokens ≈ **$0.54**.<br /><br />
+Resume saves 135k tokens, **$0.41 and 9 turns of waiting** on this one job, and it never re-runs the migration.
+</Callout>
+
+The later the crash, the bigger the saving, because the turns you would redo are the expensive ones near the end.
+
+## The tradeoff: saved state can be stale, large or sensitive
+
+A session file is a promise that the world still looks like the transcript. That is not always true.
+
+- **The world moved.** Overnight, a teammate pushed to the branch. The transcript says `serializers.py` has 2 edits; the file now has 5. Before the next edit, check cheaply: `git status`, or re-read only the files the plan still needs. Never "resume" by re-running old tool calls, because that repeats side effects. [Idempotent tools](/c/idempotency/) make the remaining risk smaller.
+- **The file grows.** A long session can be bigger than the window. Resume has to load a summary plus the recent turns, which is [context management](/c/context_mgmt/) again.
+- **It is a record of everything.** The session holds every file the agent read, including secrets it should not have seen. Store it locally with tight permissions, and expire old ones.
+
+## In the real world
+
+Claude Code keeps its conversations on your machine and lets you pick them up later. Its CLI documents `claude --continue` (`-c`) to continue the most recent conversation in the current directory, and `claude --resume` (`-r`) to choose an earlier session from a list or by id. The restored session brings back the message history, so the model can see what it already did.
+
+In part 8 of nanoharness you will save each turn to a JSONL file and add a `--resume` flag that loads it, repairs a dangling tool call, and carries on.

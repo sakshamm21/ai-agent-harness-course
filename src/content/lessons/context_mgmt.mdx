@@ -1,0 +1,91 @@
+---
+title: "Context Management and Compaction"
+section: "harness"
+order: 17
+tagline: "Summarize, trim, or offload before the window fills."
+realWorld: "Long coding sessions that auto-compact"
+build:
+  type: "lab"
+  scenario: "context_mgmt"
+terms:
+  - term: "compaction"
+    def: "Shrinking the conversation before it overflows the context window, by truncating, summarizing or offloading part of it."
+  - term: "truncation"
+    def: "Dropping the oldest messages to make room. Cheap, but the oldest message is usually the task."
+  - term: "offloading"
+    def: "Moving bulky content such as old tool results out of the context into files or storage, leaving a short pointer the agent can follow to read it back."
+usedIn: ["nanoharness/5"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "A long task goes wrong soon after its first compaction: the agent edits a folder it was told to leave alone. The harness truncates at 80%. What went wrong?"
+    options: ["The model ignored the instruction", "Truncation dropped the oldest message, which was the task and its exclusions", "The window was too large"]
+    answer: 1
+    why: "Truncation removes from the front. The first message is the task, so the line 'do not touch tests/legacy/' was the first thing to go."
+  - q: "Each turn adds 300 tokens. After summarizing, the context is about 2,700 tokens, and the trigger is 5,600. How often does the compactor fire?"
+    options: ["Every turn", "About every 10 turns", "About every 100 turns"]
+    answer: 1
+    why: "It takes (5,600 − 2,700) / 300 ≈ 10 turns to climb back to the trigger, so a 200-turn task compacts about 19 times."
+  - q: "Which strategy keeps exact old tool output retrievable?"
+    options: ["Truncate", "Summarize", "Offload to files"]
+    answer: 2
+    why: "Offloading writes the content out and leaves a pointer, so the agent can read it back. A summary keeps only the gist, and truncation keeps nothing."
+reading:
+  - title: "Anthropic: Effective context engineering for AI agents"
+    url: "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+  - title: "Claude Code overview"
+    url: "https://docs.anthropic.com/en/docs/claude-code/overview"
+---
+
+## Two hundred turns through an 8,000-token window
+
+You ask the agent to migrate 64 test files from Jest to Vitest and to leave `tests/legacy/` alone. The job takes about 200 turns, and each turn (a read, an edit, a test run) adds about 300 tokens. That is 60,000 tokens of work through a window that holds 8,000.
+
+The harness already handles this: when the context reaches 80% of the window, it drops the oldest messages. Every run stops early, and every run is wrong. Around turn 35 the agent "also rewrote `tests/legacy/` for consistency".
+
+## The oldest message is the most important one
+
+Truncation is first in, first out. It keeps the recent turns and throws away the early ones. In a chat that is often fine. In an agent, message one is the task: what to do, and what not to touch.
+
+So the very first compaction, at turn 17, deletes the instruction "do not touch `tests/legacy/`". The agent keeps working, and works well, on a task it can no longer see. When it reaches the legacy folder it has no reason to skip it.
+
+Doing nothing is worse. Without any compaction, the context overflows the window at turn 22, and whatever the provider or harness clips to fit, the task falls out the same way.
+
+## Shrink the middle, keep the task
+
+Compaction has three common strategies. All three fire at a trigger, a fraction of the window:
+
+- **Truncate**: drop the oldest messages. No cost, loses the task.
+- **Summarize**: ask a model (often a small one) to write a short summary of the history so far, then replace the history with it. The system prompt and task stay pinned at the top. Costs one extra call per compaction.
+- **Offload**: write bulky old tool results to files and leave a one-line pointer ("full test output saved to `.agent/run-41.txt`"). Costs a little latency, and the agent can read the file back if it needs the detail.
+
+<Stack blocks={[{ label: "System + tools", tokens: 1200 }, { label: "Task (pinned)", tokens: 200, kind: "good" }, { label: "Summary of turns 1-140", tokens: 800, kind: "hl" }, { label: "Last 10 turns", tokens: 3000 }]} budget={8000} caption="After a summarize step. The task stays at the top; 140 turns of history fit in 800 tokens." />
+
+In the lab, switching the compactor from truncate to summarize (or offload) at about 70% of the window takes the migration from 0% correct to about 95%.
+
+## Let us check the math
+
+Prefix plus task: 1,400 tokens. Each turn adds 300. Summarize fires at 70% of 8,000 = 5,600 tokens. Sim prices (illustrative): medium model $3/$15, small summarizer $1/$5 per million input/output tokens.
+
+<Callout type="math" label="Let us check the math">
+**First compaction:** 1,400 + 15 × 300 = 5,900, over 5,600, so it fires at turn 15.<br />
+**After it:** 1,400 + an 800-token summary + about 10% of the old history ≈ **2,700 tokens**.<br />
+**Rhythm:** (5,600 − 2,700) / 300 ≈ 10 turns between compactions, about **19 compactions** in a 190-turn run.<br />
+**Summaries:** each reads about 5,700 tokens and writes 800 on the small model: $0.0057 + $0.004 ≈ $0.01. Times 19 ≈ **$0.19**.<br />
+**The main loop:** the context saws between 2,700 and 5,600, so about 4,100 on average. 190 turns × 4,100 ≈ 780k input tokens ≈ $2.34, plus 190 × 150 output tokens ≈ $0.43.<br />
+**Total ≈ $2.95 per run.** The lab measures about $2.80, because a few runs finish early.
+</Callout>
+
+Compare a huge window and no compaction at all. The context grows to 61,400 by turn 200, and you pay for every turn's full context: 200 × 1,400 + 300 × (0 + 1 + ... + 199) ≈ 6.3M input tokens, about **$19 per run**. Compaction is not only about fitting. It also keeps each turn cheap.
+
+## The tradeoff: every compaction forgets something
+
+A smaller context is a lossy context. You choose what to lose.
+
+- **Summaries drift.** A summary of a summary of a summary can lose the one exact error message that mattered. Pin the things that must survive (the task, the constraints, open TODOs) instead of trusting the summarizer to keep them.
+- **Triggers trade cost against headroom.** A low trigger compacts often and keeps turns cheap; a high one (90%) compacts rarely but leaves little room for one big tool result. In the lab, 0.9 costs more per run than 0.7.
+- **Offloaded files must be found again.** Pointers only help if the agent has a tool to read them and knows when to. For very large side tasks, a [subagent](/c/subagents/) keeps the bulk out of the main context entirely, and [memory](/c/memory_types/) carries facts across sessions.
+
+## In the real world
+
+Claude Code compacts long sessions automatically when the context gets close to the limit, and you can run `/compact` yourself, with optional instructions about what to keep. It summarizes rather than truncates, so the task and the decisions made so far carry over. Anthropic's write-up on context engineering describes the same toolkit for long-horizon agents: compaction, structured notes the agent writes to files and reads back later, and sub-agents that return condensed results. They are summarize, offload and delegate under other names.

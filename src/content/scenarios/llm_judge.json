@@ -1,0 +1,54 @@
+{
+  "id": "llm_judge",
+  "title": "LLM-as-Judge",
+  "brief": "A support agent drafts free-text replies. Your team hand-labelled 100 drafts: about 4 in 10 break policy (wrong refund window, invented tracking numbers). A small judge model reviews every draft before it ships, but its pass bar is set too low, so it waves bad drafts through. Tune the judge until at least 88% of shipped replies match the human label, without making it so strict that it bounces good drafts (1.6 model calls per ticket or fewer).",
+  "palette": ["user", "model", "loop", "judge"],
+  "runs": 30,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 6 }, "position": { "x": 480, "y": 120 } },
+      { "id": "j", "type": "judge", "data": { "passBar": 0.4, "maxRetries": 2 }, "position": { "x": 720, "y": 120 } }
+    ],
+    "edges": [{ "source": "u", "target": "m" }, { "source": "m", "target": "l" }, { "source": "l", "target": "j" }]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 6 }, "position": { "x": 480, "y": 120 } },
+      { "id": "j", "type": "judge", "data": { "passBar": 0.85, "maxRetries": 2 }, "position": { "x": 720, "y": 120 } }
+    ],
+    "edges": [{ "source": "u", "target": "m" }, { "source": "m", "target": "l" }, { "source": "l", "target": "j" }]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Late refund", "prompt": "I bought headphones 45 days ago and they broke. Can I get a refund?" },
+    { "id": "t2", "label": "Where is my order", "prompt": "Order A-1043 was due Monday. Where is it?" },
+    { "id": "t3", "label": "Damaged item", "prompt": "My mug arrived cracked. What do I do?" },
+    { "id": "t4", "label": "Cancel subscription", "prompt": "How do I cancel my monthly plan before it renews?" },
+    { "id": "t5", "label": "Change address", "prompt": "I typed the wrong street on order A-2210. Can you fix it?" }
+  ],
+  "actions": {
+    "good": { "kind": "answer", "correct": true, "outputTokens": 350, "text": "Thanks for reaching out. I checked our policy and your order, and here is exactly what applies to you, with the next step and a link. (Matches the human label: follows policy, no invented facts.)" },
+    "bad_policy": { "kind": "answer", "correct": false, "outputTokens": 350, "text": "No problem at all, I've gone ahead and approved a full refund for you! (Human label: FAIL. The refund window is 30 days; this promises one anyway.)" },
+    "bad_facts": { "kind": "answer", "correct": false, "outputTokens": 350, "text": "Your parcel is with the courier, tracking number 1Z84-5521-09, arriving tomorrow. (Human label: FAIL. That tracking number does not exist.)" },
+    "revise": { "kind": "answer", "correct": true, "outputTokens": 350, "text": "Revised after the judge's feedback: I removed the promise I could not keep and quoted the policy exactly. Here is what applies to you and the next step." }
+  },
+  "policy": {
+    "base": { "good": 0.6, "bad_policy": 0.2, "bad_facts": 0.2, "revise": 0 },
+    "modifiers": [
+      { "when": { "state": "judged_fail" }, "set": { "good": 0, "revise": 0.85, "bad_policy": 0.08, "bad_facts": 0.07 }, "note": "With the judge's feedback in context, the rewrite usually fixes the problem." }
+    ]
+  },
+  "goals": [
+    { "id": "agree", "label": "At least 88% of shipped replies pass the human label", "metric": "success_rate", "op": ">=", "value": 0.88 },
+    { "id": "calls", "label": "1.6 model calls per ticket or fewer (the judge is not bouncing good drafts)", "metric": "avg_turns", "op": "<=", "value": 1.6 }
+  ],
+  "hints": [
+    "Read a few failed tickets in the Transcript. Did the judge pass a draft the human label marked FAIL?",
+    "A low pass bar lets bad drafts through. A bar near 1.0 also rejects good ones, so each ticket costs extra calls. Look for the bar where the judge agrees with the humans on both kinds.",
+    "Set the judge's pass bar to about 0.8 to 0.85 and keep 2 retries."
+  ],
+  "explain": "A judge is only useful when it agrees with your human labels. Too lenient and it misses bad answers; too strict and it bounces good ones. You calibrate the bar against labelled examples, not by feel."
+}

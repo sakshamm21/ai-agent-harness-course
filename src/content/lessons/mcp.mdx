@@ -1,0 +1,109 @@
+---
+title: "Model Context Protocol (MCP)"
+section: "tools"
+order: 14
+tagline: "One standard plug for tools, resources and prompts."
+realWorld: "Connecting an agent to GitHub, Slack, a database through MCP servers"
+build:
+  type: "code"
+  scenario: "mcp"
+terms:
+  - term: "MCP"
+    def: "The Model Context Protocol, an open standard that defines how an AI application discovers and calls tools, reads resources and fetches prompts from external servers."
+  - term: "MCP server"
+    def: "A program that wraps a service, such as GitHub or a database, and exposes its tools, resources and prompts over MCP."
+  - term: "MCP host"
+    def: "The AI application, such as Claude Code or your own harness, that runs one MCP client per server and passes the servers' tools to the model."
+  - term: "JSON-RPC"
+    def: "A small request/response format where each message names a method and parameters and carries an id; MCP uses version 2.0 for every message."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "You have 3 AI apps and 4 services. How many integrations do you build with MCP, compared with custom code for each pair?"
+    options: ["12 with MCP, 7 custom", "7 with MCP (3 clients + 4 servers), 12 custom", "4 with MCP, 3 custom"]
+    answer: 1
+    why: "Custom code needs one integration per pair, 3 × 4 = 12. With MCP each app speaks the protocol once and each service gets one server: 3 + 4 = 7."
+  - q: "What does a host send to learn which tools a server offers?"
+    options: ["tools/call with an empty name", "A tools/list request", "Nothing; tools are hard-coded in the host"]
+    answer: 1
+    why: "tools/list returns each tool's name, description and inputSchema, which the host passes to the model like any other tool definitions."
+  - q: "Why should you treat a third-party MCP server's tool descriptions with care?"
+    options: ["They are always out of date", "They go straight into the model's context, so a malicious description is a prompt injection", "They slow down the JSON-RPC connection"]
+    answer: 1
+    why: "Descriptions are prompts. A server you don't trust can use them to steer the model, so review servers before you connect them."
+reading:
+  - title: "Model Context Protocol: introduction and specification"
+    url: "https://modelcontextprotocol.io"
+  - title: "Anthropic: Introducing the Model Context Protocol"
+    url: "https://www.anthropic.com/news/model-context-protocol"
+---
+
+## Three apps, four services, twelve integrations
+
+Your team uses three AI apps: your own agent harness, Claude Code and a desktop assistant. You want all of them to reach four services: GitHub, Slack, a Postgres database and your notes service. Each app describes tools in its own format, so you write each integration by hand. That is 3 × 4 = **12 integrations**.
+
+Then the notes service adds a field. You update it in three places. Next quarter you add a fourth app, and you owe four more integrations.
+
+## Every integration rebuilds the same three things
+
+Look inside any one of those integrations and you find the same work:
+
+- **Describing the tools.** Names, descriptions and input schemas, written again for each app's format.
+- **Moving the messages.** How a call gets from the app to the service and back.
+- **Running the code.** Auth, retries and error messages for that service.
+
+None of it depends on which app is asking. "Search the notes" means the same thing to Claude Code as to your harness. The only reason you wrote it three times is that the apps had no shared way to ask.
+
+## Agree on one plug
+
+The Model Context Protocol (MCP), published by Anthropic in November 2024 as an open standard, is that shared way. It has three roles:
+
+- An **MCP server** wraps one service and exposes what it can do.
+- An **MCP host** is the AI app. It runs one **MCP client** per server it connects to.
+- The client and server talk **JSON-RPC 2.0**, over stdio for a local process or HTTP for a remote one.
+
+A server can offer three kinds of things: **tools** the model can call, **resources** the app can read into context (files, rows, documents), and **prompts**, reusable templates a user can pick. Most servers start with tools.
+
+Discovery and calls are two methods. The host asks:
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }
+```
+
+The server answers with each tool's `name`, `description` and `inputSchema`, the same three things you wrote in [Function Calling](/c/tools/). The host passes them to the model. When the model asks for a tool, the host sends:
+
+```json
+{ "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+  "params": { "name": "search_notes", "arguments": { "query": "standup" } } }
+```
+
+The result comes back as content blocks, with `isError: true` if the tool failed ([Tool Errors and Recovery](/c/tool_errors/)). The host wraps it in a `tool_result` and the loop carries on.
+
+<Flow steps={[{ label: "Model", sub: "asks for search_notes" }, { label: "Host", sub: "your harness", kind: "hl" }, { label: "MCP client", sub: "JSON-RPC" }, { label: "MCP server", sub: "notes", kind: "good" }, "Notes service"]} caption="The model never knows MCP exists. It sees tools; the host routes each call to the right server." />
+
+Write the notes server once, and every MCP host can use it.
+
+## Let us check the math
+
+Integrations scale differently. So do the tokens.
+
+<Callout type="math" label="Let us check the math">
+**Integrations.** Custom: apps × services = 3 × 4 = **12**. MCP: apps + services = 3 + 4 = **7**. At 5 apps and 20 services: 100 vs 25.<br />
+**Tokens.** Connect 4 servers with 15 tools each at about 300 tokens per definition: 4 × 15 × 300 = **18,000 tokens** on every model call.<br />
+A 20-turn session resends them 20 times: 360,000 tokens. At medium sim prices ($3 per million input, illustrative) that is **$1.08 per session** on tool definitions alone, before the task itself.
+</Callout>
+
+MCP makes it cheap to connect a server. It does nothing to make the connected tools cheap to carry.
+
+## The tradeoff: easy to plug in, easy to plug in too much
+
+A standard plug means you can connect a new server in one line of config. That convenience has costs:
+
+- **Context bloat.** Every connected tool rides on every call, and look-alike tools from different servers confuse the model ([Designing Good Tools](/c/tool_design/)). Connect only the servers a task needs, cache the stable prefix ([Prompt Caching](/c/caching/)), and load tools on demand when the host supports it.
+- **Untrusted descriptions.** A server's tool descriptions and results go straight into the model's context. A malicious or compromised server can use them to steer the agent ([Prompt Injection](/c/prompt_injection/)).
+- **Someone else's code with your keys.** A local server runs with your credentials. Review servers like any dependency, and gate risky tools ([Permissions and Sandboxing](/c/permissions/)).
+
+## In the real world
+
+Claude Code and Claude Desktop are MCP hosts. You register a server, such as a GitHub, Postgres or filesystem server, and its tools appear next to the built-in ones. The model calls them like any other tool; the host routes each call to the right server. In the code lab you build a tiny notes server with `tools/list` and `tools/call`, connect a client, and hand its tools to the agent loop.

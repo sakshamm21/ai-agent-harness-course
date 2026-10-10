@@ -1,0 +1,65 @@
+{
+  "id": "tracing",
+  "title": "Tracing and Observability",
+  "brief": "Your support agent should need about 3 turns per ticket: look up the order, check the policy, answer. Instead some tickets drag on for 20 turns and a few end with a made-up answer. Nothing in the final answers tells you why. Open the Trace tab on a slow run, find the first turn that goes wrong, and fix the node it points at. Target: 90% correct answers, 5 turns or fewer and under $0.05 per ticket on average.",
+  "palette": ["user", "model", "loop", "tool"],
+  "runs": 30,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 40 }, "position": { "x": 480, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "get_order", "description": "Gets an order's status, items and delivery date by order id (like A-1043). Use this for any question about a specific order.", "errorRate": 0.35, "errorMode": "raw", "latencyMs": 400 }, "position": { "x": 740, "y": 40 } },
+      { "id": "t2", "type": "tool", "data": { "name": "lookup_policy", "description": "Searches the refund and shipping policy. Use it before promising a refund, replacement or date.", "latencyMs": 300 }, "position": { "x": 740, "y": 200 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12 }, "position": { "x": 480, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "get_order", "description": "Gets an order's status, items and delivery date by order id (like A-1043). Use this for any question about a specific order.", "errorRate": 0.35, "errorMode": "actionable", "latencyMs": 400 }, "position": { "x": 740, "y": 40 } },
+      { "id": "t2", "type": "tool", "data": { "name": "lookup_policy", "description": "Searches the refund and shipping policy. Use it before promising a refund, replacement or date.", "latencyMs": 300 }, "position": { "x": 740, "y": 200 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Late parcel", "prompt": "Order A-1043 was due Monday and hasn't arrived. Where is it?", "needs": ["get_order", "lookup_policy"] },
+    { "id": "t2", "label": "Wrong size", "prompt": "Order A-2210 came in the wrong size. Can I swap it?", "needs": ["get_order", "lookup_policy"] },
+    { "id": "t3", "label": "Refund status", "prompt": "I returned order A-0988 two weeks ago. When do I get my money?", "needs": ["get_order", "lookup_policy"] }
+  ],
+  "actions": {
+    "get": { "kind": "tool", "tool": "get_order", "text": "get_order(order_id=\"A-1043\")", "tokens": 400 },
+    "policy": { "kind": "tool", "tool": "lookup_policy", "text": "lookup_policy(\"late delivery and refunds\")", "tokens": 600 },
+    "retry_same": { "kind": "repeat", "text": "Re-reads the 900-token traceback, cannot tell what went wrong, and plans get_order(\"order A-1043 please\") again with the id wrapped in prose. Same error.", "tokens": 900 },
+    "guess": { "kind": "answer", "correct": false, "text": "Good news: your order has shipped and should arrive tomorrow! (The agent never got the order back. It made this up.)" },
+    "done": { "kind": "answer", "correct": true, "text": "Order A-1043 is held at the depot after a failed delivery. Under our policy I've booked redelivery for Thursday; if it misses that, you can cancel for a full refund." }
+  },
+  "policy": {
+    "base": { "get": 3, "policy": 1, "retry_same": 0, "guess": 0.05, "done": 0 },
+    "modifiers": [
+      { "when": { "called": "get_order" }, "shift": { "policy": 3 } },
+      { "when": { "state": "tool_error_raw" }, "set": { "get": 0.4, "retry_same": 5, "guess": 0.12 }, "note": "A raw stack trace gives the model nothing to act on, so it flails." },
+      { "when": { "state": "tool_error_actionable" }, "set": { "get": 4, "retry_same": 0, "guess": 0.05 }, "note": "\"Timed out, safe to retry\" tells it exactly what to do." },
+      { "when": { "state": "ready" }, "set": { "done": 8, "guess": 0.1, "retry_same": 0 } }
+    ]
+  },
+  "goals": [
+    { "id": "correct", "label": "At least 90% of tickets answered correctly", "metric": "success_rate", "op": ">=", "value": 0.9 },
+    { "id": "turns", "label": "5 turns or fewer on average", "metric": "avg_turns", "op": "<=", "value": 5 },
+    { "id": "cost", "label": "Under $0.05 per ticket on average", "metric": "avg_cost", "op": "<", "value": 0.05 }
+  ],
+  "hints": [
+    "Open the Trace tab and pick a long run. Find the first red turn: what happened on that turn, and on every turn after it?",
+    "The trace shows get_order failing with a raw traceback, then the agent re-reading it and repeating itself. Lowering max turns only hides that. Look at the tool node that pulses red.",
+    "Select get_order and change its error messages from raw to actionable. Then a max of about 12 turns is a sensible cap."
+  ],
+  "explain": "The final answers never told you what was wrong; the trace did. One tool's error format turned a transient timeout into a 20-turn spiral. Every turn as a row, with tokens, cost and the tool result, is what makes that visible."
+}

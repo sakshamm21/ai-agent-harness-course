@@ -1,0 +1,99 @@
+---
+title: "Routing"
+section: "patterns"
+order: 31
+tagline: "Classify first, then send to the right specialist."
+realWorld: "Support triage: refunds vs tech vs sales"
+build:
+  type: "lab"
+  scenario: "routing"
+terms:
+  - term: "routing"
+    def: "A workflow that classifies an input first and then sends it to the prompt, tools or model built for that kind of input."
+  - term: "router"
+    def: "The classifier step in a routing workflow: usually a small, cheap model call or plain code that outputs one route label."
+  - term: "specialist"
+    def: "A downstream handler with a short prompt and only the tools for one kind of request."
+usedIn: ["supportbot/4"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "The router is right 95% of the time and each specialist is right 97% of the time. What is the end-to-end accuracy?"
+    options: ["97%", "About 92%", "95%"]
+    answer: 1
+    why: "A ticket succeeds only if it is routed right and then handled right: 0.95 × 0.97 ≈ 0.92."
+  - q: "Why does a generalist agent with every tool pick the wrong tool more often?"
+    options: ["It has too few tools", "It chooses among many tools with one long prompt that covers every case", "Generalists always use a smaller model"]
+    answer: 1
+    why: "More options and more mixed instructions give more ways to be wrong. An angry tech ticket can look like a refund request."
+  - q: "What should a router do with a message it is unsure about?"
+    options: ["Pick the most common route", "Send it to a catch-all route or a human", "Drop it"]
+    answer: 1
+    why: "A misroute silently fails. A fallback route or an escalation turns low confidence into a safe default."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## One agent, three jobs, 22% of tickets wrong
+
+Your support agent handles everything: refunds, technical problems and sales questions. It has one system prompt with the refund policy, the troubleshooting guide and the pricing rules, about 6,000 tokens, and all four tools: `lookup_order`, `issue_refund`, `search_docs` and `get_pricing`.
+
+On a test set of 100 tickets it gets 78 right. Only about 55% of its tool calls hit the right tool. A customer writes "Since the update the app crashes on login. This is costing me money." The agent looks up their last order and refunds a month as goodwill. The crash is still there.
+
+## Too many options, one blurry prompt
+
+The model is not careless. It is choosing among four tools using a prompt that tries to cover every case at once. "This is costing me money" sounds like a refund ticket. A refund request that says "what is your policy?" sounds like a help-center question, so it calls `search_docs` and quotes the policy instead of refunding.
+
+Every extra tool is another wrong option, and every extra page of instructions dilutes the ones that matter for *this* ticket. The prompt is also expensive: all 6,000 tokens ride along on every turn, even though any one ticket needs only a third of them.
+
+## Classify first, then hand it to a specialist
+
+Routing splits the job in two. First, a **router** decides what kind of request this is. Then a **specialist** for that kind handles it, with a short prompt and only its own tools.
+
+<Flow steps={["Ticket", { label: "Router", sub: "small model: refund / tech / sales", kind: "hl" }, { label: "Specialist", sub: "short prompt, 1-2 tools" }, "Answer"]} caption="The router outputs one label. Each route has its own prompt, tools and even model tier." />
+
+```python
+ROUTES = {
+    "refund": (REFUND_PROMPT, [lookup_order, issue_refund]),
+    "tech":   (TECH_PROMPT,   [search_docs]),
+    "sales":  (SALES_PROMPT,  [get_pricing]),
+}
+label = small_model(f"Classify as refund, tech, sales or other:\n{ticket}").strip()
+if label not in ROUTES:
+    return escalate_to_human(ticket)
+prompt, tools = ROUTES[label]
+return run_loop(model, tools, ticket, system=prompt)
+```
+
+The router can be tiny. Picking one of three labels is an easy task, so a small model (or even keyword rules plus a model for the hard cases) does it well. Each specialist now sees about 2,000 tokens of focused instructions and cannot reach for a tool that does not belong to its route.
+
+Routing also works on difficulty, not just topic. Anthropic's post suggests sending easy, common questions to a small model and hard ones to a large model.
+
+## Let us check the math
+
+Sim prices (illustrative): small $1/$5, medium $3/$15 per million input/output tokens. A ticket takes about 3 turns.
+
+<Callout type="math" label="Let us check the math">
+**Generalist:** 6,000-token prompt × 3 turns = 18,000 input tokens of prompt alone.<br />
+18,000 × $3/M = **$0.054 per ticket** in instructions.<br /><br />
+**Routed:** router call on the small tier, 300 in and 10 out: $0.0003 + $0.00005 ≈ **$0.0004**.<br />
+Specialist: 2,000 × 3 turns = 6,000 tokens × $3/M = **$0.018**.<br />
+Total ≈ **$0.018 per ticket**, a third of the cost.<br /><br />
+**Accuracy:** the router is right 95% of the time, the specialist 97%.<br />
+End to end: 0.95 × 0.97 ≈ **0.92**, against 0.78 for the generalist.
+</Callout>
+
+Notice the multiplication. The router's accuracy caps the whole system. A specialist cannot fix a ticket it never receives.
+
+## The tradeoff: a misroute fails quietly
+
+Routing adds one more thing that can be wrong, and its errors are hard to see:
+
+- **Misroutes.** A refund sent to tech gets a polite troubleshooting answer and no refund. Add an `other` route that goes to a generalist or a human ([Human in the Loop](/c/hitl/)), and ask the router for its confidence.
+- **Mixed tickets.** "Refund me, and also how do I export to CSV?" belongs to two routes. Either route on the first intent and let the specialist hand off ([Handoffs and Shared State](/c/handoffs/)), or split the ticket.
+- **Drift.** Routes that worked in March break when you launch a new product. Keep a labelled set of tickets and measure router accuracy on its own ([Why Evals Come First](/c/evals/)).
+
+## In the real world
+
+Help desks routed tickets long before LLMs: a rule or a person tagged each ticket and sent it to the billing, tech or sales queue. AI support agents keep that step. A typical design, like the one in [Design a Customer Support Agent](/c/case_support_agent/), classifies intent first and only then picks the procedure, tools and model for that intent. You will build a router like this in part 4 of the supportbot project.

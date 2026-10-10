@@ -1,0 +1,80 @@
+---
+title: "Build Your Own Coding Agent Harness"
+project: "nanoharness"
+part: 0
+tagline: "A working CLI coding agent in about 930 lines of standard-library Python, built in 10 parts."
+goal: "A coding agent you wrote yourself: it fixes bugs in real repos, asks before it acts, and scores itself on 15 evals."
+lessons: ["harness", "agent_loop", "case_coding_agent"]
+test: "IMPL=solution python3 -m pytest -q"
+updated: 2026-10-10
+---
+
+## What you build
+
+`nanoharness` is a small coding agent you run in a terminal. You type "fix the bug in calc.py". It lists the files, reads `calc.py`, makes an exact edit, runs the tests, and tells you what it changed. Before it writes a file or runs a command, it asks you.
+
+The model is the easy part. Everything around it is the harness, and the harness is what you build: about 930 lines of Python with no dependencies, the same parts a production coding agent has, at a size you can read in an evening.
+
+By the end of part 10 it has:
+
+- a loop that calls the model and runs the tools it asks for
+- six tools: `read_file`, `write_file`, `edit_file`, `list_dir`, `grep` and `bash`
+- allow, ask and deny permission rules with a y/N prompt
+- a sandbox for `bash`: working directory, timeout, output cap, optional Docker
+- token counting and compaction by summarization at 70% of the window
+- `AGENTS.md` loaded into the system prompt
+- `pre_tool` and `post_tool` hooks from a config file
+- JSONL sessions you can `--resume`
+- a `task` tool that runs a subagent with a fresh context
+- 15 bug-fix evals that report pass rate, turns, tokens and cost
+
+## How the pieces fit
+
+<Flow steps={["You", { label: "Loop", sub: "part 1", kind: "hl" }, { label: "Model", sub: "mock or real" }, { label: "Gate", sub: "perms + hooks" }, { label: "Tools", sub: "files, bash, task" }]} loop loopLabel="tool results go back into the transcript" caption="One run: the loop calls the model, every tool call passes the gate, and the results go back for the next turn." />
+
+Around that loop sit four helpers. The context manager (part 5) compacts the transcript between turns. The system prompt (part 6) is built once from a base prompt, the environment and `AGENTS.md`. The session (part 8) appends every message to a JSONL file. The `task` tool (part 9) starts a second, smaller copy of the same loop.
+
+| Part | File | What it adds |
+|---|---|---|
+| 1 | `loop.py` | The agent loop |
+| 2 | `tools.py` | File tools, locked to the working directory |
+| 3 | `permissions.py` | allow / ask / deny and the y/N prompt |
+| 4 | `sandbox.py` | `bash` with a timeout and an output cap |
+| 5 | `context.py` | Token counting and compaction |
+| 6 | `instructions.py` | `AGENTS.md` in the system prompt |
+| 7 | `hooks.py` | Your code before and after every tool call |
+| 8 | `session.py` | Transcripts and `--resume` |
+| 9 | `subagent.py` | Subagents with a fresh context |
+| 10 | `evals.py` | 15 graded bug-fix tasks |
+
+## Run it
+
+Everything runs offline on a scripted mock model, so you need no API key to start. From the repo root:
+
+```bash
+cd projects/nanoharness
+python3 -m pip install pytest
+PYTHONPATH=solution python3 -m nanoharness --init-demo /tmp/nh-demo
+cd /tmp/nh-demo && PYTHONPATH=$OLDPWD/solution python3 -m nanoharness --mock "fix the bug in calc.py"
+```
+
+Answer `y` twice (once for the edit, once for the test run) and you should see `Fixed the bug in calc.py. Tests: 1 passed`. To use a real model, set `ANTHROPIC_API_KEY` and drop `--mock`. The default model is `claude-sonnet-5-5`.
+
+## Starter, solution and tests
+
+The code is in [projects/nanoharness](https://github.com/sakshamm21/free-agent-harness-course/tree/main/projects/nanoharness).
+
+- `starter/nanoharness/` is yours. Every function marked `Part N:` raises `NotImplementedError`, and its docstring is the spec.
+- `solution/nanoharness/` is the finished harness. Read it when you are stuck.
+- `tests/test_part01_loop.py` to `tests/test_part10_evals.py` check one part each. Each part's tests only need the parts before it.
+
+```bash
+IMPL=starter python3 -m pytest tests/test_part01_loop.py   # your code, part 1
+IMPL=solution python3 -m pytest -q                         # the reference: all green
+```
+
+Pass bar: every test passes on the mock model, and with a real model at least 10 of the 15 evals pass (`python3 evals/run_evals.py --min-pass 10`).
+
+<Callout type="note" label="Before you start">
+Read [What Is an Agent Harness](/c/harness/) and [The Agent Loop](/c/agent_loop/) first. Each part links the lessons it builds on, and [Design a Coding Agent](/c/case_coding_agent/) shows the same design at production scale.
+</Callout>

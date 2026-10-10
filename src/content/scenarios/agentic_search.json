@@ -1,0 +1,71 @@
+{
+  "id": "agentic_search",
+  "title": "Agentic Search vs RAG",
+  "brief": "Developers ask your agent questions about a 2,400-file codebase. Right now a Retriever pastes the 3 code chunks most similar to the question, and the model answers from those. Similar-looking code is often the wrong code, so about half the answers point at the wrong file. Answer at least 85% correctly for under $0.06 per question.",
+  "palette": ["user", "model", "loop", "retriever", "tool"],
+  "starter": {
+    "nodes": [
+      {"id": "u", "type": "user", "data": {}, "position": {"x": 0, "y": 120}},
+      {"id": "r", "type": "retriever", "data": {"chunkSize": 800, "overlap": 100, "topK": 3}, "position": {"x": 0, "y": 280}},
+      {"id": "m", "type": "model", "data": {"tier": "medium"}, "position": {"x": 260, "y": 120}},
+      {"id": "l", "type": "loop", "data": {"maxTurns": 12}, "position": {"x": 520, "y": 120}}
+    ],
+    "edges": [
+      {"source": "u", "target": "m"},
+      {"source": "r", "target": "m"},
+      {"source": "m", "target": "l"}
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {"id": "u", "type": "user", "data": {}, "position": {"x": 0, "y": 120}},
+      {"id": "m", "type": "model", "data": {"tier": "medium"}, "position": {"x": 260, "y": 120}},
+      {"id": "l", "type": "loop", "data": {"maxTurns": 12}, "position": {"x": 520, "y": 120}},
+      {"id": "t1", "type": "tool", "data": {"name": "grep", "description": "Searches every file in the repo for a regex and returns matching lines with path and line number. Use it to find where a symbol is defined or used."}, "position": {"x": 780, "y": 40}},
+      {"id": "t2", "type": "tool", "data": {"name": "read_file", "description": "Reads a file, or a line range of it, and returns the text. Use it after grep to see the code around a match."}, "position": {"x": 780, "y": 200}}
+    ],
+    "edges": [
+      {"source": "u", "target": "m"},
+      {"source": "m", "target": "l"},
+      {"source": "l", "target": "t1"},
+      {"source": "l", "target": "t2"}
+    ]
+  },
+  "tasks": [
+    {"id": "c1", "label": "Webhook retry cap", "prompt": "What is the maximum delay between webhook delivery retries, and where is it set?", "needs": ["grep", "read_file"], "tags": ["code"]},
+    {"id": "c2", "label": "API key check", "prompt": "Which function validates API keys on incoming requests?", "needs": ["grep", "read_file"], "tags": ["code"]},
+    {"id": "c3", "label": "Archived rows", "prompt": "Why does export_csv skip archived rows?", "needs": ["grep", "read_file"], "tags": ["code"]}
+  ],
+  "actions": {
+    "rag_retrieve": {"kind": "think", "text": "Retriever: top 3 chunks by cosine: http/client.py L40-120 \"retry with exponential backoff\" (0.84), docs/retries.md (0.80), webhooks/models.py L1-60 (0.71).", "tokens": 2400},
+    "rag_wrong": {"kind": "answer", "correct": false, "text": "Retries back off exponentially up to 30 seconds, set in http/client.py line 88. (That is the HTTP client's retry for outgoing API calls, not webhook delivery. It looked the most similar.)"},
+    "rag_right": {"kind": "answer", "correct": true, "text": "The retrieved chunks include the right code: the cap is set where the dispatcher schedules retries [webhooks/dispatcher.py]."},
+    "guess": {"kind": "answer", "correct": false, "text": "Most frameworks put this in a settings file, probably config/settings.py. (A guess: it never looked.)"},
+    "grep": {"kind": "tool", "tool": "grep", "text": "grep -rn \"max_backoff\\|MAX_BACKOFF\" src/", "tokens": 500},
+    "read": {"kind": "tool", "tool": "read_file", "text": "read_file(\"src/webhooks/dispatcher.py\", lines=120-180)", "tokens": 1800},
+    "browse": {"kind": "think", "text": "Listing src/ to get oriented: api/, billing/, export/, http/, webhooks/ ... (no search tool, so it reads the tree)", "tokens": 900},
+    "grep_answer": {"kind": "answer", "correct": false, "text": "The grep hit says WEBHOOK_MAX_BACKOFF = 3600 in config/settings.py:88, so the cap is one hour. (It never opened the code that uses it: the dispatcher clamps it to 900 seconds.)"},
+    "agent_answer": {"kind": "answer", "correct": true, "text": "Webhook retries back off exponentially in src/webhooks/dispatcher.py:142, capped by min(WEBHOOK_MAX_BACKOFF, 900), so 15 minutes. WEBHOOK_MAX_BACKOFF itself is 3600 in config/settings.py:88."}
+  },
+  "policy": {
+    "base": {"guess": 1, "browse": 0.6, "rag_retrieve": 0, "rag_wrong": 0, "rag_right": 0, "grep": 0, "read": 0, "grep_answer": 0, "agent_answer": 0},
+    "modifiers": [
+      {"when": {"all": [{"has": "retriever"}, {"not": {"tool": "grep"}}, {"turn": "==", "value": 1}]}, "set": {"rag_retrieve": 10, "guess": 0, "browse": 0}},
+      {"when": {"all": [{"has": "retriever"}, {"not": {"tool": "grep"}}, {"turn": ">=", "value": 2}]}, "set": {"rag_wrong": 1.1, "rag_right": 0.9, "guess": 0, "browse": 0}, "note": "Similar is not the same as relevant: the HTTP client's retry code looks more like the question than the webhook dispatcher does."},
+      {"when": {"tool": "grep"}, "shift": {"grep": 6}, "scale": {"guess": 0.05, "browse": 0.1, "rag_retrieve": 0, "rag_wrong": 0, "rag_right": 0}, "note": "With grep, the model searches for the exact name instead of guessing."},
+      {"when": {"all": [{"called": "grep"}, {"tool": "read_file"}]}, "shift": {"read": 5}},
+      {"when": {"all": [{"called": "grep"}, {"not": {"tool": "read_file"}}]}, "shift": {"grep_answer": 2, "agent_answer": 1.2}, "note": "A matching line is not the whole story; without read_file it answers from the grep hit."},
+      {"when": {"state": "ready"}, "set": {"agent_answer": 9, "guess": 0.1, "grep_answer": 0.3, "rag_wrong": 0}}
+    ]
+  },
+  "goals": [
+    {"id": "accuracy", "label": "At least 85% of answers correct", "metric": "success_rate", "op": ">=", "value": 0.85},
+    {"id": "cost", "label": "Under $0.06 per question", "metric": "avg_cost", "op": "<=", "value": 0.06}
+  ],
+  "hints": [
+    "Read a wrong answer. The retriever returned code that looks like the question. Is it the code the question is about?",
+    "A developer would search for the exact name (MAX_BACKOFF, validate_api_key) and then open the file. Give the agent tools to do the same, wired to the loop.",
+    "Add two Tool nodes named grep and read_file, wired to the Agent loop. You can delete the Retriever or leave it; the agent stops relying on it once it can search."
+  ],
+  "explain": "Code has exact names, so an agent that greps for them and opens the file finds the real definition instead of the most similar-looking chunk. It costs a few more turns per question, and there is no index to build or keep fresh."
+}

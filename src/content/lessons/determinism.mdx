@@ -1,0 +1,90 @@
+---
+title: "Taming Nondeterminism"
+section: "reliability"
+order: 42
+tagline: "Same input, different run. Design for it."
+realWorld: "Flaky agent tests in CI"
+build:
+  type: "lab"
+  scenario: "determinism"
+terms:
+  - term: "temperature"
+    def: "A sampling setting that controls how often the model picks less likely tokens; 0 makes it pick the most likely one nearly every time, higher values spread its choices."
+  - term: "pass rate"
+    def: "The share of repeated runs of the same task that succeed. For an agent, one run tells you little; the pass rate over many runs is the real measurement."
+  - term: "pass^k"
+    def: "The chance that an agent succeeds on all k independent tries of the same task, introduced by the tau-bench benchmark to measure consistency rather than best-case ability."
+usedIn: ["nanoharness/10"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "You set temperature to 0. Is the agent now deterministic?"
+    options: ["Yes, the same input always gives the same output", "Mostly, but not fully: provider-side batching and numerics can still change outputs, and one changed token can change the whole trajectory", "No, temperature has no effect on agents"]
+    answer: 1
+    why: "Temperature 0 narrows the spread a lot, but providers do not guarantee identical outputs, and an agent amplifies small differences over many turns."
+  - q: "An agent passes a task 75% of the time. You run it once in CI and it fails. What did you learn?"
+    options: ["There is a regression", "Very little: a 75% agent fails one run in four with no regression at all", "The test is wrong"]
+    answer: 1
+    why: "One sample from a 75% process is a coin flip with extra steps. Measure the pass rate over many runs and compare that."
+  - q: "Which change both reduces variance and catches the mistakes that remain?"
+    options: ["A longer system prompt", "Lower temperature plus a deterministic check in the loop, such as the type checker and tests", "Running the task once at a higher temperature"]
+    answer: 1
+    why: "Low temperature shrinks the spread; a check that always gives the same verdict on the same code catches the leftover misses and lets the agent fix them."
+reading:
+  - title: "tau-bench: a benchmark for tool-agent-user interaction (pass^k)"
+    url: "https://arxiv.org/abs/2406.12045"
+  - title: "Anthropic API: Messages (temperature)"
+    url: "https://docs.anthropic.com/en/api/messages"
+---
+
+## The build is red. Run it again, and it is green.
+
+Your CI runs the agent on three refactoring tasks: rename a function, change a signature, remove a feature flag. Same repo, same prompt, same model. You run each task 50 times.
+
+It passes 75% of the time. One run in four, the agent says "Done" after missing a call site. Your team has learned to click "re-run", which means the test no longer tells anyone anything.
+
+## Every step is a sample, and the samples compound
+
+A model does not compute one answer. At each token it produces a probability for every possible next token, and the sampler picks one. **Temperature** controls how adventurous that pick is. At 1, a 10%-likely token is picked about 10% of the time.
+
+An agent turns that small randomness into big differences. If the first turn picks "grep for callers" in one run and "just edit the file" in another, the two runs see different tool results and never meet again. Small per-step error rates also compound: 98% per step over 10 steps is 0.98¹⁰ ≈ **82%** for the whole task.
+
+Turning the temperature to 0 helps, but it does not make the agent deterministic. Anthropic's API documentation notes that even at temperature 0 results will not be fully identical, because of how requests are batched and computed on the provider's side. And temperature 0 only makes the model pick its *most likely* step every time. If the most likely step is a mistake, you now make that mistake consistently.
+
+## Shrink the spread, then check what is left
+
+You cannot remove the randomness. You can design so it does not decide the outcome.
+
+<Flow steps={[{ label: "Fix the inputs", sub: "temperature 0, pinned model version" }, { label: "Agent", kind: "hl" }, { label: "Deterministic check", sub: "type checker, tests, schema", kind: "good" }, { label: "Measure", sub: "pass rate over N runs" }]} loop loopLabel="check fails: the agent sees why and fixes it" caption="Reduce variance where you can; catch it where you cannot." />
+
+1. **Fix what you control.** Temperature 0 (or low) for tasks with one right answer. Pin a dated model snapshot instead of an alias that moves. Keep prompts and tool order stable. Use [structured outputs](/c/structured/) so the format never varies.
+2. **Put a deterministic check in the loop.** Give the agent `run_tests`, which runs the type checker and tests. A missed call site is a type error with a file and line number, and the agent fixes it before saying "Done". Where no exact check exists, an [LLM judge](/c/llm_judge/) is the fallback, with its own variance.
+3. **Test it like the stochastic system it is.** Run each eval task N times and report the pass rate. Separate harness tests (record the model's responses once, replay them, assert your code does the right thing) from agent evals (live model, many runs).
+
+## Let us check the math
+
+How many runs do you need before a pass rate means anything?
+
+<Callout type="math" label="Let us check the math">
+**One run at 75%:** fails 25% of the time with nothing broken. That is a red build every fourth commit.<br />
+**50 runs at 75%:** expected 37.5 passes. Standard deviation: √(50 × 0.75 × 0.25) = √9.4 ≈ **3.1 runs**. A 95% range is about ±6 runs, so anything from **63% to 87%** is normal. A real drop to 70% hides inside that range.<br />
+**50 runs at 97%:** √(50 × 0.97 × 0.03) ≈ 1.2 runs, so the range is about 92% to 100%. A drop to 85% stands out clearly.<br />
+**Consistency, pass^3:** 0.75³ = **42%** of tasks pass three times in a row. At 97%: 0.97³ = **91%**.<br />
+**Cost:** 150 runs at about $0.04 each (sim prices, illustrative) is **$6 per CI run**.
+</Callout>
+
+In the lab: temperature 0 alone lifts the pass rate from 75% to about 93%. Adding `run_tests` to the loop takes it to about 97%.
+
+## The tradeoff: less variety, more runs, more checks
+
+Each fix costs something.
+
+- **Temperature 0 removes useful variety.** Brainstorming, writing, and "try several approaches and keep the best" all rely on different samples. Use low temperature for tasks with one right answer, and deliberate variety (several samples plus a [judge](/c/llm_judge/)) where diversity helps.
+- **Many runs cost money and time.** $6 per CI run adds up. Run the full N nightly and a small smoke set on each commit, and track pass rate over time in your [evals](/c/evals/).
+- **Not everything has a deterministic check.** Code has tests; a support reply does not. There you grade the path with [trajectory evals](/c/trajectory_evals/) and the answer with a judge, and accept a wider error bar.
+
+## In the real world
+
+The tau-bench benchmark, built to test agents that talk to users and call tools, introduced **pass^k** for exactly this reason: an agent that succeeds once in a while is not one you can deploy. Its authors reported that agents' success dropped sharply as k grew, which is the gap between "can do it" and "does it every time" that you measured above.
+
+You will build this kind of eval, with pass rates over repeated runs, in part 10 of the nanoharness project.

@@ -1,0 +1,533 @@
+{
+  "id": "sessions",
+  "title": "Sessions, State and Resume",
+  "brief": "Yesterday's coding session was killed halfway through each of these three jobs: the laptop lid closed after turn 9 of about 14. The migration step already ran before the crash. Every task here starts at that moment, in a fresh process. Right now the harness saved nothing, so the agent starts over, re-reads everything, and sometimes runs the migration a second time. Finish at least 85% of the jobs with zero incidents and under $0.10 per job.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "memory"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text."
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the test suite and returns failures."
+        },
+        "position": {
+          "x": 740,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "load_session",
+          "description": "Loads the saved transcript of an earlier session so the agent can continue it."
+        },
+        "position": {
+          "x": 740,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text."
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the test suite and returns failures."
+        },
+        "position": {
+          "x": 740,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "load_session",
+          "description": "Loads the saved transcript of an earlier session so the agent can continue it."
+        },
+        "position": {
+          "x": 740,
+          "y": 330
+        }
+      },
+      {
+        "id": "mem",
+        "type": "memory",
+        "data": {
+          "kind": "window",
+          "writePolicy": "always"
+        },
+        "position": {
+          "x": 480,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      },
+      {
+        "source": "l",
+        "target": "mem"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Rename user_id to account_id",
+      "prompt": "Continue yesterday's job: rename user_id to account_id across the app. (The last session was killed after turn 9: migration 0042 applied, 2 of 4 files edited.)",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Add a currency column to orders",
+      "prompt": "Continue yesterday's job: add orders.currency and use it in invoices. (The last session was killed after turn 9: migration 0043 applied, invoice code not yet changed.)",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Split the users table",
+      "prompt": "Continue yesterday's job: move profile fields into a user_profiles table. (The last session was killed after turn 9: backfill migration applied, serializers half done.)",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    }
+  ],
+  "actions": {
+    "load": {
+      "kind": "tool",
+      "tool": "load_session",
+      "text": "load_session(\"sess_8f2c\"): 9 turns restored. Files read, migration applied, plan has 2 steps left.",
+      "tokens": 2500
+    },
+    "load_empty": {
+      "kind": "think",
+      "text": "load_session(\"sess_8f2c\") \u2192 No session file found. Nothing was saved, so I will start over.",
+      "tokens": 120
+    },
+    "reread": {
+      "kind": "tool",
+      "tool": "read_file",
+      "text": "read_file x9: re-reading every file the killed session had already read",
+      "tokens": 9000,
+      "latencyMs": 3000
+    },
+    "replan": {
+      "kind": "think",
+      "text": "I don't know what was done before. Re-planning from scratch: which files still use the old schema?",
+      "tokens": 1200
+    },
+    "redo": {
+      "kind": "dangerous",
+      "tool": "run_migration",
+      "text": "run_migration(\"latest\"): the killed session already applied it, but this run has no record of that",
+      "incident": "Migration applied twice: the second run copied 41,000 rows again and broke the unique index."
+    },
+    "read_one": {
+      "kind": "tool",
+      "tool": "read_file",
+      "text": "read_file(\"app/serializers.py\"): the one file the saved plan says is unfinished",
+      "tokens": 900
+    },
+    "edit": {
+      "kind": "tool",
+      "tool": "edit_file",
+      "text": "edit_file(\"app/serializers.py\", old, new)",
+      "tokens": 300
+    },
+    "test": {
+      "kind": "tool",
+      "tool": "run_tests",
+      "text": "run_tests()",
+      "tokens": 700
+    },
+    "wrong": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Done. I updated the files I found. (Without the old plan it missed the half-edited file the last session left behind.)"
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Done. Resumed from turn 9, finished the last 2 edits, and all 112 tests pass."
+    },
+    "done_restart": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Done. Started over from the top, re-read the code, finished the edits, and all 112 tests pass."
+    }
+  },
+  "policy": {
+    "base": {
+      "load": 0,
+      "load_empty": 0,
+      "reread": 3,
+      "replan": 1.2,
+      "redo": 0.3,
+      "read_one": 0,
+      "edit": 0,
+      "test": 0,
+      "wrong": 0,
+      "done": 0,
+      "done_restart": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "all": [
+            {
+              "tool": "load_session"
+            },
+            {
+              "any": [
+                {
+                  "not": {
+                    "has": "memory"
+                  }
+                },
+                {
+                  "setting": "memory.writePolicy",
+                  "op": "==",
+                  "value": "never"
+                }
+              ]
+            },
+            {
+              "state": "first_turn"
+            }
+          ]
+        },
+        "set": {
+          "load_empty": 6
+        },
+        "note": "The tool exists, but the harness never wrote a session to load."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tool": "load_session"
+            },
+            {
+              "has": "memory"
+            },
+            {
+              "setting": "memory.writePolicy",
+              "op": "!=",
+              "value": "never"
+            },
+            {
+              "not": {
+                "called": "load_session"
+              }
+            }
+          ]
+        },
+        "set": {
+          "load": 12
+        },
+        "scale": {
+          "reread": 0.05,
+          "replan": 0.05,
+          "redo": 0
+        },
+        "note": "A saved session exists: the agent loads it first."
+      },
+      {
+        "when": {
+          "called": "load_session"
+        },
+        "set": {
+          "reread": 0,
+          "replan": 0,
+          "redo": 0
+        },
+        "shift": {
+          "read_one": 4
+        },
+        "note": "The restored transcript says what is done, including the migration."
+      },
+      {
+        "when": {
+          "called": "read_file"
+        },
+        "shift": {
+          "edit": 3
+        }
+      },
+      {
+        "when": {
+          "called": "read_file"
+        },
+        "scale": {
+          "read_one": 0
+        }
+      },
+      {
+        "when": {
+          "called": "edit_file"
+        },
+        "shift": {
+          "test": 3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "edit_file"
+            },
+            {
+              "not": {
+                "called": "load_session"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "wrong": 1.2
+        },
+        "note": "Without the old plan the agent cannot tell which edits were left."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 8,
+          "reread": 0,
+          "replan": 0
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "not": {
+                "called": "load_session"
+              }
+            }
+          ]
+        },
+        "set": {
+          "done": 0,
+          "done_restart": 8
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "Finish at least 85% of the jobs",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "incidents",
+      "label": "Zero incidents (no step runs twice)",
+      "metric": "incidents",
+      "op": "<=",
+      "value": 0
+    },
+    {
+      "id": "cost",
+      "label": "Under $0.10 per job on average",
+      "metric": "avg_cost",
+      "op": "<=",
+      "value": 0.1
+    }
+  ],
+  "hints": [
+    "Read the transcript: the first call is load_session, and it finds nothing. What should have written the session while it ran?",
+    "A Memory node is where this harness writes the transcript after every turn. With nothing written, there is nothing to resume.",
+    "Add a Memory node wired to the loop and keep its write policy on always (not never). load_session then restores the 9 finished turns."
+  ],
+  "explain": "Resume is two halves: the harness writes the transcript as it goes, and the new process loads it before doing anything. The saved state is what stops the agent redoing work that already happened, like a migration."
+}

@@ -1,0 +1,208 @@
+{
+  "id": "evaluator_optimizer",
+  "title": "Evaluator–Optimizer",
+  "brief": "Four customer-facing strings need translating from English to German for an app release. The first draft is fine about 60% of the time; the rest are too literal, use the wrong formality, or break a placeholder. Add an evaluator that checks each draft against a rubric and sends it back with feedback. Get at least 85% shippable translations with no more than 1.75 drafts per string on average.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "judge"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "Translate the UI string into German. Use 'Sie'. Keep {placeholders} unchanged."
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "Translate the UI string into German. Use 'Sie'. Keep {placeholders} unchanged."
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 6
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "j",
+        "type": "judge",
+        "data": {
+          "passBar": 0.8,
+          "maxRetries": 3
+        },
+        "position": {
+          "x": 780,
+          "y": 120
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "j"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "s1",
+      "label": "Trial ending",
+      "prompt": "Translate: 'Your free trial ends in {days} days. Don't lose your work!'"
+    },
+    {
+      "id": "s2",
+      "label": "Payment failed",
+      "prompt": "Translate: 'We couldn't charge your card ending in {last4}. Update it to keep your plan.'"
+    },
+    {
+      "id": "s3",
+      "label": "Idiom",
+      "prompt": "Translate: 'You're all set! Break a leg at your launch.'"
+    },
+    {
+      "id": "s4",
+      "label": "Button",
+      "prompt": "Translate the button label: 'Got it'"
+    }
+  ],
+  "actions": {
+    "draft_ok": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Draft 1: formal 'Sie', every {placeholder} intact, idiom translated by meaning. e.g. 'Ihre kostenlose Testphase endet in {days} Tagen.'",
+      "outputTokens": 120
+    },
+    "draft_bad": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Draft 1: e.g. 'Deine Testphase endet in {Tage} Tagen.' (Uses 'du', and the placeholder got translated, so the app would show a raw key or crash.)",
+      "outputTokens": 120
+    },
+    "revise_ok": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Draft 2, after feedback ('use Sie; keep {days} unchanged; translate the idiom by meaning'): all three rules met.",
+      "outputTokens": 140
+    },
+    "revise_bad": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Draft 2: fixed what the feedback named, but kept a literal idiom ('Brechen Sie sich ein Bein!').",
+      "outputTokens": 140
+    }
+  },
+  "policy": {
+    "base": {
+      "draft_ok": 0.6,
+      "draft_bad": 0.4,
+      "revise_ok": 0,
+      "revise_bad": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "setting": "model.tier",
+          "op": "==",
+          "value": "large"
+        },
+        "set": {
+          "draft_ok": 0.7,
+          "draft_bad": 0.3
+        },
+        "note": "A bigger model drafts a little better, at five times the price."
+      },
+      {
+        "when": {
+          "state": "judged_fail"
+        },
+        "set": {
+          "draft_ok": 0,
+          "draft_bad": 0,
+          "revise_ok": 0.9,
+          "revise_bad": 0.1
+        },
+        "note": "Specific feedback ('you used du; you translated the placeholder') makes the second draft much better than the first."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% shippable translations",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "turns",
+      "label": "1.75 drafts or fewer per string on average",
+      "metric": "avg_turns",
+      "op": "<=",
+      "value": 1.75
+    }
+  ],
+  "hints": [
+    "Read the bad drafts. Would a reviewer who knows the rules (formal 'Sie', placeholders untouched) catch them?",
+    "Add a Judge that grades each draft and sends failures back, and a Loop so there is a second turn to revise in.",
+    "Set the pass bar around 0.8 with 2 or 3 retries. A bar above 0.85 starts rejecting good drafts, so turns and cost climb."
+  ],
+  "explain": "The evaluator catches most bad drafts and its feedback says exactly what to fix, so the second draft is usually right. Each loop costs another draft and another grading call, which is why the bar and the retry cap matter."
+}

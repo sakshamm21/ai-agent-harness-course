@@ -1,0 +1,530 @@
+{
+  "id": "chunking",
+  "title": "Chunking and Indexing",
+  "brief": "Your support bot answers from a 600-page policy handbook (about 420,000 tokens). It was indexed in 100-token chunks with no overlap, so rules and their exceptions often land in different chunks: the bot quotes the rule and drops the exception. Get at least 85% of answers right for under $0.025 per question by changing how the handbook is chunked.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "retriever"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "r",
+        "type": "retriever",
+        "data": {
+          "chunkSize": 100,
+          "overlap": 0,
+          "topK": 3
+        },
+        "position": {
+          "x": 0,
+          "y": 280
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 6
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "r",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "r",
+        "type": "retriever",
+        "data": {
+          "chunkSize": 400,
+          "overlap": 60,
+          "topK": 3
+        },
+        "position": {
+          "x": 0,
+          "y": 280
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 6
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "r",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "q1",
+      "label": "Annual plan refund",
+      "prompt": "I paid for the annual plan 10 days ago. Can I get a full refund?",
+      "tags": [
+        "exception"
+      ]
+    },
+    {
+      "id": "q2",
+      "label": "Late return",
+      "prompt": "My order arrived 40 days ago but it was a holiday gift. Can I still return it?",
+      "tags": [
+        "exception"
+      ]
+    },
+    {
+      "id": "q3",
+      "label": "Seat removal",
+      "prompt": "If I remove 3 seats mid-month, when does my bill go down?",
+      "tags": [
+        "exception"
+      ]
+    },
+    {
+      "id": "q4",
+      "label": "Data export",
+      "prompt": "How do I export all my data before closing the account?",
+      "tags": [
+        "plain"
+      ]
+    }
+  ],
+  "actions": {
+    "retrieve_tiny": {
+      "kind": "think",
+      "text": "Retriever: top 3 of 4,180 chunks (100 tokens each): \"Refunds are available within 14 days of purchase.\" | \"...of purchase. Refunds go back to the original\" | \"Returns must start within 30 days of delivery.\" The next sentence of each was cut off.",
+      "tokens": 300
+    },
+    "retrieve_tiny_overlap": {
+      "kind": "think",
+      "text": "Retriever: top 3 of 6,000+ chunks (100 tokens, overlapping): \"...within 14 days of purchase. Annual plans are an exception: they are\" (cut) | ...",
+      "tokens": 300
+    },
+    "retrieve_mid": {
+      "kind": "think",
+      "text": "Retriever: top 3 of about 1,240 chunks (~400 tokens each, overlapping): \"Refunds are available within 14 days of purchase. Annual plans are an exception: they are refunded pro rata for unused months...\" (full section).",
+      "tokens": 1200
+    },
+    "retrieve_mid_no_overlap": {
+      "kind": "think",
+      "text": "Retriever: top 3 of 1,050 chunks (~400 tokens each, no overlap). Most sections fit, but the holiday-gift exception starts right at a chunk boundary.",
+      "tokens": 1200
+    },
+    "retrieve_big": {
+      "kind": "think",
+      "text": "Retriever: top 3 of 210 chunks (2,000 tokens each, whole chapters). The refund chapter ranks 2nd: its vector is an average of 40 different rules.",
+      "tokens": 6000
+    },
+    "rule_only": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Yes. Refunds are available within 14 days of purchase, so you'll get the full amount [handbook §4.1]. (Wrong: the annual-plan exception was in the next chunk.)"
+    },
+    "exception": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Annual plans are the exception to the 14-day rule: you get a pro-rata refund for the unused months, not the full amount [handbook §4.1, §4.2]."
+    },
+    "diluted": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Based on the billing chapter, seat changes take effect immediately [handbook §6]. (Wrong section: the right rule was inside a 2,000-token chunk that ranked lower.)"
+    },
+    "plain_right": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Go to Settings → Data → Export. You get a ZIP of all records by email within an hour [handbook §9.3]."
+    }
+  },
+  "policy": {
+    "base": {
+      "retrieve_tiny": 0,
+      "retrieve_tiny_overlap": 0,
+      "retrieve_mid": 0,
+      "retrieve_mid_no_overlap": 0,
+      "retrieve_big": 0,
+      "rule_only": 0,
+      "exception": 0,
+      "diluted": 0,
+      "plain_right": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "all": [
+            {
+              "turn": "==",
+              "value": 1
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<",
+              "value": 200
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": "<",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "retrieve_tiny": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": "==",
+              "value": 1
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<",
+              "value": 200
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": ">=",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "retrieve_tiny_overlap": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": "==",
+              "value": 1
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": ">=",
+              "value": 200
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<=",
+              "value": 1000
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": ">=",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "retrieve_mid": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": "==",
+              "value": 1
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": ">=",
+              "value": 200
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<=",
+              "value": 1000
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": "<",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "retrieve_mid_no_overlap": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": "==",
+              "value": 1
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": ">",
+              "value": 1000
+            }
+          ]
+        },
+        "set": {
+          "retrieve_big": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": ">=",
+              "value": 2
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<",
+              "value": 200
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": "<",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "rule_only": 6,
+          "exception": 2.5,
+          "diluted": 0,
+          "plain_right": 6
+        },
+        "note": "100-token chunks with no overlap split rule and exception apart."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": ">=",
+              "value": 2
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<",
+              "value": 200
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": ">=",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "rule_only": 4,
+          "exception": 5,
+          "diluted": 0,
+          "plain_right": 7
+        },
+        "note": "Overlap helps, but 100 tokens is still shorter than most sections."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": ">=",
+              "value": 2
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": ">=",
+              "value": 200
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<=",
+              "value": 1000
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": ">=",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "rule_only": 0.4,
+          "exception": 9,
+          "diluted": 0.2,
+          "plain_right": 9
+        },
+        "note": "A whole section per chunk, and overlap catches the sentence that straddles a boundary."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": ">=",
+              "value": 2
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": ">=",
+              "value": 200
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": "<=",
+              "value": 1000
+            },
+            {
+              "setting": "retriever.overlap",
+              "op": "<",
+              "value": 30
+            }
+          ]
+        },
+        "set": {
+          "rule_only": 2.2,
+          "exception": 7,
+          "diluted": 0.2,
+          "plain_right": 9
+        },
+        "note": "Good size, but without overlap a boundary still cuts some exceptions off."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "turn": ">=",
+              "value": 2
+            },
+            {
+              "setting": "retriever.chunkSize",
+              "op": ">",
+              "value": 1000
+            }
+          ]
+        },
+        "set": {
+          "rule_only": 1,
+          "exception": 5,
+          "diluted": 3,
+          "plain_right": 6
+        },
+        "note": "Whole chapters: one vector averages 40 rules, so the right chapter ranks lower."
+      },
+      {
+        "when": {
+          "tag": "plain"
+        },
+        "scale": {
+          "rule_only": 0.2,
+          "exception": 0
+        }
+      },
+      {
+        "when": {
+          "tag": "exception"
+        },
+        "scale": {
+          "plain_right": 0
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "accuracy",
+      "label": "At least 85% of answers right",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "cost",
+      "label": "Under $0.025 per question",
+      "metric": "avg_cost",
+      "op": "<=",
+      "value": 0.025
+    }
+  ],
+  "hints": [
+    "Open a wrong answer in the transcript and read the retrieved chunks. Where did the exception go?",
+    "A 100-token chunk holds about 3 sentences. Most handbook sections are 250 to 400 tokens. Huge chunks are not the answer either: they cost more and their vectors blur.",
+    "Set Chunk size to about 400 tokens and Overlap to about 60 (roughly 15%), keeping Top k at 3."
+  ],
+  "explain": "Chunk size decides what can be found together. Chunks the size of one section keep a rule next to its exception, a little overlap rescues sentences that straddle a boundary, and chunks far larger than the question blur the embedding and inflate the prompt."
+}

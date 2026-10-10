@@ -1,0 +1,75 @@
+{
+  "id": "deploy",
+  "title": "Deploying an Agent",
+  "brief": "You moved the report agent off the web request and onto a queue: the API enqueues a job, a worker runs the agent, the result goes to a store. In production three things go wrong. The model provider returns 529s on about 15% of calls, one customer's upstream API hangs so its job never finishes, and the worker has a shell tool that can read the environment, where the API key lives. The canvas shows one worker running one job at a time; the API, the queue, the store and the secrets manager sit outside it and are not simulated, so you only shape what happens inside the worker. Make the worker production-safe: zero incidents (no leaked secrets, no runaway jobs), 20s or less per job on average, and at least 75% of jobs finished (the hanging job should time out, not finish).",
+  "palette": ["user", "model", "loop", "tool", "fallback", "permissions"],
+  "outageRate": 0.15,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 160 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 160 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 60, "maxCost": 0 }, "position": { "x": 480, "y": 160 } },
+      { "id": "t1", "type": "tool", "data": { "name": "fetch_tickets", "description": "Gets the last 24 hours of support tickets for one account. Use this first on every job." }, "position": { "x": 740, "y": 20 } },
+      { "id": "t2", "type": "tool", "data": { "name": "save_report", "description": "Writes the finished report to the results store, keyed by job id." }, "position": { "x": 740, "y": 140 } },
+      { "id": "t3", "type": "tool", "data": { "name": "check_status", "description": "Checks whether an upstream export for the account has finished." }, "position": { "x": 740, "y": 260 } },
+      { "id": "t4", "type": "tool", "data": { "name": "shell", "description": "Runs a shell command inside the worker container." }, "position": { "x": 740, "y": 380 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }, { "source": "l", "target": "t4" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 160 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 160 } },
+      { "id": "f", "type": "fallback", "data": { "tier": "medium" }, "position": { "x": 240, "y": 340 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12, "maxCost": 0.3 }, "position": { "x": 480, "y": 160 } },
+      { "id": "p", "type": "permissions", "data": { "allow": "fetch_tickets, save_report, check_status", "ask": "", "deny": "shell" }, "position": { "x": 480, "y": 340 } },
+      { "id": "t1", "type": "tool", "data": { "name": "fetch_tickets", "description": "Gets the last 24 hours of support tickets for one account. Use this first on every job." }, "position": { "x": 740, "y": 20 } },
+      { "id": "t2", "type": "tool", "data": { "name": "save_report", "description": "Writes the finished report to the results store, keyed by job id." }, "position": { "x": 740, "y": 140 } },
+      { "id": "t3", "type": "tool", "data": { "name": "check_status", "description": "Checks whether an upstream export for the account has finished." }, "position": { "x": 740, "y": 260 } },
+      { "id": "t4", "type": "tool", "data": { "name": "shell", "description": "Runs a shell command inside the worker container." }, "position": { "x": 740, "y": 380 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" }, { "source": "m", "target": "f" }, { "source": "l", "target": "p" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }, { "source": "l", "target": "t4" }
+    ]
+  },
+  "tasks": [
+    { "id": "j1", "label": "Job 8811: Acme", "prompt": "job 8811: write the daily support report for account acme", "needs": ["fetch_tickets", "save_report"] },
+    { "id": "j2", "label": "Job 8812: Globex", "prompt": "job 8812: write the daily support report for account globex", "needs": ["fetch_tickets", "save_report"] },
+    { "id": "j3", "label": "Job 8813: Initech", "prompt": "job 8813: write the daily support report for account initech", "needs": ["fetch_tickets", "save_report"] },
+    { "id": "j4", "label": "Job 8814: Umbrella", "prompt": "job 8814: write the daily support report for account umbrella", "needs": ["fetch_tickets", "save_report"] },
+    { "id": "j5", "label": "Job 8815: Hooli (upstream hangs)", "prompt": "job 8815: write the daily support report for account hooli (needs the upstream export first)", "needs": ["check_status", "fetch_tickets", "save_report"], "tags": ["hang"] }
+  ],
+  "actions": {
+    "fetch": { "kind": "tool", "tool": "fetch_tickets", "text": "fetch_tickets(account=\"acme\", since=\"24h\")", "tokens": 1500 },
+    "save": { "kind": "tool", "tool": "save_report", "text": "save_report(job_id=\"8811\", report=...)", "tokens": 150 },
+    "status": { "kind": "tool", "tool": "check_status", "text": "check_status(account=\"hooli\")  # \"export still running\"", "tokens": 300 },
+    "wait": { "kind": "repeat", "text": "check_status(account=\"hooli\") again  # \"export still running\" (the upstream export is hung)", "tokens": 300 },
+    "leak": { "kind": "dangerous", "tool": "shell", "text": "shell(\"env | grep KEY\")  # debugging a 401, prints the API key into the job log", "incident": "Secret leaked: the provider API key is now in the job log, readable by everyone with log access. Rotate it." },
+    "done": { "kind": "answer", "correct": true, "text": "Report saved for job 8811: 37 tickets, 4 themes, 2 accounts at risk." }
+  },
+  "policy": {
+    "base": { "fetch": 3, "save": 0, "status": 0, "wait": 0, "leak": 0, "done": 0 },
+    "modifiers": [
+      { "when": { "called": "fetch_tickets" }, "shift": { "save": 3 } },
+      { "when": { "all": [{ "tool": "shell" }, { "not": { "state": "ready" } }] }, "shift": { "leak": 0.12 }, "note": "With a shell in reach, the model sometimes debugs by dumping the environment." },
+      { "when": { "tag": "hang" }, "set": { "fetch": 0, "save": 0, "status": 3 } },
+      { "when": { "all": [{ "tag": "hang" }, { "called": "check_status" }] }, "set": { "status": 0, "wait": 6 }, "note": "The export never finishes, so the agent keeps polling." },
+      { "when": { "state": "ready" }, "set": { "done": 8, "leak": 0 } }
+    ]
+  },
+  "goals": [
+    { "id": "finish", "label": "At least 75% of jobs finish (the hung job should time out)", "metric": "success_rate", "op": ">=", "value": 0.75 },
+    { "id": "safe", "label": "Zero incidents: no leaked secrets, no runaway jobs", "metric": "incidents", "op": "==", "value": 0 },
+    { "id": "latency", "label": "20s or less per job on average", "metric": "avg_latency", "op": "<=", "value": 20 }
+  ],
+  "hints": [
+    "Run it and sort the failures into three piles: provider errors, the job that never ends, and the incident in the job log.",
+    "A worker needs a timeout, a way to survive a provider outage, and no path from the model to the secrets. Which nodes give you each one?",
+    "Add a Fallback model wired to the model, set the loop to about 12 max turns and a $0.30 cap, and add Permissions with shell under Deny (or remove the shell tool)."
+  ],
+  "explain": "A deployed agent is a worker process: it needs a time and money budget per job, a second path when the provider fails, and no access to its own credentials. The queue, retries and versioned prompts sit around it."
+}

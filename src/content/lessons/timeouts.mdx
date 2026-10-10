@@ -1,0 +1,108 @@
+---
+title: "Timeouts, Fallbacks and Model Failover"
+section: "reliability"
+order: 41
+tagline: "When the model or a tool is slow or down."
+realWorld: "Provider outage taking a product down"
+build:
+  type: "lab"
+  scenario: "timeouts"
+terms:
+  - term: "timeout"
+    def: "The longest you will wait for a call before giving up on it, so one hung request cannot stall the whole agent."
+  - term: "529 overloaded"
+    def: "The HTTP status Anthropic's API returns when it is temporarily overloaded; like 429 (rate limited) and most 5xx errors, it is transient and worth retrying."
+  - term: "fallback model"
+    def: "A second model, often a different tier or provider, that the harness calls when the primary one errors or times out."
+  - term: "circuit breaker"
+    def: "A switch in your code that stops calling a failing dependency for a while after repeated errors, and sends traffic to the fallback instead."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Your primary model returns 529 on 30% of calls for an hour. What helps most?"
+    options: ["Wait longer between retries on the same model", "Retry once with backoff, then send the call to a fallback model", "Raise max_tokens"]
+    answer: 1
+    why: "An overloaded provider stays overloaded for a while. A short retry catches blips; a fallback keeps you answering during the rest of the hour."
+  - q: "Which errors are usually worth retrying?"
+    options: ["400 invalid request", "429, 529 and 5xx errors, and timeouts", "401 authentication error"]
+    answer: 1
+    why: "Rate limits, overloads and server errors are transient. A bad request or a bad key fails the same way every time, so retrying only wastes time."
+  - q: "What is the main risk of switching to a fallback model?"
+    options: ["It is always more expensive", "It may behave differently on your prompts, so quality can drop unnoticed", "It cannot call tools"]
+    answer: 1
+    why: "Prompts tuned for one model do not always transfer. Run your evals on the fallback too, so you know what you get during an outage."
+reading:
+  - title: "Anthropic API: Errors"
+    url: "https://docs.anthropic.com/en/api/errors"
+  - title: "AWS Builders' Library: Timeouts, retries, and backoff with jitter"
+    url: "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/"
+---
+
+## Your provider had a bad hour, and so did your product
+
+It is 2pm and your model provider is overloaded: 30% of calls come back with HTTP 529. Your support agent waits 30 seconds and tries again. After three failures on one ticket, it gives up.
+
+Over 60 tickets, 15% fail outright, and a ticket takes 40 seconds on average instead of 11. Nothing in your code is broken. You just had one dependency, and it went down.
+
+## Waiting is not a plan
+
+An agent is a chain of calls: the model, then a tool, then the model again. Each link can be slow or down, and each turn of the loop multiplies the exposure. A 3-turn ticket makes 3 model calls; a 30% failure rate on each is a near certainty of hitting at least one.
+
+Three things go wrong at once:
+
+- **Hung calls.** Without a timeout, one stuck request blocks the agent forever. A tool call that never returns is just as bad.
+- **Retrying the same overloaded thing.** A 529 means the provider is out of capacity. It will usually still be out of capacity in 30 seconds.
+- **No second option.** If the only model you can call is down, you are down.
+
+## Time out, retry briefly, then fail over
+
+Treat errors by kind. Some are transient and worth a retry; some will fail the same way forever.
+
+| Error | Meaning | What to do |
+|---|---|---|
+| 429 | rate limited | back off, honour `retry-after` |
+| 529, 500, 503, timeout | overloaded or broken | one or two quick retries, then fallback |
+| 400, 401, 404 | bad request, key or URL | do not retry; fix it |
+
+<Flow steps={["Agent turn", { label: "Primary model", sub: "timeout 30 s" }, { label: "Retry", sub: "backoff + jitter" }, { label: "Fallback model", sub: "other tier or provider", kind: "good" }, "Next turn"]} caption="A bounded path: every call ends in an answer or a clear error, within a deadline." />
+
+```python
+def call_model(messages, tools):
+    for attempt in range(2):
+        try:
+            return primary.create(messages, tools, timeout=30)
+        except (Overloaded, RateLimited, ServerError, Timeout):
+            time.sleep(0.5 * 2 ** attempt + random.random() * 0.5)
+    breaker.record_failure("primary")
+    return fallback.create(messages, tools, timeout=30)
+```
+
+Add a **circuit breaker** so that after, say, 5 failures in a minute you skip the primary for a while and go straight to the fallback. That spares you the retry delay on every call, and spares the provider your extra load. Put timeouts on tools too, and a deadline on the whole task.
+
+## Let us check the math
+
+Take a 3-turn ticket on the large tier, 30% of primary calls failing.
+
+<Callout type="math" label="Let us check the math">
+**Without a fallback.** Expected failed calls before 3 successes: 3 × 0.3 / 0.7 ≈ **1.3**. At 30 s each: **39 s** of waiting, on top of about 11 s of real work: roughly **50 s per ticket**.<br />
+**Chance the ticket dies** (3 failures before 3 successes): 1 − 0.7³ × (1 + 3 × 0.3 + 6 × 0.09) = 1 − 0.343 × 2.44 ≈ **16%**.<br />
+**With a fallback.** Each failed primary call costs a 2 s retry plus a 1.6 s call on the medium fallback: 3.6 s. Expected failures: 3 × 0.3 = 0.9, so **3.2 s** extra. About **14 s per ticket**, and almost none fail.<br />
+**Cost.** The fallback here is cheaper per token (sim prices: medium $3 vs large $15 per million input), so the outage hour costs you a bit of quality, not money.
+</Callout>
+
+The lab shows the same shape: 85% of tickets at 40.6 s without a fallback, 95% at 13.7 s with one.
+
+## The tradeoff: the fallback is a different model
+
+Failover keeps you answering, but the answers come from somewhere else.
+
+- **Quality can drop silently.** A prompt tuned for one model may behave differently on another. Run your [evals](/c/evals/) on the fallback as well as the primary, so you know the quality you get during an outage and can decide if it is acceptable.
+- **Retries cost time and tokens.** Each retry resends the whole context. Keep retries to one or two, and cap the task with [stop conditions and budgets](/c/stop_conditions/) so a bad hour cannot run up a bill.
+- **Retries can repeat side effects.** If a tool call timed out, it may have already run. Retry tools only when they are [idempotent](/c/idempotency/).
+
+A [router](/c/routing/) that already sends easy work to a smaller model gives you a natural fallback, and [deploying](/c/deploy/) with per-provider health metrics tells you when the breaker trips.
+
+## In the real world
+
+Anthropic's API reports `overloaded_error` with status 529 and `rate_limit_error` with 429, and its official SDKs retry certain errors (connection errors, 408, 409, 429 and 5xx) twice by default with exponential backoff before raising. Gateways such as OpenRouter and LiteLLM let you list fallback models so a failing call is retried on the next one in the list. The pattern is the same in all of them: a short, bounded retry, then somewhere else to go.

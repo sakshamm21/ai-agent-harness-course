@@ -1,0 +1,97 @@
+---
+title: "LLM-as-Judge"
+section: "operate"
+order: 45
+tagline: "Use a model to grade, then check the grader."
+realWorld: "Grading open-ended answers at scale"
+build:
+  type: "lab"
+  scenario: "llm_judge"
+terms:
+  - term: "LLM-as-judge"
+    def: "Using a model, given a rubric, to grade another model's output as pass or fail (or on a scale), so open-ended answers can be scored automatically."
+  - term: "human labels"
+    def: "Pass or fail grades that people assigned to a sample of outputs, used as the ground truth to check an automatic grader against."
+  - term: "agreement rate"
+    def: "The share of items on which the judge and the human labels give the same grade."
+  - term: "Cohen's kappa"
+    def: "Agreement corrected for the agreement you would get by chance, where 0 means no better than chance and 1 means perfect."
+usedIn: ["supportbot/7"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "60% of your drafts are good. A judge that passes everything agrees with the humans how often?"
+    options: ["0%", "60%", "100%"]
+    answer: 1
+    why: "It matches every good draft and misses every bad one, so raw agreement is 60%. That is why you also read kappa and the judge's catch rate on bad drafts."
+  - q: "Your judge agrees with human labels 92% of the time on 100 drafts. What should you do before trusting it on 10,000?"
+    options: ["Nothing, 92% is high", "Check where it disagrees, and re-check it on fresh labels when you change the judge prompt or model", "Raise the pass bar to 1.0"]
+    answer: 1
+    why: "Agreement is a property of this judge prompt and model on this kind of data. Read the disagreements, and re-measure whenever any of those change."
+  - q: "Which is a known bias of model judges?"
+    options: ["Preferring the first of two answers shown, or the longer one", "Refusing to grade code", "Always agreeing with humans"]
+    answer: 0
+    why: "Zheng et al. (2023) measured position bias, verbosity bias and self-enhancement bias. Swapping the order and grading against a rubric reduce them."
+reading:
+  - title: "Zheng et al. (2023): Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena"
+    url: "https://arxiv.org/abs/2306.05685"
+---
+
+## Your judge says 85% of replies are fine. Humans say 60%.
+
+Your support agent writes 3,000 free-text replies a day. String checks from [Why Evals Come First](/c/evals/) cannot grade them: "I'm afraid that's outside the window" and "sorry, too late for a refund" mean the same thing and share no words. So you add a small model as a judge. It reads each draft and a rubric and says pass or fail.
+
+The dashboard reports 85% passing. Then your team hand-labels 100 of the same drafts, and only 60 are actually good. The judge waved 25 bad drafts through, including a reply with a tracking number that does not exist.
+
+## A judge is another model, so it makes mistakes too
+
+A judge does not see the truth. It sees a draft and a prompt, and it predicts what a grader would say. That prediction has its own errors:
+
+- **Too lenient.** A low bar passes anything that sounds polite and confident. Confident wrong answers are exactly what you need it to catch.
+- **Too strict.** A bar near perfect rejects good drafts too, and each rejection costs another model call.
+- **Biased.** Judges tend to prefer longer answers, the first answer when shown two, and answers in their own style.
+
+Until you compare the judge with people, you do not know which of these you have. A judge you have not checked is an opinion, not a measurement.
+
+## Calibrate the judge against human labels
+
+Label a sample by hand once. Then run the judge on the same sample and count where they agree and disagree.
+
+<Flow steps={[{ label: "100 drafts", sub: "labelled by people" }, { label: "Judge", sub: "same 100 drafts", kind: "hl" }, { label: "Compare", sub: "agreement, kappa, misses" }, "Adjust rubric or bar"]} loop loopLabel="re-measure after every judge change" caption="Treat the judge like any other model: evaluate it before you rely on it." />
+
+Read three numbers, not one:
+
+- **Agreement rate:** how often judge and humans give the same grade.
+- **Catch rate on bad drafts:** of the drafts humans failed, how many did the judge fail? This is the number that protects customers.
+- **Cohen's kappa:** agreement after subtracting what chance alone would give. A judge that passes everything can still look 60% "accurate".
+
+Then tune: tighten the rubric ("fail any reply that promises a refund the policy does not allow"), adjust the pass bar, and measure again. In the lab, the bar is a slider. Too low misses bad drafts; too high bounces good ones and burns calls.
+
+## Let us check the math
+
+Humans labelled 100 drafts: 60 pass, 40 fail. Here is the judge before and after calibration.
+
+<Callout type="math" label="Let us check the math">
+**Before (lenient bar):** judge passes 83. Of the 60 good drafts it passes 58; of the 40 bad drafts it passes 25 and fails 15.<br />
+Agreement = (58 + 15) / 100 = **73%**. Catch rate on bad drafts = 15 / 40 = **37.5%**.<br />
+Chance agreement = 0.83 × 0.60 + 0.17 × 0.40 = 0.498 + 0.068 = 0.566.<br />
+Kappa = (0.73 − 0.566) / (1 − 0.566) = 0.164 / 0.434 ≈ **0.38**.<br /><br />
+**After (tighter rubric and bar):** judge passes 60. Good drafts: 56 pass, 4 fail. Bad drafts: 4 pass, 36 fail.<br />
+Agreement = (56 + 36) / 100 = **92%**. Catch rate = 36 / 40 = **90%**.<br />
+Chance agreement = 0.6 × 0.6 + 0.4 × 0.4 = 0.52. Kappa = (0.92 − 0.52) / 0.48 ≈ **0.83**.<br /><br />
+Cost: a small-tier judge reads about 1,900 tokens and writes 200 per draft: 1,900 × $1/M + 200 × $5/M ≈ **$0.003 per draft**, or about $9 a day for 3,000 drafts at sim prices (illustrative).
+</Callout>
+
+The lenient judge looked fine on raw agreement and caught barely a third of the bad drafts. Kappa and the catch rate show it.
+
+## The tradeoff: you now have two models to maintain
+
+A judge scales grading from 100 drafts to 100,000, but it adds cost and its own failure modes:
+
+- **It drifts.** Change the judge's prompt or model and its agreement changes. Keep the labelled set and re-run it, like any [eval](/c/evals/).
+- **It has biases.** When comparing two answers, grade both orders and keep only consistent verdicts. Give it a rubric with concrete fail conditions, not "is this good?".
+- **It adds a call in the loop.** Used as a gate that sends drafts back, a strict judge multiplies calls per task. That pattern is [Evaluator-Optimizer](/c/evaluator_optimizer/); cap its retries.
+
+## In the real world
+
+Zheng et al. (2023) built MT-Bench, a set of 80 multi-turn questions, and compared GPT-4 as a judge with expert human votes. GPT-4 agreed with the humans over 80% of the time, about as often as the humans agreed with each other. The same paper measured position bias, verbosity bias and self-enhancement bias, and showed that swapping answer order and giving the judge reference answers reduce them. That is the practice to copy: use the judge, and keep checking it against people.

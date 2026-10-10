@@ -1,0 +1,431 @@
+{
+  "id": "parallel_tools",
+  "title": "Parallel Tool Calls",
+  "brief": "A research agent answers three questions. For each it runs web_search, then reads the top 5 results with fetch_page (1.5 s each). Today it fetches one page per turn, so every question waits through five round trips. Keep at least 90% of answers right while getting the average task under 10 seconds and 4 turns.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "parallelTools": false
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 15
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top results with URLs and snippets. Use it to find sources.",
+          "latencyMs": 400
+        },
+        "position": {
+          "x": 780,
+          "y": 40
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "fetch_page",
+          "description": "Fetches one URL and returns the readable page text. Use it to read a source found by web_search.",
+          "latencyMs": 1500
+        },
+        "position": {
+          "x": 780,
+          "y": 200
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "parallelTools": true
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 15
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top results with URLs and snippets. Use it to find sources.",
+          "latencyMs": 400
+        },
+        "position": {
+          "x": 780,
+          "y": 40
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "fetch_page",
+          "description": "Fetches one URL and returns the readable page text. Use it to read a source found by web_search.",
+          "latencyMs": 1500
+        },
+        "position": {
+          "x": 780,
+          "y": 200
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Battery recycling",
+      "prompt": "What do recent sources say about EU battery recycling rates? Read the top 5 and summarize where they agree.",
+      "needs": [
+        "web_search",
+        "fetch_page"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Heat pumps",
+      "prompt": "How many heat pumps were installed in the UK in 2025? Compare the top 5 sources.",
+      "needs": [
+        "web_search",
+        "fetch_page"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Remote work",
+      "prompt": "Does remote work raise productivity? Summarize the 5 most-cited recent studies.",
+      "needs": [
+        "web_search",
+        "fetch_page"
+      ]
+    }
+  ],
+  "actions": {
+    "search_t1": {
+      "kind": "tool",
+      "tool": "web_search",
+      "text": "web_search(\"battery recycling rates EU 2025\")",
+      "tokens": 800
+    },
+    "fetch_t1": {
+      "kind": "tool",
+      "tool": "fetch_page",
+      "text": "fetch_page(url) for the 5 top results: 5 independent calls",
+      "tokens": 6000,
+      "batch": 5
+    },
+    "done_t1": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Recycling rates are rising in all five sources, but they disagree on the 2025 figure: three say about 47%, two say 52%. The gap is whether exported batteries count."
+    },
+    "search_t2": {
+      "kind": "tool",
+      "tool": "web_search",
+      "text": "web_search(\"heat pump installations UK 2025\")",
+      "tokens": 800
+    },
+    "fetch_t2": {
+      "kind": "tool",
+      "tool": "fetch_page",
+      "text": "fetch_page(url) for the 5 top results: 5 independent calls",
+      "tokens": 6000,
+      "batch": 5
+    },
+    "done_t2": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Installations grew in 2025 in four of five sources; the outlier counts only grant-funded installs. The consensus range is 95k to 110k units."
+    },
+    "search_t3": {
+      "kind": "tool",
+      "tool": "web_search",
+      "text": "web_search(\"remote work productivity studies 2024\")",
+      "tokens": 800
+    },
+    "fetch_t3": {
+      "kind": "tool",
+      "tool": "fetch_page",
+      "text": "fetch_page(url) for the 5 top results: 5 independent calls",
+      "tokens": 6000,
+      "batch": 5
+    },
+    "done_t3": {
+      "kind": "answer",
+      "correct": true,
+      "text": "The five studies split: two find a small productivity gain, two find no effect, one finds a drop for junior staff. Results depend on how output was measured."
+    },
+    "skim": {
+      "kind": "answer",
+      "correct": false,
+      "text": "From the search snippets alone: the numbers seem to be going up. (It answered without reading the sources.)"
+    }
+  },
+  "policy": {
+    "base": {
+      "search_t1": 0,
+      "fetch_t1": 0,
+      "done_t1": 0,
+      "search_t2": 0,
+      "fetch_t2": 0,
+      "done_t2": 0,
+      "search_t3": 0,
+      "fetch_t3": 0,
+      "done_t3": 0,
+      "skim": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "task": "t1"
+        },
+        "set": {
+          "search_t1": 5,
+          "skim": 0.08
+        },
+        "note": "The search has to come first: the fetches depend on its URLs."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "called": "web_search"
+            }
+          ]
+        },
+        "set": {
+          "fetch_t1": 5,
+          "skim": 0.12
+        },
+        "note": "The five fetches don't depend on each other, so they can all go out in one turn."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_t1": 8,
+          "skim": 0.05
+        }
+      },
+      {
+        "when": {
+          "task": "t2"
+        },
+        "set": {
+          "search_t2": 5,
+          "skim": 0.08
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "called": "web_search"
+            }
+          ]
+        },
+        "set": {
+          "fetch_t2": 5,
+          "skim": 0.12
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_t2": 8,
+          "skim": 0.05
+        }
+      },
+      {
+        "when": {
+          "task": "t3"
+        },
+        "set": {
+          "search_t3": 5,
+          "skim": 0.08
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "called": "web_search"
+            }
+          ]
+        },
+        "set": {
+          "fetch_t3": 5,
+          "skim": 0.12
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_t3": 8,
+          "skim": 0.05
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 90% of answers right",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.9
+    },
+    {
+      "id": "latency",
+      "label": "Average task under 10 s",
+      "metric": "avg_latency",
+      "op": "<",
+      "value": 10
+    },
+    {
+      "id": "turns",
+      "label": "4 turns or fewer on average",
+      "metric": "avg_turns",
+      "op": "<=",
+      "value": 4
+    }
+  ],
+  "hints": [
+    "Open the Trace tab. Where does the time go on each task?",
+    "The five fetch_page calls don't depend on each other. Does the model have to wait for one before asking for the next?",
+    "Turn on \"Parallel tool calls\" on the Model node, so all five fetches go out in one turn and run at the same time."
+  ],
+  "explain": "Independent calls can share a turn. The turn then costs as long as the slowest call, not the sum of all of them, and the context is billed once instead of five times."
+}

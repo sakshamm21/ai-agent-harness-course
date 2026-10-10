@@ -1,0 +1,79 @@
+{
+  "id": "prompt_assembly",
+  "title": "Assembling the Context",
+  "brief": "A coding agent works in a repo with house rules: pnpm not npm, tests with `pnpm test`, never edit files under generated/. Every call sends a 6,000-token prefix (base prompt plus 14 tool schemas) into a 16,000-token window, and the model has never seen the house rules. Build the context stack so that at least 85% of changes follow the rules, the context never overflows, and a task costs $0.25 or less.",
+  "palette": ["user", "model", "loop", "tool", "memory"],
+  "window": 16000,
+  "systemTokens": 6000,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 160 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "systemPrompt": "", "cachePrefix": false }, "position": { "x": 260, "y": 160 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 20 }, "position": { "x": 520, "y": 160 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text with line numbers. Use this before editing a file." }, "position": { "x": 800, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "grep", "description": "Searches every file for a regex and lists matching lines. Use this to find where a symbol is defined or used." }, "position": { "x": 800, "y": 110 } },
+      { "id": "t3", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the current contents." }, "position": { "x": 800, "y": 220 } },
+      { "id": "t4", "type": "tool", "data": { "name": "run_tests", "description": "Runs the project's test command and reports failing cases. Use this before you say you are done." }, "position": { "x": 800, "y": 330 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }, { "source": "l", "target": "t4" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 160 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "systemPrompt": "Project rules (from AGENTS.md): use pnpm, never npm or yarn. Run `pnpm test` before finishing. Never edit files under generated/; change the schema in schema/ and run `pnpm codegen`.", "cachePrefix": true }, "position": { "x": 260, "y": 160 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 20 }, "position": { "x": 520, "y": 160 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text with line numbers. Use this before editing a file." }, "position": { "x": 800, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "grep", "description": "Searches every file for a regex and lists matching lines. Use this to find where a symbol is defined or used." }, "position": { "x": 800, "y": 110 } },
+      { "id": "t3", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the current contents." }, "position": { "x": 800, "y": 220 } },
+      { "id": "t4", "type": "tool", "data": { "name": "run_tests", "description": "Runs the project's test command and reports failing cases. Use this before you say you are done." }, "position": { "x": 800, "y": 330 } },
+      { "id": "mem", "type": "memory", "data": { "kind": "summary", "writePolicy": "always" }, "position": { "x": 260, "y": 330 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }, { "source": "l", "target": "t4" },
+      { "source": "mem", "target": "m" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Add a date-picker dependency", "prompt": "Add react-day-picker and use it on the booking form.", "needs": ["grep", "read_file", "edit_file", "run_tests"] },
+    { "id": "t2", "label": "New field on the Order type", "prompt": "Orders need a giftMessage field, shown on the receipt page.", "needs": ["grep", "read_file", "edit_file", "run_tests"] },
+    { "id": "t3", "label": "Fix the currency formatter", "prompt": "Prices in JPY show two decimal places. They should show none.", "needs": ["grep", "read_file", "edit_file", "run_tests"] },
+    { "id": "t4", "label": "Rename an API route", "prompt": "Rename /api/v1/basket to /api/v1/cart and keep the old path as a redirect.", "needs": ["grep", "read_file", "edit_file", "run_tests"] }
+  ],
+  "actions": {
+    "grep": { "kind": "tool", "tool": "grep", "text": "grep(\"giftMessage|OrderSchema\", path=\"src/\")", "tokens": 1200 },
+    "read": { "kind": "tool", "tool": "read_file", "text": "read_file(\"src/orders/receipt.tsx\")", "tokens": 2400 },
+    "edit": { "kind": "tool", "tool": "edit_file", "text": "edit_file(\"src/orders/receipt.tsx\", old, new)", "tokens": 400 },
+    "test": { "kind": "tool", "tool": "run_tests", "text": "run_tests()  # pnpm test", "tokens": 1400 },
+    "plan": { "kind": "think", "text": "Plan: find every place the Order type is built, update the schema, regenerate, then the UI.", "tokens": 300 },
+    "done": { "kind": "answer", "correct": true, "text": "Done. Changed schema/order.ts, ran pnpm codegen, updated the receipt, and pnpm test passes (212 tests)." },
+    "offrules": { "kind": "answer", "correct": false, "text": "Done. I ran `npm install` and edited generated/order.ts directly to add the field. (The repo uses pnpm, and generated/ is overwritten on the next codegen.)" },
+    "forget": { "kind": "answer", "correct": false, "text": "Done. I cleaned up the unused imports in the booking module." }
+  },
+  "policy": {
+    "base": { "grep": 2, "read": 0, "edit": 0, "test": 0, "plan": 0.6, "done": 0, "offrules": 0, "forget": 0 },
+    "modifiers": [
+      { "when": { "called": "grep" }, "shift": { "read": 3 } },
+      { "when": { "called": "read_file" }, "shift": { "edit": 2.5, "read": 1 } },
+      { "when": { "called": "edit_file" }, "shift": { "test": 2.5, "read": 1, "edit": 1 } },
+      { "when": { "state": "ready" }, "set": { "done": 6, "offrules": 0.25 } },
+      { "when": { "turn": "<", "value": 9 }, "set": { "done": 0, "offrules": 0 }, "note": "A real change touches several files before it is finished." },
+      { "when": { "all": [{ "state": "ready" }, { "turn": ">=", "value": 9 }, { "setting": "model.systemPrompt", "op": "==", "value": "" }] }, "set": { "done": 1, "offrules": 6 }, "note": "Nobody told the model the house rules, so it uses the defaults it saw most in training: npm, edit the file you see." },
+      { "when": { "state": "lost_instructions" }, "set": { "forget": 5 }, "scale": { "done": 0.2 }, "note": "The window overflowed and the task fell out of it." }
+    ]
+  },
+  "goals": [
+    { "id": "rules", "label": "At least 85% of changes follow the house rules", "metric": "success_rate", "op": ">=", "value": 0.85 },
+    { "id": "window", "label": "Context never exceeds 15,000 tokens", "metric": "max_context", "op": "<=", "value": 15000 },
+    { "id": "cost", "label": "$0.25 or less per task", "metric": "avg_cost", "op": "<=", "value": 0.25 }
+  ],
+  "hints": [
+    "Look at what the model sees: the 6,000-token prefix, then history that grows by 1,000 to 2,400 tokens a turn. Nothing in it mentions pnpm or generated/.",
+    "Three blocks are missing or wasteful: project instructions in the system prompt, a running summary instead of the full history, and a cached stable prefix.",
+    "Model: put the AGENTS.md rules in System prompt and turn on Cache stable prefix. Add a Memory node of kind summary wired to the model."
+  ],
+  "explain": "The context is something your harness builds on every call. Put the stable blocks first and cache them, put the rules where the model always sees them, and summarize the history so the task never scrolls out."
+}

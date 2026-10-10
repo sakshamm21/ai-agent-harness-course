@@ -1,0 +1,93 @@
+---
+title: "Tokens and the Context Window"
+section: "foundations"
+order: 2
+tagline: "The model only knows what fits in the window."
+realWorld: "Pasting a 300-page PDF and the model forgetting chapter 1"
+build:
+  type: "lab"
+terms:
+  - term: "context window"
+    def: "The maximum number of tokens a model can take in one request, counting the system prompt, the whole conversation, tool results and the answer it writes."
+  - term: "context"
+    def: "Everything sent to the model in one request. The model knows nothing else about your conversation."
+  - term: "truncation"
+    def: "Dropping the oldest part of the context so the rest fits in the window, which silently removes whatever was there."
+usedIn: ["nanoharness/5"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "A model answered your first 30 messages well, then forgets a rule you gave in message 1. What is the most likely cause?"
+    options: ["The model got tired", "The conversation outgrew the window and the oldest messages were dropped", "Message 1 was too short"]
+    answer: 1
+    why: "Every request resends the whole conversation. Once it no longer fits, something has to go, and the oldest messages usually go first."
+  - q: "About how many tokens is a 150,000-word document, at roughly 0.75 words per token?"
+    options: ["About 110,000", "About 150,000", "About 200,000"]
+    answer: 2
+    why: "150,000 words / 0.75 words per token = 200,000 tokens. Tokens outnumber words because long words split into pieces."
+  - q: "Your context starts at 1,400 tokens and grows 1,500 per turn in an 8,000-token window. When does it overflow?"
+    options: ["On turn 4", "On turn 5", "On turn 8"]
+    answer: 1
+    why: "1,400 + 4 × 1,500 = 7,400 still fits; 1,400 + 5 × 1,500 = 8,900 does not."
+reading:
+  - title: "Anthropic docs: Context windows"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/context-windows"
+  - title: "Anthropic docs: Token counting"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/token-counting"
+---
+
+## You pasted a 300-page PDF. It forgot chapter 1.
+
+You paste a 300-page report into a chat and ask: "What does chapter 1 say about the budget?" The answer is fluent, specific, and about chapter 12.
+
+A page holds about 500 words, so the report is 150,000 words, or roughly 200,000 tokens. That fills a 200,000-token window on its own, before your question and before the answer. Something had to give, and the part that gave was the beginning.
+
+## The model has no memory. It has a window.
+
+An LLM does not remember your conversation. Every request sends the **context**: the system prompt, every earlier message, every tool result, and your new question. The model reads all of it from scratch, writes a reply, and keeps nothing. The next request sends everything again, plus the reply.
+
+The **context window** is the most tokens one request can hold, including the answer the model is about to write. A **token** is a piece of text: a short word, part of a longer word, or a symbol. For English, a token is about 4 characters, or about 0.75 words.
+
+So the window is a hard budget. When a conversation grows past it, your app (or the API, by refusing the request) forces a choice about what to drop. The simplest choice, cutting the oldest messages, is the worst one for most tasks, because the oldest messages hold the task itself: the question, the rules, chapter 1.
+
+## Count tokens, and shrink before you hit the wall
+
+The fix starts with measuring. Your harness should know, before each call, how many tokens it is about to send. Then it can act before the window fills instead of after.
+
+<Stack blocks={[{ label: "System + tools", tokens: 1200 }, { label: "Question", tokens: 200, kind: "hl" }, { label: "Ch. 1", tokens: 1500 }, { label: "Ch. 2", tokens: 1500 }, { label: "Ch. 3", tokens: 1500 }, { label: "Ch. 4", tokens: 1500 }, { label: "Ch. 5", tokens: 1500, kind: "bad" }]} budget={8000} caption="An 8,000-token window after five chapters. Chapter 5 pushes the total to 8,900, so the oldest 900 tokens, the question among them, fall out." />
+
+You have three moves, in order of preference:
+
+- **Send less.** Do not paste the whole PDF. Retrieve the pages that matter for this question.
+- **Summarize early.** When the context passes, say, 70% of the window, replace old material with a short summary that keeps the question and the key facts.
+- **Never cut blind.** If you must drop messages, keep the system prompt and the task pinned at the top, and drop from the middle.
+
+In the lab you read a long document chapter by chapter into an 8,000-token model. Watch the token meter climb, find the turn where the question falls out, then add a compactor that summarizes before it happens.
+
+## Let us check the math
+
+The lab's numbers: the context starts at 1,200 tokens of system prompt and tool schemas plus a 200-token question. Each chapter adds 1,500 tokens.
+
+<Callout type="math" label="Let us check the math">
+After n chapters: 1,400 + 1,500 × n tokens.<br />
+4 chapters: 1,400 + 6,000 = **7,400**. Fits in 8,000.<br />
+5 chapters: 1,400 + 7,500 = **8,900**. Over by 900, so the oldest 900 tokens go, and the 200-token question goes with them.
+
+**With a summarizer at 70%** (5,600 tokens): after chapter 3 the context is 5,900, so it triggers. It keeps the 1,400-token prefix, adds an 800-token summary, and keeps 10% of the other 4,500 tokens: 1,400 + 800 + 450 ≈ **2,650 tokens**. Room for 3 more chapters before it triggers again.
+
+**Cost of resending.** Each call resends everything. Ten calls with contexts of 1,400, 2,900, 4,400 and so on up to 14,900 total 81,500 input tokens. At the illustrative sim price of $3 per million input tokens, that is about **$0.24**, for a document whose chapters add up to only 15,000 tokens.
+</Callout>
+
+## The tradeoff: a summary is a lossy copy
+
+Shrinking the context keeps you inside the window, but every summary throws something away. If the question is about a footnote in chapter 1 and the summary skipped footnotes, the answer is still wrong, just more politely. And summarizing costs an extra model call and a second or two each time.
+
+Ways to soften it:
+
+- **Keep the task out of the blast radius.** Pin the system prompt and the original question so no compaction step can touch them. [Assembling the Context](/c/prompt_assembly/) covers how.
+- **Summarize with the question in mind**, or move bulky tool output to files the agent can reopen. [Context Management and Compaction](/c/context_mgmt/) compares strategies.
+- **Fetch instead of carry.** Retrieval brings in only the relevant pages per question ([RAG](/c/rag/)), and a [subagent](/c/subagents/) can read a long document in its own window and return a short answer.
+
+## In the real world
+
+Claude models document a 200,000-token context window, with larger windows on some models. The API counts tokens for you: every response reports `input_tokens` and `output_tokens`, and a token-counting endpoint tells you the size of a request before you send it. In part 5 of the nanoharness project you use counts like these to decide when to compact.

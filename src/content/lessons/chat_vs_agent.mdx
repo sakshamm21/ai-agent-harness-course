@@ -1,0 +1,95 @@
+---
+title: "Chatbot vs Workflow vs Agent"
+section: "foundations"
+order: 6
+tagline: "Who decides the next step: you, your code, or the model?"
+realWorld: "An FAQ bot, a Zapier-style LLM chain, and Claude Code"
+build:
+  type: "lab"
+terms:
+  - term: "chatbot"
+    def: "A model answering one message at a time. The person reads each reply and decides what to ask or do next."
+  - term: "workflow"
+    def: "A fixed sequence of model calls and tools written in your code. The path is decided in advance; the model fills in each step."
+  - term: "agent"
+    def: "A model in a loop with tools that decides its own next step, including which tool to call and when it is done."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "In a workflow, who decides which step comes next?"
+    options: ["The model, after each tool result", "Your code, which fixed the sequence in advance", "The user, after each reply"]
+    answer: 1
+    why: "A workflow is a predefined path. The model does the work inside each step but does not choose the steps."
+  - q: "Tickets need one, two or three lookups, and you cannot tell which until the first lookup comes back. What fits best?"
+    options: ["A chatbot", "A fixed two-step workflow", "An agent that chooses its next lookup"]
+    answer: 2
+    why: "When the number of steps depends on what you find, only a loop where the model decides can fit every case."
+  - q: "A workflow costs $0.015 a ticket and solves 1 in 3. An agent costs $0.026 and solves 93%. Which is cheaper per solved ticket?"
+    options: ["The workflow, at $0.015", "The agent, at about $0.028 against $0.045", "They cost the same"]
+    answer: 1
+    why: "Divide cost by success rate: $0.015 / 0.33 = $0.045 for the workflow, $0.026 / 0.93 ≈ $0.028 for the agent."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## Three billing tickets. The bot solved none of them.
+
+Your billing assistant gets three tickets. "How much is my March invoice, and is it paid?" "Two charges of $49, but only one invoice. Why?" "Your agent promised me a $20 credit and I was charged in full."
+
+The bot is a plain chat model, one call per message. It answers all three in a friendly tone, and across 20 runs it gets about 3% of them right. It cannot see an invoice, a charge or a support note, so it says what billing problems usually are: "probably a pending authorization."
+
+## The question is who picks the next step
+
+There are three ways to put a model to work, and the difference is not the model. It is who decides what happens next.
+
+- **Chatbot: the person decides.** The model answers one message. The human reads it, looks things up elsewhere, and asks again. An FAQ bot on a help page works this way.
+- **Workflow: your code decides.** You write the steps in advance: look up the invoice, then ask the model to explain it. The model fills in each step but never changes the path. A Zapier-style chain that summarizes every new email and files it is a workflow.
+- **Agent: the model decides.** The model runs in a loop with tools. After each result it chooses what to do next, or that it is done. A coding agent like Claude Code works this way: it decides which files to read, what to change, and when to run the tests.
+
+Each one moves a decision from a person, to your code, to the model.
+
+<Flow steps={[{ label: "Chatbot", sub: "the person picks the next step" }, { label: "Workflow", sub: "your code picks the next step" }, { label: "Agent", sub: "the model picks the next step", kind: "hl" }]} caption="Left to right: more decisions move to the model, along with more flexibility, cost and unpredictability." />
+
+## Match the structure to how much the path varies
+
+Look at what each ticket needs. The first needs one lookup: the invoice. The second needs the invoice and the payment history. The third needs those plus the support notes. You do not know which kind you have until the first lookup comes back.
+
+A chatbot can do none of them. A fixed two-step workflow ("get invoices, then answer") fits the first ticket and confidently answers the other two with half the facts: "Your invoice is paid, so everything looks fine." An agent with all three tools calls only what each ticket needs.
+
+The rule: if you can write the steps down before you see the input, write a workflow. If the steps depend on what you find along the way, you need an agent. In the lab you build all three and compare steps, cost and success on the same tickets.
+
+## Let us check the math
+
+Medium model at illustrative sim prices of $3 and $15 per million input and output tokens. Each call starts from a 1,400-token context (system prompt, tools, question) and writes 150 tokens. Invoices add 700 tokens, payments 800, notes 500.
+
+<Callout type="math" label="Let us check the math">
+**Chatbot:** 1 call. 1,400 × $3/M + 150 × $15/M = $0.0042 + $0.0023 = **$0.0065** a ticket. Success about 3%.
+
+**Workflow (2 fixed steps):** inputs 1,400 + 2,100 = 3,500. 3,500 × $3/M + 300 × $15/M = **$0.015** a ticket. Solves only the first ticket: success about 1 in 3.
+
+**Agent:**<br />
+Ticket 1: 2 calls, 3,500 input, 300 output = **$0.015**<br />
+Ticket 2: 3 calls, 1,400 + 2,100 + 2,900 = 6,400 input, 450 output = $0.0192 + $0.0068 = **$0.026**<br />
+Ticket 3: 4 calls, 6,400 + 3,400 = 9,800 input, 600 output = $0.0294 + $0.009 = **$0.038**<br />
+Average: 3 turns and about **$0.026** a ticket. Success about 93%.
+
+**Cost per solved ticket:** workflow $0.015 / 0.33 = **$0.045**. Agent $0.026 / 0.93 ≈ **$0.028**.
+</Callout>
+
+The agent costs more per ticket and less per solved ticket. That is the number to compare.
+
+## The tradeoff: the model now controls your bill
+
+Handing the next step to the model buys flexibility and costs predictability. A workflow always takes 2 calls. An agent takes 2, 3 or 4 here, and could take 40 if it got confused. It is harder to test, because each run can take a different path, and harder to price, because the cost depends on choices you did not make.
+
+Ways to keep the benefits:
+
+- **Use the least autonomy that works.** If most tickets look like the first one, a workflow plus a fallback may beat an agent. [Prompt Chaining](/c/chaining/) and [Routing](/c/routing/) are workflows with structure.
+- **Bound the loop.** Max turns, a cost cap and a clear done signal keep a confused agent cheap ([Stop Conditions and Budgets](/c/stop_conditions/)).
+- **Measure paths, not just answers.** Evals that check which tools were called catch an agent that got lucky ([Why Evals Come First](/c/evals/)).
+
+## In the real world
+
+Anthropic's "Building effective agents" draws the same line. It calls workflows systems where models and tools follow predefined code paths, and agents systems where the model directs its own process and tool use. Its advice is to start with the simplest option and add autonomy only when the task needs it, which is the subject of the next lesson.

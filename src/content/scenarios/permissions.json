@@ -1,0 +1,92 @@
+{
+  "id": "permissions",
+  "title": "Permissions and Sandboxing",
+  "brief": "Six repo tasks, six tools. The harness runs in a bypass mode: every tool is on the allow list, including a raw bash shell and git_push. Two tasks tempt the model into rm -rf, two into a force push to main. Sort the tools into allow, ask and deny so that at least 85% of tasks succeed, nothing destructive runs, and a human is asked at most once per task on average.",
+  "palette": ["user", "model", "loop", "tool", "permissions", "approval"],
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 180 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 180 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 20 }, "position": { "x": 480, "y": 180 } },
+      { "id": "p", "type": "permissions", "data": { "allow": "read_file, grep, edit_file, run_tests, git_push, bash", "ask": "", "deny": "" }, "position": { "x": 480, "y": 360 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text. Use this before editing a file." }, "position": { "x": 760, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "grep", "description": "Searches the repo for a regex and lists matching lines. Use this to find where a symbol is used." }, "position": { "x": 760, "y": 90 } },
+      { "id": "t3", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the file." }, "position": { "x": 760, "y": 180 } },
+      { "id": "t4", "type": "tool", "data": { "name": "run_tests", "description": "Runs the test suite and lists failures. Use this before saying you are done." }, "position": { "x": 760, "y": 270 } },
+      { "id": "t5", "type": "tool", "data": { "name": "git_push", "description": "Pushes the current branch to the remote. Use this only when the task asks you to ship." }, "position": { "x": 760, "y": 360 } },
+      { "id": "t6", "type": "tool", "data": { "name": "bash", "description": "Runs any shell command in the repo directory." }, "position": { "x": 760, "y": 450 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" }, { "source": "l", "target": "p" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" },
+      { "source": "l", "target": "t4" }, { "source": "l", "target": "t5" }, { "source": "l", "target": "t6" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 180 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 180 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 20 }, "position": { "x": 480, "y": 180 } },
+      { "id": "p", "type": "permissions", "data": { "allow": "read_file, grep, edit_file, run_tests", "ask": "git_push", "deny": "bash" }, "position": { "x": 480, "y": 360 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text. Use this before editing a file." }, "position": { "x": 760, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "grep", "description": "Searches the repo for a regex and lists matching lines. Use this to find where a symbol is used." }, "position": { "x": 760, "y": 90 } },
+      { "id": "t3", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the file." }, "position": { "x": 760, "y": 180 } },
+      { "id": "t4", "type": "tool", "data": { "name": "run_tests", "description": "Runs the test suite and lists failures. Use this before saying you are done." }, "position": { "x": 760, "y": 270 } },
+      { "id": "t5", "type": "tool", "data": { "name": "git_push", "description": "Pushes the current branch to the remote. Use this only when the task asks you to ship." }, "position": { "x": 760, "y": 360 } },
+      { "id": "t6", "type": "tool", "data": { "name": "bash", "description": "Runs any shell command in the repo directory." }, "position": { "x": 760, "y": 450 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" }, { "source": "l", "target": "p" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" },
+      { "source": "l", "target": "t4" }, { "source": "l", "target": "t5" }, { "source": "l", "target": "t6" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Off-by-one in pagination", "prompt": "Page 2 of /orders repeats the last item of page 1. Fix it.", "needs": ["read_file", "edit_file", "run_tests"] },
+    { "id": "t2", "label": "Stale build output", "prompt": "The build fails with 'module not found' after the last merge. Fix the build.", "needs": ["read_file", "edit_file", "run_tests"], "tags": ["risky"] },
+    { "id": "t3", "label": "Ship the timezone hotfix", "prompt": "Fix the daily report date bug (wrong after 7pm), then push the branch.", "needs": ["read_file", "edit_file", "run_tests", "git_push"], "tags": ["push"] },
+    { "id": "t4", "label": "Remove a dead feature flag", "prompt": "Remove the NEW_CHECKOUT flag and the code paths behind it.", "needs": ["read_file", "edit_file", "run_tests"], "tags": ["risky"] },
+    { "id": "t5", "label": "Rename userId", "prompt": "Rename userId to accountId in every handler under api/.", "needs": ["read_file", "edit_file", "run_tests"] },
+    { "id": "t6", "label": "Ship the null-email fix", "prompt": "Signup crashes on an empty email. Fix it and push the branch.", "needs": ["read_file", "edit_file", "run_tests", "git_push"], "tags": ["push"] }
+  ],
+  "actions": {
+    "grep": { "kind": "tool", "tool": "grep", "text": "grep(\"NEW_CHECKOUT|userId\", path=\"src/\")", "tokens": 600 },
+    "read": { "kind": "tool", "tool": "read_file", "text": "read_file(\"src/api/orders.py\")", "tokens": 1400 },
+    "edit": { "kind": "tool", "tool": "edit_file", "text": "edit_file(\"src/api/orders.py\", old=\"offset = page * size + 1\", new=\"offset = (page - 1) * size\")", "tokens": 300 },
+    "test": { "kind": "tool", "tool": "run_tests", "text": "run_tests()  → 48 passed", "tokens": 700 },
+    "push": { "kind": "tool", "tool": "git_push", "text": "git_push(branch=\"fix/report-timezone\")", "tokens": 200 },
+    "done": { "kind": "answer", "correct": true, "text": "Done. Changed the offset calculation, all 48 tests pass, and the branch is pushed for review." },
+    "nuke": {
+      "kind": "dangerous", "tool": "bash",
+      "text": "bash(\"rm -rf ./ build && npm run build\")",
+      "incident": "Incident: the stray space made it rm -rf ./ (the whole repo) plus build. Every uncommitted change is gone."
+    },
+    "force": {
+      "kind": "dangerous", "tool": "git_push",
+      "text": "git_push(branch=\"main\", force=True)  # push was rejected as non-fast-forward",
+      "incident": "Incident: force-pushed over main and erased three commits teammates pushed this morning."
+    }
+  },
+  "policy": {
+    "base": { "grep": 0.6, "read": 3, "edit": 0, "test": 0, "push": 0, "done": 0, "nuke": 0, "force": 0 },
+    "modifiers": [
+      { "when": { "called": "read_file" }, "shift": { "edit": 3 } },
+      { "when": { "called": "edit_file" }, "shift": { "test": 3 } },
+      { "when": { "all": [{ "tag": "push" }, { "called": "run_tests" }] }, "shift": { "push": 4 } },
+      { "when": { "state": "ready" }, "set": { "done": 8 } },
+      { "when": { "all": [{ "tag": "risky" }, { "tool": "bash" }, { "called": "read_file" }] }, "shift": { "nuke": 0.9 }, "note": "Build trouble tempts the model into wiping directories with a raw shell." },
+      { "when": { "all": [{ "tag": "push" }, { "tool": "git_push" }, { "called": "run_tests" }] }, "shift": { "force": 1.2 }, "note": "The first push is rejected, and force is the shortest way past it." }
+    ]
+  },
+  "goals": [
+    { "id": "work", "label": "At least 85% of tasks succeed", "metric": "success_rate", "op": ">=", "value": 0.85 },
+    { "id": "safe", "label": "Zero incidents (no rm -rf, no force push)", "metric": "incidents", "op": "<=", "value": 0 },
+    { "id": "asks", "label": "At most 1 human approval per task on average", "metric": "approvals_per_task", "op": "<=", "value": 1 }
+  ],
+  "hints": [
+    "Open the Stale build output and Ship tasks. Which tool did the destructive call go through, and did any task actually need it?",
+    "Three buckets. Reads and test runs are cheap and reversible: allow. Pushing is needed but shared: ask. A raw shell nobody needs: deny. Asking for everything also stops the incidents, but count the approvals.",
+    "Permissions: allow read_file, grep, edit_file, run_tests; ask git_push; deny bash."
+  ],
+  "explain": "Deny removes the rm -rf path entirely, ask puts a person in front of the push so the force push gets refused and the normal push goes through, and allow keeps the reads and test runs fast. Asking for everything would be safe and unusable."
+}

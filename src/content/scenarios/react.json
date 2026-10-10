@@ -1,0 +1,394 @@
+{
+  "id": "react",
+  "title": "ReAct: Reason then Act",
+  "brief": "A research assistant answers three pricing questions about competitors. Each answer needs a web_search, then read_page on the right result. Right now the model acts on reflex: it reaches for the calculator, searches twice, or answers before it has read anything. Get at least 85% of answers right with more than 85% of tool calls doing useful work.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "reasoning": false
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 12
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top 5 results with titles, URLs and snippets."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_page",
+          "description": "Fetches a URL and returns the page text."
+        },
+        "position": {
+          "x": 780,
+          "y": 120
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "calculator",
+          "description": "Evaluates an arithmetic expression."
+        },
+        "position": {
+          "x": 780,
+          "y": 240
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "reasoning": true
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 12
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top 5 results with titles, URLs and snippets."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_page",
+          "description": "Fetches a URL and returns the page text."
+        },
+        "position": {
+          "x": 780,
+          "y": 120
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "calculator",
+          "description": "Evaluates an arithmetic expression."
+        },
+        "position": {
+          "x": 780,
+          "y": 240
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Acme pricing",
+      "prompt": "Did Acme raise the price of its Pro plan last quarter? By how much?",
+      "needs": [
+        "web_search",
+        "read_page"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Globex free tier",
+      "prompt": "Does Globex still offer a free tier? Check their current pricing page.",
+      "needs": [
+        "web_search",
+        "read_page"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Initech seats",
+      "prompt": "What is Initech's per-seat price for teams of 50, and is it billed annually?",
+      "needs": [
+        "web_search",
+        "read_page"
+      ]
+    }
+  ],
+  "actions": {
+    "think_plan": {
+      "kind": "think",
+      "text": "Thought: I don't know this yet. Search for the pricing page first, then open the official one. No math is needed until I have numbers.",
+      "tokens": 150,
+      "outputTokens": 200
+    },
+    "think_next": {
+      "kind": "think",
+      "text": "Thought: Result 2 is the vendor's own pricing page; the others are blog posts. Read that one before answering.",
+      "tokens": 120,
+      "outputTokens": 160
+    },
+    "search": {
+      "kind": "tool",
+      "tool": "web_search",
+      "text": "web_search(\"Acme Pro plan price change 2026\")",
+      "tokens": 900
+    },
+    "read": {
+      "kind": "tool",
+      "tool": "read_page",
+      "text": "read_page(\"https://acme.example/pricing\")",
+      "tokens": 2200
+    },
+    "calc": {
+      "kind": "tool",
+      "tool": "calculator",
+      "text": "calculator(\"49 * 1.2\")  (no numbers have been looked up yet)",
+      "tokens": 120
+    },
+    "rash": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Based on the search snippets, yes, they raised it by about 20%. (It never opened the page; the snippet was from a 2024 blog post.)"
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Yes. Acme's pricing page shows Pro at $59/month, up from $49 in the archived version: a $10 (20%) increase."
+    }
+  },
+  "policy": {
+    "base": {
+      "search": 3,
+      "read": 0,
+      "calc": 1.1,
+      "rash": 0.6,
+      "think_plan": 0,
+      "think_next": 0,
+      "done": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "called": "web_search"
+        },
+        "shift": {
+          "read": 2.5,
+          "rash": 0.7
+        },
+        "note": "After a search it can either read a result or answer from snippets."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 8,
+          "rash": 0.2,
+          "calc": 0.4
+        }
+      },
+      {
+        "when": {
+          "setting": "model.reasoning",
+          "op": "==",
+          "value": true
+        },
+        "scale": {
+          "calc": 0.06,
+          "rash": 0.07
+        },
+        "note": "Writing the plan down makes off-plan moves rare."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "setting": "model.reasoning",
+              "op": "==",
+              "value": true
+            },
+            {
+              "state": "first_turn"
+            }
+          ]
+        },
+        "set": {
+          "think_plan": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "setting": "model.reasoning",
+              "op": "==",
+              "value": true
+            },
+            {
+              "called": "web_search"
+            },
+            {
+              "not": {
+                "called": "read_page"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "think_next": 1.5,
+          "read": 2
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "setting": "model.reasoning",
+              "op": "==",
+              "value": true
+            },
+            {
+              "called": "web_search"
+            }
+          ]
+        },
+        "scale": {
+          "search": 0.25
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% of answers right",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "accuracy",
+      "label": "Over 85% of tool calls useful",
+      "metric": "tool_accuracy",
+      "op": ">",
+      "value": 0.85
+    }
+  ],
+  "hints": [
+    "Read a transcript. The tools are fine. What is missing between one tool result and the next call?",
+    "The model never says what it knows or what it needs next. Look at the Model node's settings.",
+    "Turn on \"Reason before acting\" on the Model node. It will write a short Thought before each action."
+  ],
+  "explain": "Reasoning between actions is a cheap plan: the model states what it learned and what is still missing, so it stops grabbing the nearest tool or answering from a snippet."
+}

@@ -1,0 +1,419 @@
+{
+  "id": "case_research_agent",
+  "title": "Design a Deep Research Agent",
+  "brief": "A mini deep research agent. Three questions, each needing a set of web searches and a few full pages read before it writes a cited report. The draft is one large model in one context with no limits: it searches one query at a time, every page it reads piles into its context, nobody checks that the citations say what the report claims, and on the broad question it can search forever. Get 80% of reports right with zero incidents, at $0.90 or less and 30 seconds or less per question.",
+  "window": 40000,
+  "systemTokens": 3000,
+  "palette": [
+    "model",
+    "loop",
+    "tool",
+    "subagent",
+    "judge"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "large"
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 60,
+          "maxCost": 0
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top 10 results with titles, URLs and snippets. Use this to find sources for one sub-question.",
+          "latencyMs": 800
+        },
+        "position": {
+          "x": 760,
+          "y": 60
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "fetch_page",
+          "description": "Gets the full readable text of one URL. Use this after a search, to read a source before citing it.",
+          "latencyMs": 1500
+        },
+        "position": {
+          "x": 760,
+          "y": 220
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "large",
+          "parallelTools": true
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20,
+          "maxCost": 1.5
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "s",
+        "type": "subagent",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 480,
+          "y": 320
+        }
+      },
+      {
+        "id": "j",
+        "type": "judge",
+        "data": {
+          "passBar": 0.8,
+          "maxRetries": 2
+        },
+        "position": {
+          "x": 240,
+          "y": 320
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top 10 results with titles, URLs and snippets. Use this to find sources for one sub-question.",
+          "latencyMs": 800
+        },
+        "position": {
+          "x": 760,
+          "y": 60
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "fetch_page",
+          "description": "Gets the full readable text of one URL. Use this after a search, to read a source before citing it.",
+          "latencyMs": 1500
+        },
+        "position": {
+          "x": 760,
+          "y": 220
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "m",
+        "target": "j"
+      },
+      {
+        "source": "l",
+        "target": "s"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Battery comparison",
+      "prompt": "Compare LFP and sodium-ion batteries for grid storage: cost per kWh, cycle life and supply risk. Cite every number.",
+      "needs": [
+        "web_search",
+        "fetch_page"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Regulation summary",
+      "prompt": "What does the EU AI Act require of general-purpose AI model providers, and from which dates? Cite the articles.",
+      "needs": [
+        "web_search",
+        "fetch_page"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Broad market scan",
+      "prompt": "Survey the open-source vector database landscape: the main projects, their licences, and who backs them.",
+      "needs": [
+        "web_search",
+        "fetch_page"
+      ],
+      "tags": [
+        "broad"
+      ]
+    }
+  ],
+  "actions": {
+    "plan": {
+      "kind": "think",
+      "text": "Plan: split the question into 4 sub-questions, one search each, then read the 3 best sources per sub-question.",
+      "tokens": 400
+    },
+    "search": {
+      "kind": "tool",
+      "tool": "web_search",
+      "text": "web_search × 4: [\"LFP cell cost per kWh 2025\", \"sodium-ion cycle life grid\", \"lithium supply risk\", \"sodium-ion commercial deployments\"]",
+      "tokens": 6000,
+      "batch": 4,
+      "offloadable": true
+    },
+    "fetch": {
+      "kind": "tool",
+      "tool": "fetch_page",
+      "text": "fetch_page × 3: the BNEF price survey, a 2024 review paper, a manufacturer datasheet",
+      "tokens": 15000,
+      "batch": 3,
+      "offloadable": true
+    },
+    "dig": {
+      "kind": "repeat",
+      "text": "web_search(\"open source vector database list\") again with slightly different words, to be thorough",
+      "tokens": 5000,
+      "offloadable": true
+    },
+    "report": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Report: 1,400 words, 11 sources. Every number links to the page it came from, and each citation was checked against that page.",
+      "outputTokens": 2000
+    },
+    "miscite": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Report: sodium-ion reaches 6,000 cycles [7]. (Source [7] says 4,000. The citation does not support the claim.)",
+      "outputTokens": 2000
+    },
+    "lost": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Report: a general overview of batteries. (The original sub-questions fell out of the window, so it answered a vaguer question.)",
+      "outputTokens": 1500
+    }
+  },
+  "policy": {
+    "base": {
+      "plan": 1.5,
+      "search": 3,
+      "fetch": 0,
+      "dig": 0.1,
+      "report": 0,
+      "miscite": 0,
+      "lost": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "called": "web_search"
+        },
+        "shift": {
+          "fetch": 5
+        },
+        "scale": {
+          "plan": 0.2
+        }
+      },
+      {
+        "when": {
+          "tag": "broad"
+        },
+        "shift": {
+          "dig": 3
+        },
+        "note": "A broad question has no obvious place to stop searching."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "broad"
+            },
+            {
+              "state": "repeating"
+            }
+          ]
+        },
+        "set": {
+          "dig": 300
+        },
+        "note": "Once it starts re-running the same search, it does not stop on its own."
+      },
+      {
+        "when": {
+          "has": "subagent"
+        },
+        "scale": {
+          "dig": 0.6
+        },
+        "note": "Each worker gets one bounded sub-question, so there is less aimless searching."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "report": 6,
+          "miscite": 2.5,
+          "search": 0.3,
+          "fetch": 0.5
+        }
+      },
+      {
+        "when": {
+          "state": "judged_fail"
+        },
+        "set": {
+          "report": 9,
+          "miscite": 0.6
+        },
+        "note": "With the checker's feedback it fixes the unsupported claim."
+      },
+      {
+        "when": {
+          "setting": "model.tier",
+          "op": "==",
+          "value": "small"
+        },
+        "shift": {
+          "miscite": 2
+        }
+      },
+      {
+        "when": {
+          "state": "lost_instructions"
+        },
+        "set": {
+          "lost": 12,
+          "report": 0.5
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 80% of reports correct",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.8
+    },
+    {
+      "id": "incidents",
+      "label": "Zero incidents",
+      "metric": "incidents",
+      "op": "==",
+      "value": 0
+    },
+    {
+      "id": "cost",
+      "label": "$0.90 or less per question",
+      "metric": "avg_cost",
+      "op": "<=",
+      "value": 0.9
+    },
+    {
+      "id": "latency",
+      "label": "30 seconds or less per question",
+      "metric": "avg_latency",
+      "op": "<=",
+      "value": 30
+    }
+  ],
+  "hints": [
+    "Read a transcript: four searches run one after another, every fetched page lands in the lead's context, and some reports cite pages that say something else. The broad question sometimes searches until the platform kills it.",
+    "Four pieces: workers with their own context that hand back summaries, searches that run at the same time, a checker that reads the report against its sources, and a budget on the loop.",
+    "Add a Subagent (medium) wired to the loop, turn on parallel tool calls on the model, add a Judge (pass bar 0.8) wired to the model, and set the loop to about 20 turns and $1.50."
+  ],
+  "explain": "This is the orchestrator-workers shape public write-ups of deep research systems describe: a lead plans, workers search in parallel in their own contexts and return summaries, a citation pass checks claims against sources, and hard caps keep a broad question from becoming an unbounded bill."
+}

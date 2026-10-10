@@ -1,0 +1,10 @@
+# Runs after the learner's code, in the same namespace. Use check(label, condition, hint).
+check("cosine of identical directions is 1", abs(cosine([3, 4], [6, 8]) - 1.0) < 1e-6, "Divide the dot product by both lengths, so [3,4] and [6,8] score 1.0.")
+check("cosine of opposite and unrelated vectors", abs(cosine([1, 0], [-1, 0]) + 1.0) < 1e-6 and abs(cosine([1, 0], [0, 1])) < 1e-6, "Opposite vectors score -1, perpendicular ones 0.")
+check("the index has one 256-number vector per FAQ", len(index) == 50 and all(len(v) == 256 for _, v in index), "build_index should return (id, embed(text)) for all 50 FAQs.")
+_top = semantic_search("i can't log in", index)
+check("semantic_search returns k ids, best first", len(_top) == 3 and _top[0] == "password-reset" and len(semantic_search("refund", index, k=5)) == 5, "Sort by cosine, highest first, and return ids[:k].")
+_sem = hit_rate(lambda q: semantic_search(q, index))
+_kw = hit_rate(keyword_search)
+check("semantic search finds at least 75% of the test queries", _sem >= 0.75, f"Semantic hit rate is {_sem:.0%}. Did you embed the question and the answer?")
+check("semantic search beats keyword search", _sem > _kw, f"Semantic {_sem:.0%} vs keyword {_kw:.0%}.")

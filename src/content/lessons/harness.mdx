@@ -1,0 +1,99 @@
+---
+title: "What Is an Agent Harness"
+section: "harness"
+order: 15
+tagline: "Same model, different harness, very different agent."
+realWorld: "Claude Code, Cursor agent, Codex CLI and OpenHands can run the same model and behave differently"
+build:
+  type: "lab"
+  scenario: "harness"
+terms:
+  - term: "agent harness"
+    def: "Everything in an agent that is not the model: the loop, prompt assembly, tool runtime, context management, permissions, state, hooks and UI."
+  - term: "scaffold"
+    def: "Another name for the harness, common in benchmark papers: the code and prompts wrapped around a model to let it act on a task."
+  - term: "tool runtime"
+    def: "The part of the harness that receives a tool call, runs the real function or command, and turns the result into a message the model can read."
+usedIn: ["nanoharness/1"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Two coding agents use the exact same model, yet one solves twice as many tasks. Where should you look first?"
+    options: ["The model's temperature", "The harness: tool descriptions, context handling, stop rules and permissions", "Which one has the faster GPU"]
+    answer: 1
+    why: "With the model fixed, every difference in behaviour comes from what is wrapped around it: what the model sees, which tools it can call and how, and when the run is stopped."
+  - q: "Which of these is NOT part of the harness?"
+    options: ["The CLAUDE.md file loaded into the prompt", "The weights that pick the next token", "The rule that denies rm -rf"]
+    answer: 1
+    why: "The weights are the model. Instruction files, permission rules, the loop and the UI are all harness."
+  - q: "A refactor adds 2,600 tokens a turn and starts at 2,200 tokens in a 16,000-token window. On which turn does it overflow without compaction?"
+    options: ["Turn 3", "Turn 6", "Turn 12"]
+    answer: 1
+    why: "After 5 turns the context is 2,200 + 13,000 = 15,200. After 6 it is 17,800, past 16,000, so the task starts falling out on turn 6."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "Anthropic: Effective context engineering for AI agents"
+    url: "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+  - title: "Claude Code overview"
+    url: "https://docs.anthropic.com/en/docs/claude-code/overview"
+---
+
+## Same model, ten tasks, 47% solved
+
+You wire a medium model into the loop from [The Agent Loop](/c/agent_loop/), give it `read_file`, `edit_file`, `run_tests` and a shell, and hand it ten ordinary repo tasks. It solves fewer than half. Then a colleague runs the *same model* inside a different program on the same ten tasks and solves more than nine.
+
+Nobody retrained anything. The weights are identical. The only difference is the program around the model, and that program has a name: the harness.
+
+## The model was never the bottleneck
+
+Read the failing transcripts and the failures fall into four groups. None of them is the model being unable to code.
+
+- **It guessed at tool arguments.** The tools had names but no descriptions, so it tried `read_file("orders")` and `run_tests("--all")` until something worked, then gave up and claimed success.
+- **It re-ran a flaky test forever.** Nothing told the loop to stop, so it hit the platform's kill switch at 60 turns.
+- **It forgot the task.** On three big refactors the conversation outgrew the window, and the oldest message, the task itself, was the first to go.
+- **It ran `rm -rf`.** Faced with a broken build and a raw shell, it wiped `.git/` along with the cache.
+
+Each of these is a decision the harness made, or failed to make. What the model sees, which tools it can call, how long it may run and what it is allowed to touch are not properties of the weights. They are code you write.
+
+## A harness is everything that is not the model
+
+The model does one thing: given a context, it produces the next message. Everything else is harness:
+
+- **The loop**: call the model, run tools, append results, decide when to stop ([Stop Conditions](/c/stop_conditions/)).
+- **Prompt assembly**: build the context for every call from the system prompt, tool schemas, project instructions, memory and history ([Assembling the Context](/c/prompt_assembly/)).
+- **Tool runtime**: run the real function, catch errors, and format the result ([Tool Errors](/c/tool_errors/)).
+- **Context management**: summarize or offload before the window fills ([Context Management](/c/context_mgmt/)).
+- **Permissions and sandboxing**: decide what runs, what asks first, and what never runs ([Permissions](/c/permissions/)).
+- **State, hooks and UI**: save the session, run your code around tool calls, show progress and let a person interrupt ([Hooks](/c/hooks/), [Sessions](/c/sessions/), [Streaming](/c/streaming/)).
+
+<Flow steps={["Task", { label: "Assemble context", sub: "prompt, rules, memory" }, { label: "Model", sub: "the only non-harness part", kind: "hl" }, { label: "Permission check", sub: "allow, ask, deny" }, { label: "Tool runtime", sub: "run, catch, format" }, { label: "Compact + stop check" }]} loop loopLabel="next turn" caption="One turn of an agent. Every box except the model is harness." />
+
+In the lab you fix the four failures without touching the model: describe the three tools, cap the loop at 25 turns, add a compactor, and deny the raw shell. That is preset B. Same model, about 94% solved.
+
+## Let us check the math
+
+Take one of the big refactors. The prefix (system prompt plus tool schemas) is 2,000 tokens, the task adds 200, and every turn adds about 2,600 tokens of file contents and diffs. The window is 16,000 tokens. The model needs at least 9 turns to finish.
+
+<Callout type="math" label="Let us check the math">
+Context after n turns: 2,200 + 2,600 × n.<br />
+After 5 turns: 2,200 + 13,000 = **15,200**. After 6: 2,200 + 15,600 = **17,800**, over the 16,000 window.<br />
+So on turn 6 the oldest messages fall out, task included, three turns before the work is done.<br />
+With a compactor at 75% (12,000 tokens), compaction fires after turn 4 at 12,600 tokens and summarizes it to the 2,200-token prefix and task, an 800-token summary, and 10% of the other 10,400 tokens ≈ **4,040 tokens**. The task survives.
+</Callout>
+
+Now the whole batch. In preset A, roughly 2 of the 10 tasks die from guessing, about 2 from `rm -rf`, the long refactors from overflow, and the stuck one from a runaway. That is how you land near 47%. Preset B removes each cause with one harness change, and success roughly doubles while average cost goes *down* (about $0.18 to $0.14 per task at sim prices: medium tier, $3 per million input and $15 per million output tokens, illustrative), because fewer turns are wasted.
+
+## The tradeoff: every harness part is a decision you now own
+
+A harness gives you control, and control means more decisions that can be wrong.
+
+- **Caps cut both ways.** A 25-turn cap kills the flaky-test loop, but it also stops a legitimate 30-turn migration. You tune caps per task type ([Stop Conditions](/c/stop_conditions/)).
+- **Compaction loses detail.** A summary keeps the task but drops exact lines the model read 40 turns ago. Offloading to files keeps them retrievable at the cost of extra reads ([Context Management](/c/context_mgmt/)).
+- **Permissions add friction.** Denying the shell blocks `rm -rf`, and also blocks the harmless `ls` the model wanted. Ask rules put a human in the loop, and too many of them train the human to click yes without reading ([Permissions](/c/permissions/)).
+
+The rest of this section takes the harness apart one piece at a time.
+
+## In the real world
+
+Claude Code, Codex CLI, Cursor's agent and OpenHands can all be pointed at the same frontier models, and they behave differently because their harnesses differ. Claude Code loads `CLAUDE.md` files into the prompt, auto-compacts long sessions, and has permission modes plus allow, ask and deny rules for tools. Codex CLI reads `AGENTS.md` and runs commands inside an OS-level sandbox. OpenHands runs the agent's actions in a Docker container. Benchmark papers call this layer the scaffold, and a model's score on a coding benchmark is always a score for a model *plus* a scaffold.

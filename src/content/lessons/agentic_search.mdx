@@ -1,0 +1,96 @@
+---
+title: "Agentic Search vs RAG"
+section: "memory"
+order: 28
+tagline: "Let the agent grep, open files and follow links itself."
+realWorld: "Coding agents that search with grep instead of a vector DB"
+build:
+  type: "lab"
+  scenario: "agentic_search"
+terms:
+  - term: "agentic search"
+    def: "Retrieval done by the agent itself in the loop: it chooses queries, runs search tools like grep, opens results, and searches again based on what it read."
+  - term: "grep"
+    def: "A command-line tool that finds lines matching a text pattern or regular expression across files, returning the path and line number of each match."
+  - term: "index staleness"
+    def: "The gap between what a search index contains and what the source looks like now; an embedding index of code goes stale with every commit."
+usedIn: ["deepresearch/2"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Why does embedding search often return the wrong code for 'where is the webhook retry cap set?'"
+    options: ["Embeddings cannot represent code at all", "Code that looks similar (the HTTP client's retry logic) can outrank the code the question is about (the webhook dispatcher)", "The vector database is too slow"]
+    answer: 1
+    why: "Similarity is about wording and topic. Two retry loops look alike; only the exact names tell you which one is webhook delivery."
+  - q: "In the lab, RAG costs $0.020 per question at 45% accuracy and agentic search costs $0.035 at 98%. Which is cheaper per correct answer?"
+    options: ["RAG, about $0.020", "Agentic search, about $0.036 versus about $0.044 for RAG", "They are the same"]
+    answer: 1
+    why: "Divide cost by accuracy: 0.020 / 0.45 ≈ $0.044 and 0.035 / 0.98 ≈ $0.036. Wrong answers are not free; someone has to redo them."
+  - q: "When is a vector index still the better choice?"
+    options: ["A large prose corpus where users phrase questions in words the documents do not use", "A 2,000-file repo with clear function names", "Never; grep is always better"]
+    answer: 0
+    why: "Grep needs the right words. When vocabulary differs and the corpus is huge, semantic search finds candidates grep would miss."
+reading:
+  - title: "Anthropic: Claude Code best practices"
+    url: "https://www.anthropic.com/engineering/claude-code-best-practices"
+  - title: "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering"
+    url: "https://arxiv.org/abs/2405.15793"
+---
+
+## It found retry code. It was the wrong retry code.
+
+A developer asks your agent: "What is the maximum delay between webhook retries, and where is it set?" The codebase has 2,400 files. A retriever embeds the question and pastes in the 3 most similar chunks. The top hit is `http/client.py`, the HTTP client's exponential backoff for outgoing API calls. The agent answers "30 seconds, line 88". The real cap is 15 minutes, in `webhooks/dispatcher.py`.
+
+In the lab, this setup gets **45%** of codebase questions right. The retriever is working as designed. It returned the most similar code. Similar was the problem.
+
+## Code has names, and similarity ignores them
+
+Embeddings compare meaning and topic. Two retry loops with backoff look almost the same, whatever they retry. What separates them is exact names: `WEBHOOK_MAX_BACKOFF`, `dispatch_with_retry`, `validate_api_key`. Those are precisely what embeddings blur.
+
+Code also breaks the other assumptions of [RAG](/c/rag/):
+
+- **The answer spans files.** The constant is defined in `config/settings.py`, but the dispatcher clamps it with `min(WEBHOOK_MAX_BACKOFF, 900)`. A single search returns one of them.
+- **Chunks cut functions.** A fixed-size chunker splits a function from its callers, or its signature from its body ([Chunking](/c/chunking/)).
+- **The index goes stale.** Code changes on every commit. An embedding index has to be rebuilt to stay true, and a stale one returns code that no longer exists.
+
+## Give the agent search tools and let it look
+
+**Agentic search** moves retrieval into the [agent loop](/c/agent_loop/). Instead of one search before the model answers, you give the model tools, and it searches the way a developer would.
+
+- `grep` for the exact name or a pattern: `grep -rn "MAX_BACKOFF" src/`
+- `read_file` on the hit, to see the code around it
+- `grep` again for what it just learned: who calls `dispatch_with_retry`, where the constant is overridden
+- answer, citing file and line
+
+<Flow steps={["Question", { label: "grep", sub: "exact name", kind: "hl" }, { label: "read_file", sub: "code around the hit" }, { label: "grep again", sub: "callers, overrides" }, { label: "Answer", sub: "file:line", kind: "good" }]} loop loopLabel="search again with what it learned" caption="Agentic search: the model writes the queries, reads the results, and decides when it has enough." />
+
+Each step uses what the last one found. That is the advantage over one-shot retrieval: the agent can refine its query, follow a reference, and notice when a matching line is not the whole story. In the lab, grep alone gets to 35% (the agent answers from the grep hit without opening the file). Grep plus `read_file` gets **98%**.
+
+There is no index to build. The search runs against the files as they are right now.
+
+## Let us check the math
+
+Using the lab's numbers, at sim prices for a medium model (illustrative):
+
+<Callout type="math" label="Let us check the math">
+**RAG:** 2 turns, about **$0.020** per question, 45% correct.<br />
+Cost per correct answer: 0.020 / 0.45 ≈ **$0.044**.<br />
+**Agentic search:** about 3.5 turns, **$0.035** per question, 98% correct.<br />
+Cost per correct answer: 0.035 / 0.98 ≈ **$0.036**.<br />
+**Latency:** 3.2 s versus 6.4 s per question, twice as slow.<br />
+**The index you skip:** 2,400 files × about 1,500 tokens = 3.6 million tokens to embed, then re-embed the changed files on every commit.
+</Callout>
+
+Agentic search costs 75% more per question and is cheaper per right answer, because a wrong answer about code costs a developer far more than three cents.
+
+## The tradeoff: the agent has to know what to look for
+
+Grep is exact, which is both its strength and its weakness.
+
+- **Vocabulary mismatch.** If the user says "login" and the code says `authenticate`, grep finds nothing. Good agents try synonyms and patterns, but on a large prose corpus (support tickets, legal documents) a semantic index still finds candidates grep cannot. Many systems give the agent both: grep plus a `semantic_search` tool.
+- **More turns, more tokens.** Each search adds results to the context. Delegate wide searches to a [subagent](/c/subagents/) that returns a short summary, and set [stop conditions](/c/stop_conditions/) so a fruitless search ends.
+- **Tool design matters.** Results need paths and line numbers, and caps on output size, or one broad grep floods the window ([Designing Good Tools](/c/tool_design/)).
+
+## In the real world
+
+Claude Code searches a repository with tools (Grep, Glob, Read) in its loop, and does not build an embedding index of your code. Its developers have said publicly that they tried vector-database RAG early on and found agentic search worked better for code. The SWE-agent research project reached a related conclusion: giving the model compact search and file-viewing commands with clear output improved how many real GitHub issues it could fix.

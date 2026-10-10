@@ -1,0 +1,110 @@
+---
+title: "Parallel Tool Calls"
+section: "tools"
+order: 13
+tagline: "Independent calls in one turn cut latency."
+realWorld: "Fetching 5 files at once instead of one per turn"
+build:
+  type: "lab"
+  scenario: "parallel_tools"
+terms:
+  - term: "parallel tool calls"
+    def: "Several tool_use blocks in a single model response, which the harness can run at the same time and answer with one message of tool results."
+  - term: "independent calls"
+    def: "Tool calls where no call needs another call's output as its input, so the order they run in does not matter."
+  - term: "round trip"
+    def: "One model call plus the tool calls it requested, measured as the time until the next model call can start."
+usedIn: ["deepresearch/3"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Which pair of calls can safely run in parallel?"
+    options: ["web_search, then fetch_page on a URL from its results", "fetch_page on five URLs you already have", "create_branch, then commit to that branch"]
+    answer: 1
+    why: "The five fetches don't use each other's output. The other pairs need the first call's result before the second can start."
+  - q: "Five tools in one turn take 0.4s, 0.9s, 1.5s, 1.1s and 0.7s. Run in parallel, how long does the tool step take?"
+    options: ["About 0.9s, the average", "About 1.5s, the slowest call", "About 4.6s, the sum"]
+    answer: 1
+    why: "Parallel calls finish when the last one does, so the step costs the slowest call, not the sum."
+  - q: "Your model returns 3 tool_use blocks in one response. How should you send back the results?"
+    options: ["One user message holding all 3 tool_result blocks", "Three separate user messages, one per result", "Only the first result; the model will ask again for the rest"]
+    answer: 0
+    why: "Each tool_result names its tool_use_id, and all of them go back together in the next user message."
+reading:
+  - title: "Anthropic docs: Tool use with Claude"
+    url: "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview"
+  - title: "Anthropic: How we built our multi-agent research system"
+    url: "https://www.anthropic.com/engineering/multi-agent-research-system"
+---
+
+## Your research agent spends 19 seconds reading five pages
+
+A research agent answers "How many heat pumps were installed in the UK in 2025?" It searches, then reads the top 5 results with `fetch_page`, then writes a comparison. Each answer takes about 19 seconds and 7 turns.
+
+The transcript shows why. It fetches page 1 and waits. Then it calls the model, which asks for page 2. Then it waits again. Five pages, five round trips, each one a model call of 1.6 seconds plus a 1.5-second fetch.
+
+## The calls don't depend on each other, but the loop pretends they do
+
+The search has to come first, because the fetches need its URLs. After that, the five fetches are **independent**: page 3 does not need anything from page 2. You could hand all five URLs to five people at once.
+
+The loop from [The Agent Loop](/c/agent_loop/) runs one step at a time. If the model asks for one page per turn, the harness waits for that page, sends it back, and calls the model again just to hear "now page 2". Four of those five model calls add nothing. They only exist because the model asked for one thing at a time.
+
+They also cost money. Every turn resends the whole conversation, so each extra turn pays again for the system prompt, the search results and every page read so far.
+
+## Ask for all of them at once, run them at the same time
+
+Models with tool use can put **several `tool_use` blocks in one response**. The harness then does two things:
+
+1. Runs the calls concurrently, so the step takes as long as the slowest call.
+2. Sends every `tool_result` back in **one** user message, each tagged with its `tool_use_id`.
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+def run_all(calls, messages):
+    def one(call):
+        try:
+            out = TOOLS[call.name](**call.input)
+            return {"type": "tool_result", "tool_use_id": call.id, "content": out}
+        except Exception as e:
+            return {"type": "tool_result", "tool_use_id": call.id,
+                    "content": f"{call.name} failed: {e}", "is_error": True}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(one, calls))
+    messages.append({"role": "user", "content": results})
+```
+
+<Flow steps={["web_search", { label: "Model", sub: "asks for 5 fetches at once", kind: "hl" }, { label: "Harness", sub: "runs 5 fetch_page in parallel" }, { label: "One message", sub: "5 tool_results", kind: "good" }, "Answer"]} caption="Three turns instead of seven. The fetch step costs the slowest page, not the sum." />
+
+Two details matter:
+
+- **Each call fails on its own.** One bad URL should not lose the other four pages. Return an `is_error` result for that one and keep the rest.
+- **Encourage it in the prompt.** Models parallelize more when you say so: "When calls don't depend on each other, make them all in one response."
+
+## Let us check the math
+
+Each model call takes 1.6 seconds, a fetch 1.5 seconds, a search 0.4. The context starts at 1,400 tokens, the search adds 800, and each page adds 1,200.
+
+<Callout type="math" label="Let us check the math">
+**Sequential**, 7 turns: search (1.6 + 0.4) + 5 fetches × (1.6 + 1.5) + answer 1.6 = 2.0 + 15.5 + 1.6 = **19.1 s**.<br />
+Input per turn: 1.4k, 2.2k, 3.4k, 4.6k, 5.8k, 7.0k, 8.2k = **32.6k tokens**.<br />
+**Parallel**, 3 turns: search 2.0 + one fetch turn (1.6 + 1.5) + answer 1.6 = **6.7 s**.<br />
+Input: 1.4k + 2.2k + 8.2k = **11.8k tokens**.<br />
+At medium sim prices ($3 per million input, illustrative): $0.098 vs $0.035 per question. About 65% less time and 64% less input.
+</Callout>
+
+The latency win grows with the number of calls. Ten independent fetches save nine round trips.
+
+## The tradeoff: parallel is only safe when the calls really are independent
+
+Running calls together trades simplicity for speed, and it has limits:
+
+- **Hidden dependencies.** `create_branch` then `commit` must stay in order. So must two writes to the same file. Keep side-effecting tools sequential unless you know they don't collide ([Retries and Idempotent Tools](/c/idempotency/)).
+- **Bursts of load.** Five calls at once is five times the request rate on someone's API. Cap concurrency and handle rate limits and timeouts ([Timeouts and Fallbacks](/c/timeouts/)).
+- **A big context, all at once.** Five pages land in one turn: 6,000 tokens in a single step. Hand big reads to a [subagent](/c/subagents/) that returns a summary, or [compact](/c/context_mgmt/) early.
+
+This lesson is about parallel *tool calls* inside one turn. Running several *model calls* side by side and combining them is [Parallelization and Voting](/c/parallelization/).
+
+## In the real world
+
+Claude Code shows this openly: one assistant message often holds several `Read` or `Grep` calls, and the results come back together. Anthropic's write-up of its multi-agent research system reports that letting subagents run in parallel, and letting each one call several tools in parallel, cut research time by up to 90% on complex queries.

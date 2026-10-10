@@ -1,0 +1,501 @@
+{
+  "id": "case_support_agent",
+  "title": "Design a Support Agent",
+  "brief": "A mini Fin-style support agent for an online store. Four kinds of conversation: a billing question the help center answers, an order status check, a $24 refund the agent may grant, and a $480 refund that policy says a human must approve. The draft can look up orders and issue refunds, and nothing else. Get 85% resolved correctly, zero incidents, no more than 0.3 human approvals per conversation, and at least 90% of tool calls doing something useful.",
+  "palette": [
+    "model",
+    "loop",
+    "tool",
+    "retriever",
+    "router",
+    "approval"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 180
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 180
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 480,
+          "y": 180
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "lookup_order",
+          "description": "Gets an order by ID: items, amount, shipping status and delivery date. Use this for order status and refund checks."
+        },
+        "position": {
+          "x": 760,
+          "y": 60
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "issue_refund",
+          "description": "Refunds an order to the original payment method. Agent limit is $100."
+        },
+        "position": {
+          "x": 760,
+          "y": 180
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 180
+        }
+      },
+      {
+        "id": "r",
+        "type": "router",
+        "data": {
+          "routes": "question, order, refund, other"
+        },
+        "position": {
+          "x": 120,
+          "y": 40
+        }
+      },
+      {
+        "id": "k",
+        "type": "retriever",
+        "data": {
+          "chunkSize": 400,
+          "overlap": 50,
+          "topK": 4
+        },
+        "position": {
+          "x": 120,
+          "y": 330
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 300,
+          "y": 180
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 520,
+          "y": 180
+        }
+      },
+      {
+        "id": "a",
+        "type": "approval",
+        "data": {
+          "rule": "irreversible"
+        },
+        "position": {
+          "x": 520,
+          "y": 360
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "lookup_order",
+          "description": "Gets an order by ID: items, amount, shipping status and delivery date. Use this for order status and refund checks."
+        },
+        "position": {
+          "x": 780,
+          "y": 40
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "issue_refund",
+          "description": "Refunds an order to the original payment method. Agent limit is $100."
+        },
+        "position": {
+          "x": 780,
+          "y": 160
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "escalate_to_human",
+          "description": "Hands the conversation to a human agent with a short summary. Use this for refunds over $100, angry customers, or anything the help center does not cover."
+        },
+        "position": {
+          "x": 780,
+          "y": 280
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "r"
+      },
+      {
+        "source": "r",
+        "target": "m"
+      },
+      {
+        "source": "k",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "a"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Billing question",
+      "prompt": "Can I switch from monthly to annual billing in the middle of my cycle?",
+      "tags": [
+        "question"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Order status",
+      "prompt": "Where is my order #A1043? It was due Tuesday.",
+      "needs": [
+        "lookup_order"
+      ],
+      "tags": [
+        "order"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Small refund",
+      "prompt": "My $24 mug from order #A1088 arrived broken. Can I get my money back?",
+      "needs": [
+        "lookup_order",
+        "issue_refund"
+      ],
+      "tags": [
+        "refund"
+      ]
+    },
+    {
+      "id": "t4",
+      "label": "Large refund",
+      "prompt": "I forgot to cancel and got charged $480 for the annual plan (order #A1107). Refund it.",
+      "needs": [
+        "lookup_order",
+        "escalate_to_human"
+      ],
+      "tags": [
+        "big_refund"
+      ]
+    }
+  ],
+  "actions": {
+    "lookup": {
+      "kind": "tool",
+      "tool": "lookup_order",
+      "text": "lookup_order(\"A1043\")",
+      "tokens": 400
+    },
+    "fumble": {
+      "kind": "tool",
+      "tool": "lookup_order",
+      "text": "lookup_order(\"latest\") (the question is about billing policy, not an order)",
+      "tokens": 400
+    },
+    "refund": {
+      "kind": "tool",
+      "tool": "issue_refund",
+      "text": "issue_refund(order=\"A1088\", amount=24.00, reason=\"arrived damaged\")",
+      "tokens": 200
+    },
+    "big_refund": {
+      "kind": "dangerous",
+      "tool": "issue_refund",
+      "text": "issue_refund(order=\"A1107\", amount=480.00, reason=\"customer request\")",
+      "incident": "Refunded $480 with no human sign-off. Policy caps agent refunds at $100."
+    },
+    "escalate": {
+      "kind": "tool",
+      "tool": "escalate_to_human",
+      "text": "escalate_to_human(reason=\"refund over $100\", summary=\"Annual plan, charged $480 on renewal, asks for a refund\")",
+      "tokens": 250
+    },
+    "answer_rag": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Yes. You can switch to annual at any time; we credit the unused days of this month. [Source: Billing > Changing your plan]"
+    },
+    "answer_guess": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Annual plans can only start on the 1st of the month, so you will need to wait. (No such policy exists.)"
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Done. I checked the order and took care of it; here is what happens next."
+    },
+    "wrong": {
+      "kind": "answer",
+      "correct": false,
+      "text": "I've refunded your order."
+    }
+  },
+  "policy": {
+    "base": {
+      "lookup": 0,
+      "fumble": 0,
+      "refund": 0,
+      "big_refund": 0,
+      "escalate": 0,
+      "answer_rag": 0,
+      "answer_guess": 0,
+      "done": 0,
+      "wrong": 0.05
+    },
+    "modifiers": [
+      {
+        "when": {
+          "tag": "question"
+        },
+        "set": {
+          "answer_guess": 3,
+          "fumble": 3
+        },
+        "note": "Without the help center, it answers policy questions from memory."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "question"
+            },
+            {
+              "edge": [
+                "retriever",
+                "model"
+              ]
+            }
+          ]
+        },
+        "set": {
+          "answer_rag": 8
+        },
+        "scale": {
+          "answer_guess": 0.03
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "question"
+            },
+            {
+              "has": "router"
+            }
+          ]
+        },
+        "scale": {
+          "fumble": 0.05
+        },
+        "note": "Routed as a question, it does not go looking for an order."
+      },
+      {
+        "when": {
+          "not": {
+            "tag": "question"
+          }
+        },
+        "shift": {
+          "lookup": 5
+        }
+      },
+      {
+        "when": {
+          "called": "lookup_order"
+        },
+        "scale": {
+          "lookup": 0.1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "refund"
+            },
+            {
+              "called": "lookup_order"
+            }
+          ]
+        },
+        "shift": {
+          "refund": 5
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "big_refund"
+            },
+            {
+              "called": "lookup_order"
+            }
+          ]
+        },
+        "shift": {
+          "big_refund": 5,
+          "escalate": 3,
+          "wrong": 0.6
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "big_refund"
+            },
+            {
+              "has": "router"
+            }
+          ]
+        },
+        "scale": {
+          "big_refund": 0.1
+        },
+        "note": "The refund route's prompt states the $100 limit."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 8,
+          "wrong": 0.1,
+          "big_refund": 0
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% resolved correctly",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "incidents",
+      "label": "Zero incidents",
+      "metric": "incidents",
+      "op": "==",
+      "value": 0
+    },
+    {
+      "id": "approvals",
+      "label": "0.3 or fewer human approvals per conversation",
+      "metric": "approvals_per_task",
+      "op": "<=",
+      "value": 0.3
+    },
+    {
+      "id": "tools",
+      "label": "90% or more of tool calls useful",
+      "metric": "tool_accuracy",
+      "op": ">=",
+      "value": 0.9
+    }
+  ],
+  "hints": [
+    "Read the billing question transcript: it answers from memory. Then read the $480 refund: what should it do instead, and what stops it if it tries anyway?",
+    "Four parts of a support agent: a help-center retriever, a router that classifies the request first, an escalation tool, and an approval gate on refunds the agent may not grant.",
+    "Add a Retriever wired into the model, a Router between the user and the model, an escalate_to_human tool, and a Human approval node (rule: irreversible) on the loop."
+  ],
+  "explain": "Fin-style support agents answer from the help center, classify before acting, and hand off to a human when policy says so. The approval gate is the backstop, not the plan: it should fire rarely."
+}

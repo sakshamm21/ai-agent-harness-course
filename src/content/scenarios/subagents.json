@@ -1,0 +1,411 @@
+{
+  "id": "subagents",
+  "title": "Subagents",
+  "brief": "The payments team is retiring charge_v1. For each of three services the agent must find every caller, read them, migrate them to charge_v2 and run the tests. The main agent here has a 32k-token window, and the search alone returns about 15k tokens of grep output, then 18k of file contents. Right now all of it lands in the main context, the window overflows, and the task falls out. Get at least 85% right while the main context never goes above 16k tokens.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "subagent"
+  ],
+  "window": 32000,
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "grep",
+          "description": "Searches every file in the repo for a pattern and returns matching lines with context."
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text."
+        },
+        "position": {
+          "x": 740,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the test suite and returns failures."
+        },
+        "position": {
+          "x": 740,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "grep",
+          "description": "Searches every file in the repo for a pattern and returns matching lines with context."
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text."
+        },
+        "position": {
+          "x": 740,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the test suite and returns failures."
+        },
+        "position": {
+          "x": 740,
+          "y": 330
+        }
+      },
+      {
+        "id": "sa",
+        "type": "subagent",
+        "data": {
+          "tier": "small"
+        },
+        "position": {
+          "x": 480,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      },
+      {
+        "source": "l",
+        "target": "sa"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "billing-api",
+      "prompt": "In billing-api, migrate every caller of charge_v1(amount, card) to charge_v2(amount, card, idempotency_key). Keep the tests green.",
+      "needs": [
+        "grep",
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "checkout-web",
+      "prompt": "In checkout-web, migrate every caller of charge_v1 to charge_v2. Pass the cart id as the idempotency key. Keep the tests green.",
+      "needs": [
+        "grep",
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "subscriptions",
+      "prompt": "In subscriptions, migrate every caller of charge_v1 to charge_v2, including the retry worker. Keep the tests green.",
+      "needs": [
+        "grep",
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    }
+  ],
+  "actions": {
+    "plan": {
+      "kind": "think",
+      "text": "Plan: find every charge_v1 call site, read each one, migrate them, run the tests.",
+      "tokens": 200
+    },
+    "grep": {
+      "kind": "tool",
+      "tool": "grep",
+      "text": "grep -rn \"charge_v1\" . (212 matching lines with 5 lines of context each)",
+      "tokens": 15000,
+      "offloadable": true
+    },
+    "read": {
+      "kind": "tool",
+      "tool": "read_file",
+      "text": "read_file x11: every file with a real call site, to see how amount and card are built",
+      "tokens": 18000,
+      "offloadable": true
+    },
+    "edit": {
+      "kind": "tool",
+      "tool": "edit_file",
+      "text": "edit_file x11: charge_v1(amount, card) \u2192 charge_v2(amount, card, idempotency_key=order.id)",
+      "tokens": 700
+    },
+    "test": {
+      "kind": "tool",
+      "tool": "run_tests",
+      "text": "run_tests()",
+      "tokens": 900
+    },
+    "wrong": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Done. I updated the call sites I could see. (The task and the first grep results fell out of the window, so 4 callers were never migrated.)"
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Done. Migrated all 11 call sites to charge_v2 with an idempotency key; 86 tests pass."
+    }
+  },
+  "policy": {
+    "base": {
+      "plan": 0.6,
+      "grep": 4,
+      "read": 0,
+      "edit": 0,
+      "test": 0,
+      "wrong": 0,
+      "done": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "called": "grep"
+        },
+        "set": {
+          "plan": 0,
+          "grep": 0.1
+        },
+        "shift": {
+          "read": 4
+        }
+      },
+      {
+        "when": {
+          "called": "read_file"
+        },
+        "set": {
+          "read": 0.1
+        },
+        "shift": {
+          "edit": 3
+        }
+      },
+      {
+        "when": {
+          "called": "edit_file"
+        },
+        "shift": {
+          "test": 3
+        }
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 8
+        }
+      },
+      {
+        "when": {
+          "state": "lost_instructions"
+        },
+        "set": {
+          "wrong": 6
+        },
+        "scale": {
+          "done": 0.08,
+          "edit": 0.5
+        },
+        "note": "The original task fell out of the window. The model finishes from what it can still see."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "Migrate at least 85% correctly",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "ctx",
+      "label": "Main context stays under 16k tokens",
+      "metric": "max_context",
+      "op": "<=",
+      "value": 16000
+    }
+  ],
+  "hints": [
+    "Watch the context meter in the transcript: grep plus the file reads add about 33k tokens to a 32k window. What happens to the task?",
+    "The main agent only needs the list of call sites and how they are built, not 212 lines of grep output. Something else could read all that and report back.",
+    "Add a Subagent node wired to the loop. The search and the reads run in its fresh context, and only a short summary comes back to the main agent."
+  ],
+  "explain": "A subagent spends its own context on the noisy part of the job and hands back a summary. The main agent keeps the task, the plan and the edits in view, so it finishes the job it was given."
+}

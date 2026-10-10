@@ -1,0 +1,112 @@
+---
+title: "Streaming and UX"
+section: "harness"
+order: 22
+tagline: "Show progress as it happens; let users interrupt."
+realWorld: "Token streaming and live tool status in chat UIs"
+build:
+  type: "code"
+  scenario: "streaming"
+terms:
+  - term: "streaming"
+    def: "Sending a model's output to the client piece by piece as it is generated, instead of waiting for the whole response."
+  - term: "time to first token"
+    def: "How long after the request the first piece of output arrives; it decides how fast an answer feels, even when the total time is the same."
+  - term: "server-sent events (SSE)"
+    def: "A simple HTTP format where the server keeps the response open and sends a series of named events, each as a few text lines."
+  - term: "interrupt"
+    def: "Stopping a run mid-turn at the user's request, while leaving the transcript in a valid state."
+usedIn: ["supportbot/8"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Streaming a 3-turn agent run changes which number the most?"
+    options: ["Total time to finish", "Time until the user sees the first words", "Total tokens billed"]
+    answer: 1
+    why: "The model generates at the same speed either way. Streaming shows the first words after about 0.6 s instead of at the very end."
+  - q: "In the Messages API, a tool call's input arrives as input_json_delta chunks. When can your harness run the tool?"
+    options: ["On the first chunk, to save time", "After the content block stops and the buffered JSON is complete", "Only after the next model call"]
+    answer: 1
+    why: "Each chunk is a fragment of a JSON string. Buffer them and parse once content_block_stop arrives; a partial object is not valid input."
+  - q: "The user presses Stop while the model is writing. What should the harness do with the transcript?"
+    options: ["Delete the whole turn", "Keep the partial text, mark it as stopped, and run no further tool calls", "Run the tool calls the model planned anyway"]
+    answer: 1
+    why: "Keeping what the user saw, marked as interrupted, leaves a valid transcript and matches the screen. Running planned calls after Stop ignores the user."
+reading:
+  - title: "Anthropic docs: Streaming messages"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/streaming"
+  - title: "MDN: Using server-sent events"
+    url: "https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events"
+---
+
+## The answer took 10 seconds. The screen was blank for all 10.
+
+Your support bot answers "Where is my order 4417?" in 3 turns: look up the order, look up the tracking scan, then write the answer. The whole run takes about 10.4 seconds. The harness waits for each full response, so the user sees a spinner for 10.4 s and then a wall of text.
+
+Your logs show what happens next. People click "send" again, which starts a second run and doubles the cost. Some close the tab. A few wait for an answer that turns out to be about the wrong order, and they could have told you that in the first second.
+
+## The user waits for the slowest moment, not the first
+
+A model writes its answer one token at a time, at roughly 60 tokens a second in this example. The first token is ready after about 0.6 s. The last one is ready seconds later. A harness that calls `complete()` and waits throws away that timing: everything shows up at once, at the end.
+
+Tool calls make it worse. While `lookup_order` runs, nothing at all is being generated. To the user, a working agent and a hung agent look the same.
+
+Two numbers matter. **Total time** is when the run is done. **Time to first token** is when the user first sees that something is happening. Streaming barely changes the first number. It changes the second one a lot.
+
+## Stream events from the model and from the loop
+
+Ask the API to stream. With the Messages API you set `"stream": true` and the response becomes a series of server-sent events (SSE): `message_start`, then for each content block a `content_block_start`, many `content_block_delta` events and a `content_block_stop`, then `message_delta` (with the stop reason and usage) and `message_stop`. Text arrives as `text_delta` chunks.
+
+Your harness turns those into its own events and adds the ones only it knows about, like tool start and finish:
+
+```python
+def on_event(e):
+    if e["type"] == "text_delta":
+        ui.append_text(e["text"])
+    elif e["type"] == "model" and e["tool_calls"]:
+        ui.status("Looking up: " + ", ".join(e["tool_calls"]) + "...")
+    elif e["type"] == "tool":
+        ui.status("✓ " + e["name"])
+
+text = ""
+for chunk in model.stream(messages, tools=tools):
+    if ui.stop_pressed():
+        return Response(text=text + " [stopped]")   # no tool calls: the loop ends
+    if chunk["type"] == "text_delta":
+        text += chunk["text"]
+    on_event(chunk)
+```
+
+<Flow steps={[{ label: "Model", sub: "SSE deltas", kind: "hl" }, { label: "Harness", sub: "adds tool status" }, { label: "UI", sub: "words + status line", kind: "good" }, { label: "Stop", sub: "user interrupts" }]} loop loopLabel="Stop flows back and ends the turn" caption="Events flow out as they happen; an interrupt flows back in." />
+
+Tool inputs stream too, as `input_json_delta` fragments of a JSON string. Buffer them and parse only when the block stops. Half an object is not a valid input.
+
+## Let us check the math
+
+Use 0.6 s to the first token, 60 output tokens per second, and 0.8 s per tool call.
+
+<Callout type="math" label="Let us check the math">
+**Turn 1:** 0.6 s + 60 tokens ÷ 60/s = 1.6 s, then `lookup_order` 0.8 s → 2.4 s.<br />
+**Turn 2:** the same shape → 2.4 s (running total 4.8 s).<br />
+**Turn 3:** 0.6 s + 300 tokens ÷ 60/s = 0.6 + 5.0 = 5.6 s → total **10.4 s**.<br /><br />
+**Without streaming:** first thing on screen at **10.4 s**.<br />
+**With streaming:** first words ("Let me check that order") at **0.6 s**, a status line at 1.6 s, the final answer starting at about 5.4 s.<br />
+Time to first token drops from 10.4 s to 0.6 s, about **17 times** sooner. Total time does not change at all.<br /><br />
+**Stop:** a user who sees the wrong order number after 100 of 300 answer tokens and presses Stop saves 200 output tokens, 200 × $15/M = **$0.003** at the medium sim price (illustrative), and 3.3 s.
+</Callout>
+
+The money saved by Stop is small. The real win is that a duplicate "send" no longer happens, because the user can see the run is alive.
+
+## The tradeoff: what you show, you can't take back
+
+Streaming puts text in front of a person before the turn is finished. That costs you three things.
+
+- **No last look.** You cannot check a whole answer for PII or a wrong refund promise before the first words are on screen. Either buffer the risky parts, or run checks per sentence. See [guardrails](/c/guardrails/).
+- **Errors arrive mid-stream.** The HTTP status was 200, and then an `error` event (for example, overloaded) arrives after 200 words. The UI must show what failed and offer a retry, which is [timeouts and fallbacks](/c/timeouts/).
+- **Interrupts must leave a valid transcript.** Keep the partial text, mark it stopped, and never leave a `tool_use` without a `tool_result`. The same repair you used for [sessions](/c/sessions/) applies.
+
+## In the real world
+
+Chat apps built on the Messages API, like Claude's own apps, show words as they are generated and a line such as "Searching the web" while a tool runs. That is the event pattern above: `text_delta` chunks for the words, and harness events for the tool status. The SSE stream also sends `ping` events to keep the connection open during long pauses.
+
+In part 8 of supportbot you will stream these events to a single HTML page with a status line and a Stop button.

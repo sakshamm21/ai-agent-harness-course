@@ -1,0 +1,1243 @@
+{
+  "id": "tool_design",
+  "title": "Designing Good Tools",
+  "brief": "A support agent has three tools: search (the public web), search_docs (our help center) and search_tickets (past support cases). Their descriptions are a few words each, so the model picks the wrong one more than half the time. Keep the names and rewrite the descriptions until more than 90% of tool calls hit the right tool.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "search",
+          "description": "Search for things."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "search_docs",
+          "description": "Search the docs."
+        },
+        "position": {
+          "x": 780,
+          "y": 120
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "search_tickets",
+          "description": "Search tickets."
+        },
+        "position": {
+          "x": 780,
+          "y": 240
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "search",
+          "description": "Queries the public internet for news, competitor pages and anything outside our company. Do not use for product how-to or customer questions."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "search_docs",
+          "description": "Finds help center articles by keyword and returns titles with short excerpts. Use this for how-to questions about features, settings, billing or exports."
+        },
+        "position": {
+          "x": 780,
+          "y": 120
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "search_tickets",
+          "description": "Looks up past support cases by customer ID, email or bug title. Use it to check whether someone already reported an issue and what we told them."
+        },
+        "position": {
+          "x": 780,
+          "y": 240
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Export to CSV",
+      "prompt": "How do I export a report to CSV?",
+      "needs": [
+        "search_docs"
+      ],
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Known login bug",
+      "prompt": "Has customer #4411 already reported the login loop bug?",
+      "needs": [
+        "search_tickets"
+      ],
+      "tags": [
+        "tickets"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "SSO setup",
+      "prompt": "Where do I turn on single sign-on for my workspace?",
+      "needs": [
+        "search_docs"
+      ],
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "id": "t4",
+      "label": "Refund history",
+      "prompt": "Did we already refund jane@example.com for the March outage?",
+      "needs": [
+        "search_tickets"
+      ],
+      "tags": [
+        "tickets"
+      ]
+    }
+  ],
+  "actions": {
+    "t1_right": {
+      "kind": "tool",
+      "tool": "search_docs",
+      "text": "search_docs(\"export report csv\")",
+      "tokens": 700
+    },
+    "t1_mixup": {
+      "kind": "tool",
+      "tool": "search_tickets",
+      "text": "search_tickets(\"export report csv\")  -> 0 cases. Wrong tool: this is a how-to question.",
+      "tokens": 250
+    },
+    "t1_web": {
+      "kind": "tool",
+      "tool": "search",
+      "text": "search(\"export report csv\")  -> 10 public web results. Wrong tool: none of them are about our product or customers.",
+      "tokens": 1100
+    },
+    "t1_bad": {
+      "kind": "answer",
+      "correct": false,
+      "text": "I couldn't find export steps. Maybe try right-clicking the report? (Answered from the wrong tool's results.)"
+    },
+    "t1_done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Go to Reports, open the report, then Export > CSV. Scheduled exports are under the same menu (help article: \"Exporting reports\")."
+    },
+    "t2_right": {
+      "kind": "tool",
+      "tool": "search_tickets",
+      "text": "search_tickets(\"customer 4411 login loop\")",
+      "tokens": 600
+    },
+    "t2_mixup": {
+      "kind": "tool",
+      "tool": "search_docs",
+      "text": "search_docs(\"customer 4411 login loop\")  -> 0 articles. Wrong tool: the help center has no customer cases.",
+      "tokens": 250
+    },
+    "t2_web": {
+      "kind": "tool",
+      "tool": "search",
+      "text": "search(\"customer 4411 login loop\")  -> 10 public web results. Wrong tool: none of them are about our product or customers.",
+      "tokens": 1100
+    },
+    "t2_bad": {
+      "kind": "answer",
+      "correct": false,
+      "text": "I don't see any record of that. It looks like a new report. (Answered from the wrong tool's results.)"
+    },
+    "t2_done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Yes. Customer #4411 opened case #8812 on May 3 about the login loop; engineering linked it to the SSO redirect bug."
+    },
+    "t3_right": {
+      "kind": "tool",
+      "tool": "search_docs",
+      "text": "search_docs(\"enable single sign-on workspace\")",
+      "tokens": 700
+    },
+    "t3_mixup": {
+      "kind": "tool",
+      "tool": "search_tickets",
+      "text": "search_tickets(\"enable single sign-on workspace\")  -> 0 cases. Wrong tool: this is a how-to question.",
+      "tokens": 250
+    },
+    "t3_web": {
+      "kind": "tool",
+      "tool": "search",
+      "text": "search(\"enable single sign-on workspace\")  -> 10 public web results. Wrong tool: none of them are about our product or customers.",
+      "tokens": 1100
+    },
+    "t3_bad": {
+      "kind": "answer",
+      "correct": false,
+      "text": "SSO is usually under your identity provider's settings. Check with your IT team. (Answered from the wrong tool's results.)"
+    },
+    "t3_done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Admins turn on SSO under Settings > Security > Single sign-on. You need the Business plan (help article: \"Set up SAML SSO\")."
+    },
+    "t4_right": {
+      "kind": "tool",
+      "tool": "search_tickets",
+      "text": "search_tickets(\"jane@example.com refund March outage\")",
+      "tokens": 600
+    },
+    "t4_mixup": {
+      "kind": "tool",
+      "tool": "search_docs",
+      "text": "search_docs(\"jane@example.com refund March outage\")  -> 0 articles. Wrong tool: the help center has no customer cases.",
+      "tokens": 250
+    },
+    "t4_web": {
+      "kind": "tool",
+      "tool": "search",
+      "text": "search(\"jane@example.com refund March outage\")  -> 10 public web results. Wrong tool: none of them are about our product or customers.",
+      "tokens": 1100
+    },
+    "t4_bad": {
+      "kind": "answer",
+      "correct": false,
+      "text": "I found nothing about a refund, so probably not. You could issue one now. (Answered from the wrong tool's results.)"
+    },
+    "t4_done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Yes. Case #9020 shows a $120 credit issued to jane@example.com on March 14 for the outage."
+    }
+  },
+  "policy": {
+    "base": {
+      "t1_right": 0,
+      "t1_mixup": 0,
+      "t1_web": 0,
+      "t1_bad": 0,
+      "t1_done": 0,
+      "t2_right": 0,
+      "t2_mixup": 0,
+      "t2_web": 0,
+      "t2_bad": 0,
+      "t2_done": 0,
+      "t3_right": 0,
+      "t3_mixup": 0,
+      "t3_web": 0,
+      "t3_bad": 0,
+      "t3_done": 0,
+      "t4_right": 0,
+      "t4_mixup": 0,
+      "t4_web": 0,
+      "t4_bad": 0,
+      "t4_done": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "task": "t1"
+        },
+        "set": {
+          "t1_right": 1.5,
+          "t1_mixup": 1,
+          "t1_web": 1
+        },
+        "note": "With vague descriptions the three search tools look alike, so the name is the only hint."
+      },
+      {
+        "when": {
+          "task": "t2"
+        },
+        "set": {
+          "t2_right": 1.5,
+          "t2_mixup": 1,
+          "t2_web": 1
+        }
+      },
+      {
+        "when": {
+          "task": "t3"
+        },
+        "set": {
+          "t3_right": 1.5,
+          "t3_mixup": 1,
+          "t3_web": 1
+        }
+      },
+      {
+        "when": {
+          "task": "t4"
+        },
+        "set": {
+          "t4_right": 1.5,
+          "t4_mixup": 1,
+          "t4_web": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "shift": {
+          "t1_right": 1
+        },
+        "note": "A clear description makes its own tool easier to pick and harder to pick by mistake."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t1_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t1_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "shift": {
+          "t2_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t2_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t2_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "shift": {
+          "t3_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t3_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t3_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "shift": {
+          "t4_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t4_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.5
+            }
+          ]
+        },
+        "scale": {
+          "t4_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "shift": {
+          "t1_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t1_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t1_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "shift": {
+          "t2_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t2_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t2_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "shift": {
+          "t3_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t3_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t3_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "shift": {
+          "t4_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t4_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "t4_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "shift": {
+          "t1_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t1_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t1_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "shift": {
+          "t2_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t2_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t2_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "shift": {
+          "t3_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t3_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t3_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search_tickets",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "shift": {
+          "t4_right": 1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search_docs",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t4_mixup": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "toolQuality": "search",
+              "op": ">=",
+              "value": 1
+            }
+          ]
+        },
+        "scale": {
+          "t4_web": 0.4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "any": [
+                {
+                  "called": "search"
+                },
+                {
+                  "called": "search_tickets"
+                }
+              ]
+            },
+            {
+              "not": {
+                "state": "ready"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "t1_bad": 0.9
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "t1_done": 9,
+          "t1_bad": 0.1,
+          "t1_right": 0,
+          "t1_mixup": 0,
+          "t1_web": 0
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "any": [
+                {
+                  "called": "search"
+                },
+                {
+                  "called": "search_docs"
+                }
+              ]
+            },
+            {
+              "not": {
+                "state": "ready"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "t2_bad": 0.9
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "t2_done": 9,
+          "t2_bad": 0.1,
+          "t2_right": 0,
+          "t2_mixup": 0,
+          "t2_web": 0
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "any": [
+                {
+                  "called": "search"
+                },
+                {
+                  "called": "search_tickets"
+                }
+              ]
+            },
+            {
+              "not": {
+                "state": "ready"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "t3_bad": 0.9
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "t3_done": 9,
+          "t3_bad": 0.1,
+          "t3_right": 0,
+          "t3_mixup": 0,
+          "t3_web": 0
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "any": [
+                {
+                  "called": "search"
+                },
+                {
+                  "called": "search_docs"
+                }
+              ]
+            },
+            {
+              "not": {
+                "state": "ready"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "t4_bad": 0.9
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t4"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "t4_done": 9,
+          "t4_bad": 0.1,
+          "t4_right": 0,
+          "t4_mixup": 0,
+          "t4_web": 0
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "accuracy",
+      "label": "Tool-choice accuracy over 90%",
+      "metric": "tool_accuracy",
+      "op": ">",
+      "value": 0.9
+    },
+    {
+      "id": "success",
+      "label": "At least 85% of questions answered right",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    }
+  ],
+  "hints": [
+    "The model only sees each tool's name and description. Read them as if you were the model: which one is for \"How do I export?\"",
+    "A good description starts with a verb, is 40 to 400 characters, says when to use it (\"Use this for...\" or \"Do not use for...\"), and shares few words with the other tools.",
+    "Rewrite all three. For example search_docs: \"Finds help center articles by keyword. Use this for how-to questions about features, settings or exports.\" Make search say it is only for things outside our company."
+  ],
+  "explain": "Tool descriptions are part of the prompt. When they say what each tool is for and when not to use it, and do not overlap, the model stops guessing between look-alikes."
+}

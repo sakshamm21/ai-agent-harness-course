@@ -1,0 +1,107 @@
+---
+title: "Structured Output"
+section: "foundations"
+order: 4
+tagline: "Getting JSON you can parse, every time."
+realWorld: "An invoice extraction pipeline breaking on a stray sentence"
+build:
+  type: "code"
+terms:
+  - term: "structured output"
+    def: "Model output in a fixed, machine-readable shape, usually JSON that matches a schema, so code can use it without guessing."
+  - term: "JSON Schema"
+    def: "A standard way to describe the shape of JSON data: which fields exist, their types, which are required and which values are allowed."
+  - term: "validation"
+    def: "Code that checks the model's output against your rules (types, formats, allowed values) before anything downstream uses it."
+usedIn: ["deepresearch/5"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "You asked for \"JSON only\" and the reply starts with \"Here is the data:\". Why does this happen?"
+    options: ["The model ignored you on purpose", "A prompt is a request, not a constraint; the model still writes the most likely text, and a friendly preamble is likely", "JSON is too hard for language models"]
+    answer: 1
+    why: "Instructions shift the probabilities but do not forbid anything. A schema-constrained tool call or structured output mode changes what the model is allowed to return."
+  - q: "A tool call's arguments match the schema: due_date is a string. The value is \"3 November 2026\" and you need YYYY-MM-DD. What catches it?"
+    options: ["The JSON parser", "The schema's type check", "Your own validation code, which can then send the error back for a retry"]
+    answer: 2
+    why: "A schema guarantees shape and type. Formats and business rules are yours to check, and the error message is what lets the model fix it."
+  - q: "Each call passes validation 97% of the time and failures are independent. With one retry, roughly what share still fails?"
+    options: ["3%", "About 0.1%", "0%"]
+    answer: 1
+    why: "Both attempts must fail: 0.03 × 0.03 = 0.0009, about 0.1%. Real retries are not fully independent, so treat that as a best case."
+reading:
+  - title: "Anthropic docs: Tool use with Claude"
+    url: "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview"
+  - title: "Anthropic docs: Increase output consistency"
+    url: "https://docs.anthropic.com/en/docs/test-and-evaluate/strengthen-guardrails/increase-consistency"
+---
+
+## Four of eight invoices broke the parser
+
+Your accounts team gets vendor invoices as plain text. You write a prompt, "Extract vendor, total, currency and due date. Reply with JSON only," and call `json.loads` on the reply. On a test batch of eight invoices, four fail.
+
+None of the four failures is the model being wrong about the invoice. One reply starts with "Here is the extracted data:". One wraps the JSON in a Markdown code fence. One ends with "Let me know if you need anything else!". One parses fine but gives the total as the text `"2,005.00"`, which your database rejects.
+
+## "JSON only" is a request, not a rule
+
+An LLM writes the most likely next tokens. Your instruction makes JSON more likely, but nothing stops a polite preamble, a code fence or a sign-off, because those are common in the text it learned from. Even valid JSON can have the wrong types: a number written as a string, a date in whatever format the invoice used.
+
+Any code that reads model output has to assume this. If 1% of replies have a stray sentence, a pipeline doing 2,000 invoices a day crashes 20 times a day.
+
+## Constrain the shape, then check the content
+
+The fix has three layers, and you want all three.
+
+<Flow steps={[{ label: "Schema", sub: "typed tool call", kind: "hl" }, { label: "Validate", sub: "your code checks" }, { label: "Retry", sub: "send the errors back" }, { label: "Store", kind: "good" }]} caption="The schema fixes the shape; validation checks the content; one retry fixes most of what validation finds." />
+
+**1. Ask for a tool call, not text.** Describe the record you want as a tool with a JSON Schema for its input. The model fills in arguments, and the API hands you a parsed object. There is no text to scrape, so preambles and code fences cannot break anything.
+
+**2. Validate in code.** The schema guarantees types. It cannot know that `due_date` must be `YYYY-MM-DD`, or that a total should be positive. Check those yourself.
+
+**3. Retry once with the errors.** Send the problems back as a tool result marked as an error. The model usually fixes the field it got wrong.
+
+```python
+@tool
+def record_invoice(vendor: str, total: float,
+                   currency: Literal["USD", "EUR", "GBP"], due_date: str) -> str:
+    """Records one invoice. due_date must be YYYY-MM-DD."""
+
+for attempt in range(2):
+    resp = model.complete(messages, tools=[record_invoice.schema])
+    call = resp.tool_calls[0]
+    errors = validate(call.input)          # your checks
+    if not errors:
+        return call.input                  # already a dict, no json.loads
+    messages += [resp.to_message(), {"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": call.id,
+        "content": "Invalid: " + "; ".join(errors), "is_error": True}]}]
+```
+
+In the code lab you build exactly this, run both versions on the same eight invoices, and count failures.
+
+## Let us check the math
+
+Say a schema-constrained call passes your validation 97% of the time, at 2,000 invoices a day.
+
+<Callout type="math" label="Let us check the math">
+**Plain text, no checks:** at even a 1% stray-text rate, 2,000 × 0.01 = **20 crashes a day**, plus wrong types you only find later.
+
+**Schema + validation, no retry:** 2,000 × 0.03 = **60 invoices a day** flagged. Nothing crashes, but someone reviews 60 invoices.
+
+**With one retry:** both attempts fail 0.03 × 0.03 = 0.0009 of the time. 2,000 × 0.0009 ≈ **2 invoices a day** for a human.<br />
+The retries cost 60 extra calls. At about 1,000 input and 100 output tokens each, at the illustrative sim price for a medium model ($3 and $15 per million): 60 × (1,000 × $3 + 100 × $15) / 1,000,000 = 60 × $0.0045 = **$0.27 a day**.
+</Callout>
+
+## The tradeoff: valid is not the same as right
+
+A schema makes the output parseable, not true. The model can return a perfectly valid `{"total": 1240.0}` for an invoice that says $1,420. Strict schemas can also hurt: force a value into an enum of three currencies and an invoice in yen gets labelled USD instead of raising a flag.
+
+Ways to handle it:
+
+- **Leave an exit.** Add an `"other"` or `null` option and a `notes` field so the model can say "this does not fit" instead of guessing.
+- **Check against the source.** Cheap cross-checks catch a lot: does the total appear in the document text? Does the vendor match a known supplier? For fuzzier checks, see [LLM-as-Judge](/c/llm_judge/).
+- **Route the rest to a person.** Anything that fails twice goes to review, not to the ledger. [Human in the Loop](/c/hitl/) covers designing that queue.
+
+## In the real world
+
+The Claude API lets you define tools with an `input_schema` and set `tool_choice` to force a call to one specific tool, a common way to get structured data out of a single request. OpenAI's API offers a strict structured-output mode that constrains generation to a JSON Schema. Either way, the validation and retry layer stays in your code. In part 5 of the deepresearch project, the report writer uses the same idea to return each finding with its sources as records your code can check.

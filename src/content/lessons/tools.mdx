@@ -4,12 +4,109 @@ section: "tools"
 order: 8
 tagline: "The model asks; your code acts."
 realWorld: "Weather and calendar assistants"
-build: { type: "code" }
-readingMinutes: 5
+build:
+  type: "code"
+terms:
+  - term: "tool"
+    def: "A function your code exposes to the model, described by a name, a description and a JSON Schema for its input, that the model can ask you to run."
+  - term: "function calling"
+    def: "The API feature that lets a model answer with a structured request to run one of your tools instead of plain text. Anthropic calls it tool use."
+  - term: "tool_use block"
+    def: "The part of a model response that names a tool, gives it an id and supplies the input arguments as JSON."
+  - term: "tool_result block"
+    def: "The message you send back after running a tool, carrying the output and the tool_use_id of the request it answers."
+usedIn: ["nanoharness/2"]
+readingMinutes: 6
 updated: 2026-10-09
 quiz:
-  - { q: "stub", options: ["a", "b"], answer: 0, why: "stub" }
-  - { q: "stub", options: ["a", "b"], answer: 0, why: "stub" }
-  - { q: "stub", options: ["a", "b"], answer: 0, why: "stub" }
+  - q: "The model returns a tool_use block for get_weather. What has happened to the weather API so far?"
+    options: ["The provider called it and the result is in the response", "Nothing: the model only wrote a request, and your code has to make the call", "It was called, but the result is hidden until the next turn"]
+    answer: 1
+    why: "A tool call is structured text. The model never touches your systems; your code reads the request, runs the function and sends a tool_result back."
+  - q: "What does the model use to decide which tool to call and with what arguments?"
+    options: ["The tool's name, description and input schema", "The source code of the function", "The tool's response time and error rate"]
+    answer: 0
+    why: "The model never sees your code. It only sees the definitions you send with the request, so those are effectively part of the prompt."
+  - q: "You send 20 tools at about 250 tokens each with every call. How many input tokens do the definitions alone add to a 2-call question?"
+    options: ["500", "5,000", "10,000"]
+    answer: 2
+    why: "20 × 250 = 5,000 tokens per call, and the definitions are resent on both calls: 10,000 tokens before the user has typed a word."
+reading:
+  - title: "Anthropic docs: Tool use with Claude"
+    url: "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview"
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
 ---
-STUB: to be replaced by the full lesson.
+
+## You asked about the rain. It answered from memory.
+
+A user types "Do I need an umbrella in Paris today?" Ask a plain model that question ten times and you get ten fluent answers, and none of them are based on today's weather. At best it says "Paris gets rain about 1 day in 3, so maybe." At worst it invents a forecast.
+
+The same thing happens with "What's on my calendar at 3pm?" The right answer depends on data the model has never seen, so the honest success rate is 0 out of 10.
+
+## The model only writes text
+
+A language model reads text and predicts more text. It has no clock, no network and no access to your calendar. Everything it knows was frozen into its weights at training time, plus whatever you put in the prompt.
+
+So the problem is not intelligence. The model would happily check the forecast if it could. It just has no way to reach outside the conversation. What it can do is write a precise request for someone else to act on.
+
+## Give it tools, and keep the hands for yourself
+
+Function calling (Anthropic calls it *tool use*) works in four steps:
+
+1. You send the question **plus a list of tool definitions**. Each one has a `name`, a `description`, and an `input_schema` in JSON Schema.
+2. The model replies with a `tool_use` block instead of an answer, and the response's `stop_reason` is `"tool_use"`.
+3. **Your code** runs the function and sends back a `tool_result` with the same id.
+4. The model reads the result and writes the final answer.
+
+```json
+{ "name": "get_weather",
+  "description": "Gets today's weather for a city. Use it for any question about weather, rain or temperature.",
+  "input_schema": { "type": "object",
+    "properties": { "city": { "type": "string" } },
+    "required": ["city"] } }
+```
+
+The model answers that definition with something like this, and then stops:
+
+```json
+{ "type": "tool_use", "id": "toolu_01", "name": "get_weather", "input": { "city": "Paris" } }
+```
+
+You run `get_weather(city="Paris")`, get `"14C, light rain"`, and send it back:
+
+```json
+{ "type": "tool_result", "tool_use_id": "toolu_01", "content": "Paris: 14C, light rain" }
+```
+
+<Flow steps={["Question + tool list", { label: "Model", sub: "writes tool_use", kind: "hl" }, { label: "Your code", sub: "runs get_weather" }, "tool_result", { label: "Model", sub: "answers", kind: "good" }]} caption="Two model calls. The model decides what to call; only your code touches the weather API." />
+
+Three details matter more than they look:
+
+- **The description is the instructions.** The model never sees your Python. It picks tools by reading names and descriptions, so write them like prompts.
+- **The schema is a contract.** `required` and `type` tell the model what to fill in. Still validate the input yourself before using it.
+- **The id ties it together.** One response can hold several tool calls, and each `tool_result` must name the `tool_use_id` it answers.
+
+## Let us check the math
+
+Tools are not free. The answer now takes two calls, and the definitions ride along on both. Take a 300-token system prompt, one 250-token tool definition and a 20-token question.
+
+<Callout type="math" label="Let us check the math">
+Call 1: 300 + 250 + 20 = **570 input**, 60 output (the tool_use block).<br />
+Call 2: 570 + 60 + 40 (the tool_result) = **670 input**, 50 output (the answer).<br />
+Total: 1,240 input and 110 output tokens. At medium sim prices ($3 in / $15 out per million, illustrative): 1,240 × $3/M + 110 × $15/M = $0.0037 + $0.0017 ≈ **$0.0054 per question**.<br />
+Without the tool: 570 input + 50 output ≈ $0.0025. So the tool roughly doubles cost and adds a second round trip.<br />
+Now scale it. 20 tools at 250 tokens = 5,000 tokens per call. At 10,000 questions a day, two calls each: 5,000 × 2 × 10,000 = **100M tokens a day**, or $300 a day, spent on definitions alone.
+</Callout>
+
+Half a cent buys a correct answer instead of a confident guess, so the trade is usually worth it. The schemas are what you watch.
+
+## The tradeoff: every tool is a prompt and a risk
+
+Tools make the model useful, and they cost you in three ways:
+
+- **Tokens on every call.** Definitions are resent each turn. Keep the list short, and cache the stable prefix ([Prompt Caching](/c/caching/)).
+- **Wrong picks and bad arguments.** With many look-alike tools the model chooses badly. Names, descriptions and error messages are design work ([Designing Good Tools](/c/tool_design/), [Tool Errors and Recovery](/c/tool_errors/)).
+- **The model chooses the arguments.** If a tool can delete files or send email, the model can ask for that too. Decide what runs without asking ([Permissions](/c/permissions/)).
+
+So far there is exactly one tool call and one answer. Real tasks need many calls in a row, where each result shapes the next request. That is [The Agent Loop](/c/agent_loop/).

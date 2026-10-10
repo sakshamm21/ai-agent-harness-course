@@ -1,0 +1,477 @@
+{
+  "id": "tool_errors",
+  "title": "Tool Errors and Recovery",
+  "brief": "An order-status agent calls get_order, then track_shipment on the carrier's API. The carrier API fails about 1 call in 3 with a connection error, and today the harness pastes the raw stack trace back to the model. Too often the model reads 900 tokens of traceback and tells the customer their parcel is on its way anyway. Get at least 85% of answers right in 6 turns or fewer on average.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "get_order",
+          "description": "Gets an order by ID: items, status and the carrier tracking number.",
+          "errorRate": 0.15,
+          "errorMode": "raw"
+        },
+        "position": {
+          "x": 780,
+          "y": 40
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "track_shipment",
+          "description": "Gets the live delivery status for a carrier tracking number.",
+          "errorRate": 0.35,
+          "errorMode": "raw",
+          "latencyMs": 800
+        },
+        "position": {
+          "x": 780,
+          "y": 200
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "get_order",
+          "description": "Gets an order by ID: items, status and the carrier tracking number.",
+          "errorRate": 0.15,
+          "errorMode": "actionable"
+        },
+        "position": {
+          "x": 780,
+          "y": 40
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "track_shipment",
+          "description": "Gets the live delivery status for a carrier tracking number.",
+          "errorRate": 0.35,
+          "errorMode": "actionable",
+          "latencyMs": 800
+        },
+        "position": {
+          "x": 780,
+          "y": 200
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Order #1182",
+      "prompt": "Where is my order #1182? It was supposed to arrive yesterday.",
+      "needs": [
+        "get_order",
+        "track_shipment"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Order #2077",
+      "prompt": "Has order #2077 shipped yet?",
+      "needs": [
+        "get_order",
+        "track_shipment"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Order #3310",
+      "prompt": "Can you check when order #3310 will be delivered?",
+      "needs": [
+        "get_order",
+        "track_shipment"
+      ]
+    }
+  ],
+  "actions": {
+    "order_t1": {
+      "kind": "tool",
+      "tool": "get_order",
+      "text": "get_order(\"1182\")",
+      "tokens": 400
+    },
+    "track_t1": {
+      "kind": "tool",
+      "tool": "track_shipment",
+      "text": "track_shipment(\"1Z999AA10123456784\")",
+      "tokens": 350
+    },
+    "done_t1": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Your order #1182 left the Leeds depot at 06:40 and is out for delivery. The carrier expects it today by 6pm."
+    },
+    "order_t2": {
+      "kind": "tool",
+      "tool": "get_order",
+      "text": "get_order(\"2077\")",
+      "tokens": 400
+    },
+    "track_t2": {
+      "kind": "tool",
+      "tool": "track_shipment",
+      "text": "track_shipment(\"1Z999AA10198765432\")",
+      "tokens": 350
+    },
+    "done_t2": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Yes, order #2077 shipped yesterday at 16:05. It is in transit and due Thursday."
+    },
+    "order_t3": {
+      "kind": "tool",
+      "tool": "get_order",
+      "text": "get_order(\"3310\")",
+      "tokens": 400
+    },
+    "track_t3": {
+      "kind": "tool",
+      "tool": "track_shipment",
+      "text": "track_shipment(\"1Z999AA10155501234\")",
+      "tokens": 350
+    },
+    "done_t3": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Order #3310 is at the local sorting center. The carrier's estimate is tomorrow between 9am and 1pm."
+    },
+    "puzzle": {
+      "kind": "think",
+      "text": "Thought: there is a long traceback here. Something about a connection reset? Not sure if the lookup worked.",
+      "tokens": 100,
+      "outputTokens": 120
+    },
+    "hallucinate": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Good news: your order is out for delivery and should arrive today! (The tracking call failed; this status was invented.)"
+    },
+    "giveup": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Sorry, something went wrong on our side. Please try again later."
+    }
+  },
+  "policy": {
+    "base": {
+      "order_t1": 0,
+      "track_t1": 0,
+      "done_t1": 0,
+      "order_t2": 0,
+      "track_t2": 0,
+      "done_t2": 0,
+      "order_t3": 0,
+      "track_t3": 0,
+      "done_t3": 0,
+      "puzzle": 0,
+      "hallucinate": 0,
+      "giveup": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "task": "t1"
+        },
+        "set": {
+          "order_t1": 4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "called": "get_order"
+            }
+          ]
+        },
+        "shift": {
+          "track_t1": 4
+        }
+      },
+      {
+        "when": {
+          "task": "t2"
+        },
+        "set": {
+          "order_t2": 4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "called": "get_order"
+            }
+          ]
+        },
+        "shift": {
+          "track_t2": 4
+        }
+      },
+      {
+        "when": {
+          "task": "t3"
+        },
+        "set": {
+          "order_t3": 4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "called": "get_order"
+            }
+          ]
+        },
+        "shift": {
+          "track_t3": 4
+        }
+      },
+      {
+        "when": {
+          "state": "tool_error_raw"
+        },
+        "set": {
+          "hallucinate": 1.6,
+          "giveup": 0.8,
+          "puzzle": 1
+        },
+        "scale": {
+          "order_t1": 0.35,
+          "order_t2": 0.35,
+          "order_t3": 0.35,
+          "track_t1": 0.35,
+          "track_t2": 0.35,
+          "track_t3": 0.35
+        },
+        "note": "A raw traceback does not say what went wrong or whether to retry, so the model often guesses."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "tool_error_raw"
+            },
+            {
+              "state": "repeating"
+            }
+          ]
+        },
+        "shift": {
+          "hallucinate": 1
+        }
+      },
+      {
+        "when": {
+          "state": "tool_error_actionable"
+        },
+        "set": {
+          "hallucinate": 0.05,
+          "giveup": 0.1
+        },
+        "note": "\"Timed out, safe to retry\" tells the model exactly what to do next."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t1"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_t1": 8,
+          "hallucinate": 0.1,
+          "giveup": 0
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t2"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_t2": 8,
+          "hallucinate": 0.1,
+          "giveup": 0
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "task": "t3"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_t3": 8,
+          "hallucinate": 0.1,
+          "giveup": 0
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% of answers right",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "turns",
+      "label": "6 turns or fewer on average",
+      "metric": "avg_turns",
+      "op": "<=",
+      "value": 6
+    }
+  ],
+  "hints": [
+    "Open a failed transcript. What does the model actually see when track_shipment fails?",
+    "The failures will keep happening; you can't fix the carrier. You can change what the model is told when a call fails. Look at each tool's settings.",
+    "Set \"Error messages\" to actionable on both tools, so a failure comes back as a short message that says what failed and that it is safe to retry."
+  ],
+  "explain": "An error is a tool result too. A short message that says what failed and what to do next turns a guess into a retry."
+}

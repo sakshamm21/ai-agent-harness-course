@@ -1,0 +1,113 @@
+---
+title: "Hooks and Lifecycle Events"
+section: "harness"
+order: 20
+tagline: "Run your code before and after every tool call."
+realWorld: "Auto-format after edit; block writes to .env"
+build:
+  type: "code"
+  scenario: "hooks"
+terms:
+  - term: "hook"
+    def: "Your own code that the harness runs at a fixed point in the agent's lifecycle, such as just before or just after a tool call."
+  - term: "pre-tool hook"
+    def: "A hook that sees a tool call before it runs and can allow it, change its input, or block it."
+  - term: "post-tool hook"
+    def: "A hook that runs after a tool call succeeds and can act on the result, for example formatting a file the agent just edited."
+  - term: "lifecycle event"
+    def: "A named moment in a run (session start, prompt submitted, before tool, after tool, stop) that the harness lets you attach hooks to."
+usedIn: ["nanoharness/7"]
+readingMinutes: 6
+updated: 2026-10-09
+quiz:
+  - q: "Your system prompt says \"never edit .env\" and the model obeys 99% of the time. Over 500 writes, how likely is at least one bad write?"
+    options: ["About 1%", "About 39%", "Above 99%"]
+    answer: 2
+    why: "The chance of zero violations is 0.99^500, about 0.7%. So at least one bad write is almost certain. A rule you need every time belongs in a hook."
+  - q: "A pre-tool hook blocks a write. What should the model see?"
+    options: ["Nothing; skip the call silently", "An error result that says the call was blocked and why", "A fake success so it carries on"]
+    answer: 1
+    why: "If the model thinks the write worked, it plans on a false state. A clear blocked-by-policy result lets it choose another path."
+  - q: "Which job fits a post-tool hook best?"
+    options: ["Deciding whether rm -rf may run", "Running the formatter on a file right after the agent edits it", "Choosing which tool the model should call next"]
+    answer: 1
+    why: "Post-tool hooks act on what already happened. Blocking belongs before the call; choosing tools is the model's job."
+reading:
+  - title: "Claude Code docs: Hooks reference"
+    url: "https://docs.anthropic.com/en/docs/claude-code/hooks"
+  - title: "Anthropic: Claude Code best practices for agentic coding"
+    url: "https://www.anthropic.com/engineering/claude-code-best-practices"
+---
+
+## You told it never to touch .env. It touched .env.
+
+Your coding agent makes about 500 file writes a week. The system prompt says, in capitals, "Never edit `.env`". On Thursday it "switched the app to test keys" by overwriting `.env`, and your live Stripe key was gone.
+
+The same week, 3 of its edits failed CI on formatting. Each time it ran the linter, read the output, and spent two more turns fixing tabs and trailing spaces.
+
+Neither failure was the model being careless. Both came from asking the model to do a job that your code should do.
+
+## A prompt is a request. You need a guarantee.
+
+An instruction in the prompt changes the odds. It does not change the outcome. A model that follows "never edit `.env`" 99% of the time will still break the rule about once every 100 writes, and at 500 writes a week that is several times a week.
+
+Formatting is the same story. You could remind the model to format every file. Or you could run the formatter yourself, every time, in a few milliseconds.
+
+The harness already sits at the one place where both rules can be enforced: the moment between "the model asked for a tool" and "the tool ran". In [The Agent Loop](/c/agent_loop/), your code runs every tool call. So your code can also check it, change it or follow it up.
+
+## Give the harness hooks
+
+A **hook** is a function the harness calls at a fixed point in the run. The two that matter most wrap every tool call:
+
+```python
+def pre_tool(name, args):
+    base = args.get("path", "").split("/")[-1]
+    if name == "write_file" and (base == ".env" or base.startswith(".env.")):
+        return False                      # block: the model gets an error result
+    return None                           # allow
+
+def post_tool(name, args, result):
+    if name == "write_file" and args["path"].endswith(".py"):
+        format_file(args["path"])
+        return result + " (auto-formatted)"   # tell the model what changed
+    return None
+
+run_loop(model, tools, task, pre_tool=pre_tool, post_tool=post_tool)
+```
+
+<Flow steps={["Model asks", { label: "pre_tool", sub: "allow, change or block", kind: "hl" }, "Tool runs", { label: "post_tool", sub: "format, log, rewrite", kind: "hl" }, "Result"]} loop loopLabel="the result goes back to the model" caption="Hooks wrap every tool call. The model never skips them, because it never runs the tool." />
+
+Three rules keep hooks useful:
+
+- **Block loudly.** A blocked call returns an error like "Blocked by policy: `.env` is protected." The model then picks another path instead of assuming the write worked.
+- **Say what you changed.** If a post-tool hook rewrites a file, the result says so. Otherwise the model's picture of the file is wrong.
+- **Match narrowly.** Check the file name, not "contains env". `docs/environment.md` is not a secrets file.
+
+Tool calls are not the only lifecycle events. Harnesses also expose session start (load project notes), prompt submitted (add context or reject a request) and stop (run the tests before the agent may say it is done).
+
+## Let us check the math
+
+Compare the prompt rule with the hook, using a week of 500 writes.
+
+<Callout type="math" label="Let us check the math">
+**Prompt only, 99% compliance per write.**<br />
+Chance of a clean week: 0.99^500 ≈ 0.0066, so **99.3%** of weeks have at least one bad write. Expected bad writes: 500 × 0.01 = **5 per week**.<br /><br />
+**Pre-tool hook.** The check is a string comparison in your code. Bad writes: **0**, whatever the model decides.<br /><br />
+**Formatting.** Each lint failure costs 2 extra turns at about 20k tokens of context: 3 failures × 2 × 20,000 = 120,000 input tokens. At the medium sim price of $3 per million that is **$0.36 a week** plus about 3 × 2 × 5 s = 30 s of waiting. A formatter in a post-tool hook takes about 0.2 s per Python edit and adds 4 tokens ("auto-formatted").
+</Callout>
+
+The hook is cheaper, faster, and exact. The prompt rule is still worth keeping, because a model that knows the rule wastes fewer turns bumping into the hook.
+
+## The tradeoff: hooks are code that runs on every call
+
+A hook runs with your permissions, on every tool call, without the model deciding. That is the point, and also the risk.
+
+- **Slow hooks slow everything.** A 2 s hook on 40 tool calls adds 80 s to a session. Keep hooks fast, give each a timeout, and match them to the tools that need them.
+- **Hooks are trusted code.** A hook from a cloned repo runs shell commands on your machine. Review hook config like any other code, and pair hooks with [permissions and sandboxing](/c/permissions/) rather than replacing them.
+- **Hidden behaviour is hard to debug.** When a hook rewrites inputs or results, log it, so a [trace](/c/tracing/) shows why the agent saw what it saw. For checks on the model's text rather than its tool calls, see [guardrails](/c/guardrails/).
+
+## In the real world
+
+Claude Code documents hooks publicly. You configure them in a settings file, keyed by events such as `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop` and `SessionStart`, with a matcher like `Edit|Write` that picks the tools. Each hook is a shell command that receives the event as JSON on stdin. For `PreToolUse`, exiting with code 2 blocks the tool call and the hook's stderr is shown to Claude as the reason, which is the "block loudly" rule from above. The docs' own examples include formatting files after edits and protecting sensitive files.
+
+In part 7 of nanoharness you will load `pre_tool` and `post_tool` hooks from a config file and run them around every tool call.

@@ -1,0 +1,249 @@
+{
+  "id": "parallelization",
+  "title": "Parallelization and Voting",
+  "brief": "A forum gets thousands of reported posts a day. Five borderline ones are queued here. One classifier call gets the verdict right about 85% of the time, and moderation needs at least 90%. Add voting: three independent classifier calls and a majority. Keep the average decision under 5 seconds.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool"
+  ],
+  "runs": 40,
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "You moderate reported posts. Reply ALLOW or REMOVE with the policy section."
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "parallelTools": true,
+          "systemPrompt": "You moderate reported posts. Collect three votes with classify_post, then report the majority verdict."
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 6
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "classify_post",
+          "description": "Runs one independent moderation classifier on a post and returns ALLOW or REMOVE with a reason. Use it three times and take the majority."
+        },
+        "position": {
+          "x": 780,
+          "y": 120
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "p1",
+      "label": "Sarcastic threat",
+      "prompt": "Reported post: 'Great ref tonight. Someone should really visit him after the game.'",
+      "needs": [
+        "classify_post"
+      ]
+    },
+    {
+      "id": "p2",
+      "label": "Drug harm reduction",
+      "prompt": "Reported post: 'If you are going to the festival anyway, test your pills first. Here is where to get kits.'",
+      "needs": [
+        "classify_post"
+      ]
+    },
+    {
+      "id": "p3",
+      "label": "Quoted slur",
+      "prompt": "Reported post: a user quotes a slur that was shouted at them, to describe the harassment.",
+      "needs": [
+        "classify_post"
+      ]
+    },
+    {
+      "id": "p4",
+      "label": "Spam with a real question",
+      "prompt": "Reported post: 'Anyone tried this budgeting app? [affiliate link] I made $400 in a week.'",
+      "needs": [
+        "classify_post"
+      ]
+    },
+    {
+      "id": "p5",
+      "label": "Graphic news photo",
+      "prompt": "Reported post: a news photo of a flood with injured people, tagged as news, no gore warning.",
+      "needs": [
+        "classify_post"
+      ]
+    }
+  ],
+  "actions": {
+    "solo_ok": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Verdict: matches the policy team's call, with the right policy section. One call, no second opinion."
+    },
+    "solo_wrong": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Verdict: the opposite of the policy team's call. One call, no second opinion, so nothing flagged it. (Overturned on appeal.)"
+    },
+    "vote": {
+      "kind": "tool",
+      "tool": "classify_post",
+      "batch": 3,
+      "text": "classify_post(post) ×3, independent samples at temperature 0.8",
+      "tokens": 450,
+      "latencyMs": 600
+    },
+    "majority_ok": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Votes: 2 to 1 for the right verdict. Majority verdict reported; the split vote is logged for audit."
+    },
+    "majority_wrong": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Votes: 2 to 1 for the wrong verdict. Two of the three voters made the same mistake, so the majority was wrong."
+    }
+  },
+  "policy": {
+    "base": {
+      "solo_ok": 0.85,
+      "solo_wrong": 0.15,
+      "vote": 0,
+      "majority_ok": 0,
+      "majority_wrong": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "setting": "model.tier",
+          "op": "==",
+          "value": "large"
+        },
+        "set": {
+          "solo_ok": 0.88,
+          "solo_wrong": 0.12
+        },
+        "note": "A large model is a little better alone, at five times the price."
+      },
+      {
+        "when": {
+          "tool": "classify_post"
+        },
+        "scale": {
+          "solo_ok": 0.03,
+          "solo_wrong": 0.03
+        },
+        "shift": {
+          "vote": 6
+        },
+        "note": "With the classifier wired, the model collects votes instead of deciding alone."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "vote": 0,
+          "solo_ok": 0,
+          "solo_wrong": 0,
+          "majority_ok": 0.94,
+          "majority_wrong": 0.06
+        },
+        "note": "Majority of 3 independent voters at 85% each: 0.85^3 + 3 x 0.85^2 x 0.15 = 0.939."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 90% of verdicts correct",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.9
+    },
+    {
+      "id": "latency",
+      "label": "Average decision under 5 seconds",
+      "metric": "avg_latency",
+      "op": "<",
+      "value": 5
+    }
+  ],
+  "hints": [
+    "One call is right about 85% of the time. A large model gets to about 88% at five times the price. What if you asked more than once and compared?",
+    "Add a Loop and a classify_post tool so the model can collect three independent votes and take the majority.",
+    "Three votes one after another are slow. Turn on Parallel tool calls on the model so the three votes run at the same time."
+  ],
+  "explain": "Three independent 85% voters agree on the right answer about 94% of the time, because two of them have to be wrong together. You pay for three calls, and running them in parallel keeps the wait close to one."
+}

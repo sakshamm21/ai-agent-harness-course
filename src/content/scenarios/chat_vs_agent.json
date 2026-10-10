@@ -1,0 +1,316 @@
+{
+  "id": "chat_vs_agent",
+  "title": "Chatbot vs Workflow vs Agent",
+  "brief": "Three billing tickets, each needing a different number of lookups: one, two, or three. Solve them three ways and compare. Chatbot: the model alone, one call. Workflow: a fixed two-step chain (a loop capped at 2 turns with one lookup tool). Agent: a loop with all three tools that lets the model decide. Hit 85% success in 6 turns or fewer on average.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 120
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 120
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 520,
+          "y": 120
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "get_invoices",
+          "description": "Gets a customer's invoices with amounts, dates and status. Use it first for any billing question."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "get_payments",
+          "description": "Lists card charges and refunds from the payment processor. Use it when an invoice and a charge don't match."
+        },
+        "position": {
+          "x": 780,
+          "y": 120
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "read_notes",
+          "description": "Reads the support notes on an account, such as promised credits. Use it when the customer mentions an earlier conversation."
+        },
+        "position": {
+          "x": 780,
+          "y": 240
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Invoice amount",
+      "prompt": "How much is my March invoice, and is it paid?",
+      "needs": [
+        "get_invoices"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Charged twice",
+      "prompt": "My card shows two charges of $49 this month but I only have one invoice. Why?",
+      "needs": [
+        "get_invoices",
+        "get_payments"
+      ],
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Missing credit",
+      "prompt": "Your agent promised me a $20 credit last week. My new invoice doesn't show it, and I was charged the full amount.",
+      "needs": [
+        "get_invoices",
+        "get_payments",
+        "read_notes"
+      ],
+      "tags": [
+        "payments",
+        "notes"
+      ]
+    }
+  ],
+  "actions": {
+    "invoices": {
+      "kind": "tool",
+      "tool": "get_invoices",
+      "text": "get_invoices(customer=\"c_2210\")",
+      "tokens": 700
+    },
+    "payments": {
+      "kind": "tool",
+      "tool": "get_payments",
+      "text": "get_payments(customer=\"c_2210\", days=30)",
+      "tokens": 800
+    },
+    "notes": {
+      "kind": "tool",
+      "tool": "read_notes",
+      "text": "read_notes(customer=\"c_2210\")",
+      "tokens": 500
+    },
+    "right": {
+      "kind": "answer",
+      "correct": true,
+      "text": "I checked your invoices, charges and account notes. Here is exactly what happened, and I've flagged the fix for you."
+    },
+    "partial": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Your invoice shows the normal amount and it's marked paid, so everything looks fine on our side."
+    },
+    "guess": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Billing questions like this are usually a pending authorization. It should drop off in a few days."
+    }
+  },
+  "policy": {
+    "base": {
+      "invoices": 6,
+      "payments": 0,
+      "notes": 0,
+      "right": 0,
+      "partial": 0,
+      "guess": 0.15
+    },
+    "modifiers": [
+      {
+        "when": {
+          "not": {
+            "has": "loop"
+          }
+        },
+        "set": {
+          "guess": 1,
+          "right": 0.05
+        },
+        "note": "A chatbot answers in one call with no data, so it guesses."
+      },
+      {
+        "when": {
+          "called": "get_invoices"
+        },
+        "set": {
+          "partial": 2,
+          "guess": 0
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "get_invoices"
+            },
+            {
+              "tag": "payments"
+            },
+            {
+              "not": {
+                "called": "get_payments"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "payments": 6
+        },
+        "scale": {
+          "partial": 0.1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "get_payments"
+            },
+            {
+              "tag": "notes"
+            },
+            {
+              "not": {
+                "called": "read_notes"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "notes": 6
+        },
+        "scale": {
+          "partial": 0.1
+        }
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "right": 9,
+          "partial": 0.2,
+          "guess": 0
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "Resolve at least 85% of tickets",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "turns",
+      "label": "6 turns or fewer on average",
+      "metric": "avg_turns",
+      "op": "<=",
+      "value": 6
+    }
+  ],
+  "hints": [
+    "Try the chatbot first and read its answers. Then build the workflow: a Loop with Max turns 2 and only get_invoices. Which ticket does each one get right?",
+    "The tickets need one, two and three lookups. A fixed chain is the right length for only one of them. Who should decide how many steps to take?",
+    "Build the agent: a Loop (Max turns 10) wired to get_invoices, get_payments and read_notes. The model will call only what each ticket needs."
+  ],
+  "explain": "A chatbot lets the human decide the next step, a workflow lets your code decide, and an agent lets the model decide. When the number of steps depends on what the first lookup shows, only the agent fits every ticket."
+}

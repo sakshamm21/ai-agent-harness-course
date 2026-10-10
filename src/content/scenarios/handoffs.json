@@ -1,0 +1,449 @@
+{
+  "id": "handoffs",
+  "title": "Handoffs and Shared State",
+  "brief": "A sales agent closes three upgrades, then hands each customer to a support agent to finish setup. Right now the handoff passes the whole sales conversation: about 9,000 tokens of pitch, pricing tool output and small talk. The support agent pays to read all of it and sometimes keeps selling. Get at least 85% of setups right while support's context stays under 5,000 tokens.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "memory"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "You are the support agent. Finish account setup for customers the sales agent hands you."
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 8
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "transfer_to_support",
+          "description": "Hands the customer from the sales agent to the support agent."
+        },
+        "position": {
+          "x": 740,
+          "y": 60
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "update_account",
+          "description": "Changes plan, seats, SSO and billing settings on an account."
+        },
+        "position": {
+          "x": 740,
+          "y": 200
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "You are the support agent. Finish account setup for customers the sales agent hands you."
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 8
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "transfer_to_support",
+          "description": "Hands the customer from the sales agent to the support agent."
+        },
+        "position": {
+          "x": 740,
+          "y": 60
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "update_account",
+          "description": "Changes plan, seats, SSO and billing settings on an account."
+        },
+        "position": {
+          "x": 740,
+          "y": 200
+        }
+      },
+      {
+        "id": "mem",
+        "type": "memory",
+        "data": {
+          "kind": "profile",
+          "writePolicy": "validated"
+        },
+        "position": {
+          "x": 480,
+          "y": 320
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "m",
+        "target": "mem"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "c1",
+      "label": "Team plan, 40 seats",
+      "prompt": "Sales closed: Acme moves to Team, 40 seats, annual billing, 15% discount promised, SSO with Okta. Hand off to support for setup.",
+      "needs": [
+        "transfer_to_support",
+        "update_account"
+      ]
+    },
+    {
+      "id": "c2",
+      "label": "Starter to Business",
+      "prompt": "Sales closed: Brightline moves from Starter to Business, 12 seats, monthly billing, first month free promised. Hand off to support for setup.",
+      "needs": [
+        "transfer_to_support",
+        "update_account"
+      ]
+    },
+    {
+      "id": "c3",
+      "label": "Seat increase",
+      "prompt": "Sales closed: Northwind adds 25 seats to its Team plan, prorated, invoice to a new billing email ap@northwind.example. Hand off to support for setup.",
+      "needs": [
+        "transfer_to_support",
+        "update_account"
+      ]
+    }
+  ],
+  "actions": {
+    "handoff_full": {
+      "kind": "tool",
+      "tool": "transfer_to_support",
+      "text": "transfer_to_support(history=ALL) → support receives the full sales conversation: 41 messages, pricing tool output, the pitch deck summary",
+      "tokens": 9000
+    },
+    "handoff_summary": {
+      "kind": "tool",
+      "tool": "transfer_to_support",
+      "text": "transfer_to_support(note=\"Customer upgraded, please finish setup.\") → support receives a one-line free-text summary",
+      "tokens": 120
+    },
+    "handoff_record": {
+      "kind": "tool",
+      "tool": "transfer_to_support",
+      "text": "transfer_to_support(record={account, plan, seats, billing, promised_discount, sso, open_questions}) → support receives the structured handoff record plus the customer's last message",
+      "tokens": 450
+    },
+    "setup": {
+      "kind": "tool",
+      "tool": "update_account",
+      "text": "update_account(plan, seats, billing, promised_terms, sso) with the values from the handoff, e.g. plan=\"Team\", seats=40, billing=\"annual\", discount=0.15",
+      "tokens": 300
+    },
+    "ask_again": {
+      "kind": "think",
+      "text": "Support to customer: 'Thanks for upgrading! Could you remind me which plan and how many seats you agreed on?' (The customer already told sales all of this.)",
+      "tokens": 250
+    },
+    "done_ok": {
+      "kind": "answer",
+      "correct": true,
+      "text": "You're all set: plan, seats and billing match what sales agreed, the promised terms are on your first invoice, and nothing is left open."
+    },
+    "upsell": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Setup is done! While you're here, have you considered the Enterprise add-on? (Support read the sales instructions in the transcript and kept pitching; one setup step was skipped.)"
+    },
+    "lost_detail": {
+      "kind": "answer",
+      "correct": false,
+      "text": "You're all set on your new plan. (The promise sales made, a discount, a free month or a new billing email, was not in the summary, so the first invoice is wrong.)"
+    }
+  },
+  "policy": {
+    "base": {
+      "handoff_full": 0,
+      "handoff_summary": 0,
+      "handoff_record": 0,
+      "setup": 0,
+      "ask_again": 0,
+      "done_ok": 0,
+      "upsell": 0,
+      "lost_detail": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "all": [
+            {
+              "not": {
+                "called": "transfer_to_support"
+              }
+            },
+            {
+              "not": {
+                "setting": "memory.kind",
+                "op": "in",
+                "value": [
+                  "summary",
+                  "profile"
+                ]
+              }
+            }
+          ]
+        },
+        "set": {
+          "handoff_full": 10
+        },
+        "note": "With no shared state, the default handoff passes the whole conversation."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "not": {
+                "called": "transfer_to_support"
+              }
+            },
+            {
+              "setting": "memory.kind",
+              "op": "==",
+              "value": "summary"
+            }
+          ]
+        },
+        "set": {
+          "handoff_summary": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "not": {
+                "called": "transfer_to_support"
+              }
+            },
+            {
+              "setting": "memory.kind",
+              "op": "==",
+              "value": "profile"
+            }
+          ]
+        },
+        "set": {
+          "handoff_record": 10
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "transfer_to_support"
+            },
+            {
+              "not": {
+                "called": "update_account"
+              }
+            }
+          ]
+        },
+        "set": {
+          "setup": 6
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "transfer_to_support"
+            },
+            {
+              "not": {
+                "called": "update_account"
+              }
+            },
+            {
+              "setting": "memory.kind",
+              "op": "==",
+              "value": "summary"
+            }
+          ]
+        },
+        "shift": {
+          "ask_again": 2
+        },
+        "note": "A thin summary forces support to ask the customer again."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "setup": 0,
+          "ask_again": 0,
+          "done_ok": 7.5,
+          "upsell": 2.3,
+          "lost_detail": 0.6
+        },
+        "note": "Full transcript: support sees the sales prompt and keeps pitching about 1 time in 4."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "setting": "memory.kind",
+              "op": "==",
+              "value": "summary"
+            }
+          ]
+        },
+        "set": {
+          "upsell": 0.2,
+          "lost_detail": 3.5
+        },
+        "note": "Free-text summary: cheap, but details like the promised discount drop out."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "setting": "memory.kind",
+              "op": "==",
+              "value": "profile"
+            }
+          ]
+        },
+        "set": {
+          "upsell": 0.15,
+          "lost_detail": 0.25
+        },
+        "note": "Structured record: every field the setup needs is there by name."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% of setups exactly as sold",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "ctx",
+      "label": "Support context under 5,000 tokens",
+      "metric": "max_context",
+      "op": "<",
+      "value": 5000
+    }
+  ],
+  "hints": [
+    "Read a failing setup. What did support receive, and which part of it led it astray?",
+    "Passing nothing loses the deal; passing everything passes the sales prompt too. Try a Memory node set to summary and see what drops out.",
+    "Use a Memory node of kind profile: a structured handoff record (plan, seats, billing, promised discount, SSO) that both agents read and write."
+  ],
+  "explain": "A handoff is a contract between two agents. A structured record carries every field the next agent needs by name, costs a few hundred tokens, and leaves the sales prompt behind."
+}

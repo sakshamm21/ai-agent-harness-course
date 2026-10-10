@@ -1,0 +1,663 @@
+{
+  "id": "routing",
+  "title": "Routing",
+  "brief": "Six support tickets arrive: two refunds, two tech problems, two sales questions. One generalist agent with every tool and one long prompt handles them all, and it often reaches for the wrong tool. Get at least 90% of tickets right with at least 80% of tool calls on the right tool.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "router"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "You handle refunds, technical support and sales. Refund policy: ... Troubleshooting guide: ... Pricing rules: ..."
+        },
+        "position": {
+          "x": 260,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 520,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "lookup_order",
+          "description": "Gets an order by id: items, amount, payment status."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "issue_refund",
+          "description": "Refunds an order, fully or partly."
+        },
+        "position": {
+          "x": 780,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "search_docs",
+          "description": "Searches the help center and troubleshooting guides."
+        },
+        "position": {
+          "x": 780,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "get_pricing",
+          "description": "Gets plan prices and volume discounts for a seat count."
+        },
+        "position": {
+          "x": 780,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "r",
+        "type": "router",
+        "data": {
+          "routes": "refund, tech, sales"
+        },
+        "position": {
+          "x": 180,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "You handle refunds, technical support and sales. Refund policy: ... Troubleshooting guide: ... Pricing rules: ..."
+        },
+        "position": {
+          "x": 380,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 10
+        },
+        "position": {
+          "x": 580,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "lookup_order",
+          "description": "Gets an order by id: items, amount, payment status."
+        },
+        "position": {
+          "x": 800,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "issue_refund",
+          "description": "Refunds an order, fully or partly."
+        },
+        "position": {
+          "x": 800,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "search_docs",
+          "description": "Searches the help center and troubleshooting guides."
+        },
+        "position": {
+          "x": 800,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "get_pricing",
+          "description": "Gets plan prices and volume discounts for a seat count."
+        },
+        "position": {
+          "x": 800,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "r"
+      },
+      {
+        "source": "r",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "r1",
+      "label": "Refund: charged twice",
+      "prompt": "I was charged twice for order #48213. Please refund the duplicate.",
+      "needs": [
+        "lookup_order",
+        "issue_refund"
+      ],
+      "tags": [
+        "refund"
+      ]
+    },
+    {
+      "id": "r2",
+      "label": "Refund: cancelled in time",
+      "prompt": "I cancelled order #51007 an hour after buying. I still want my $49 back, this is really frustrating.",
+      "needs": [
+        "lookup_order",
+        "issue_refund"
+      ],
+      "tags": [
+        "refund"
+      ]
+    },
+    {
+      "id": "h1",
+      "label": "Tech: login crash",
+      "prompt": "Since the 4.2 update the app crashes as soon as I log in. This is costing me money.",
+      "needs": [
+        "search_docs"
+      ],
+      "tags": [
+        "tech"
+      ]
+    },
+    {
+      "id": "h2",
+      "label": "Tech: CSV export",
+      "prompt": "My CSV export is empty even though I have 300 invoices.",
+      "needs": [
+        "search_docs"
+      ],
+      "tags": [
+        "tech"
+      ]
+    },
+    {
+      "id": "s1",
+      "label": "Sales: 50 seats",
+      "prompt": "What would 50 seats on the Team plan cost per year?",
+      "needs": [
+        "get_pricing"
+      ],
+      "tags": [
+        "sales"
+      ]
+    },
+    {
+      "id": "s2",
+      "label": "Sales: upgrade",
+      "prompt": "We're on Starter with 8 people. Is it worth moving to Team, and does that come with SSO?",
+      "needs": [
+        "get_pricing"
+      ],
+      "tags": [
+        "sales"
+      ]
+    }
+  ],
+  "actions": {
+    "lookup": {
+      "kind": "tool",
+      "tool": "lookup_order",
+      "text": "lookup_order(\"#48213\")",
+      "tokens": 400
+    },
+    "refund": {
+      "kind": "tool",
+      "tool": "issue_refund",
+      "text": "issue_refund(order=\"#48213\", amount=49.00, reason=\"duplicate\")",
+      "tokens": 200
+    },
+    "docs": {
+      "kind": "tool",
+      "tool": "search_docs",
+      "text": "search_docs(\"crash on login after 4.2 update\")",
+      "tokens": 1200
+    },
+    "pricing": {
+      "kind": "tool",
+      "tool": "get_pricing",
+      "text": "get_pricing(plan=\"Team\", seats=50, billing=\"annual\")",
+      "tokens": 500
+    },
+    "done_refund": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Done: I found the duplicate charge on #48213 and refunded $49.00. It reaches your card in 3 to 5 days."
+    },
+    "done_tech": {
+      "kind": "answer",
+      "correct": true,
+      "text": "This is a known 4.2 issue with saved sessions. Sign out on the web, clear the app cache, then log in again. It is fixed in 4.2.1, out Thursday."
+    },
+    "done_sales": {
+      "kind": "answer",
+      "correct": true,
+      "text": "50 seats on Team is $18,000 a year ($30 per seat per month, billed annually), and Team includes SSO."
+    },
+    "wrong_refund": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Our refund policy allows refunds within 30 days of purchase. You can request one under Settings > Billing. (It quoted the policy instead of refunding.)"
+    },
+    "wrong_tech": {
+      "kind": "answer",
+      "correct": false,
+      "text": "I'm sorry for the trouble. I've refunded your last month as a goodwill gesture. (The crash is still there.)"
+    },
+    "wrong_sales": {
+      "kind": "answer",
+      "correct": false,
+      "text": "According to the help center, seats are managed under Admin > Members. (It never answered the price.)"
+    }
+  },
+  "policy": {
+    "base": {
+      "lookup": 0,
+      "refund": 0,
+      "docs": 0,
+      "pricing": 0,
+      "done_refund": 0,
+      "done_tech": 0,
+      "done_sales": 0,
+      "wrong_refund": 0,
+      "wrong_tech": 0,
+      "wrong_sales": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "tag": "refund"
+        },
+        "shift": {
+          "lookup": 3,
+          "docs": 1.6,
+          "pricing": 0.4,
+          "wrong_refund": 0.3
+        },
+        "note": "The generalist often treats a refund request as a policy question."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "refund"
+            },
+            {
+              "called": "lookup_order"
+            }
+          ]
+        },
+        "shift": {
+          "refund": 4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "refund"
+            },
+            {
+              "called": "search_docs"
+            }
+          ]
+        },
+        "shift": {
+          "wrong_refund": 2.5
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "refund"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_refund": 8,
+          "wrong_refund": 0.1
+        }
+      },
+      {
+        "when": {
+          "tag": "tech"
+        },
+        "shift": {
+          "docs": 3,
+          "lookup": 1,
+          "refund": 0.8,
+          "pricing": 0.4
+        },
+        "note": "An angry tech ticket looks like a refund ticket to a generalist."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "tech"
+            },
+            {
+              "called": "issue_refund"
+            }
+          ]
+        },
+        "shift": {
+          "wrong_tech": 4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "tech"
+            },
+            {
+              "called": "lookup_order"
+            },
+            {
+              "not": {
+                "called": "search_docs"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "refund": 1.5
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "tech"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_tech": 8
+        }
+      },
+      {
+        "when": {
+          "tag": "sales"
+        },
+        "shift": {
+          "pricing": 3,
+          "docs": 1.6,
+          "lookup": 0.3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "sales"
+            },
+            {
+              "called": "search_docs"
+            }
+          ]
+        },
+        "shift": {
+          "wrong_sales": 2.5
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "sales"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "set": {
+          "done_sales": 8,
+          "wrong_sales": 0.1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "has": "router"
+            },
+            {
+              "setting": "router.routes",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "tag": "refund"
+            }
+          ]
+        },
+        "scale": {
+          "docs": 0.05,
+          "pricing": 0.05,
+          "wrong_refund": 0.2
+        },
+        "note": "The refund route gets a short refund prompt and only the order tools."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "has": "router"
+            },
+            {
+              "setting": "router.routes",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "tag": "refund"
+            },
+            {
+              "called": "lookup_order"
+            }
+          ]
+        },
+        "scale": {
+          "lookup": 0.2
+        },
+        "note": "The refund prompt says: look the order up once, then act."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "has": "router"
+            },
+            {
+              "setting": "router.routes",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "tag": "tech"
+            }
+          ]
+        },
+        "scale": {
+          "lookup": 0.05,
+          "refund": 0.02,
+          "pricing": 0.05
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "has": "router"
+            },
+            {
+              "setting": "router.routes",
+              "op": "!=",
+              "value": ""
+            },
+            {
+              "tag": "sales"
+            }
+          ]
+        },
+        "scale": {
+          "docs": 0.05,
+          "lookup": 0.05,
+          "wrong_sales": 0.2
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 90% of tickets resolved correctly",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.9
+    },
+    {
+      "id": "tools",
+      "label": "At least 80% of tool calls on the right tool",
+      "metric": "tool_accuracy",
+      "op": ">=",
+      "value": 0.8
+    }
+  ],
+  "hints": [
+    "Read a failed refund ticket. Which tool did the agent reach for first, and why might a refund look like a help-center question?",
+    "Each kind of ticket needs a different prompt and a different set of tools. Something should decide the kind first.",
+    "Put a Router between the user and the model and give it the routes refund, tech, sales."
+  ],
+  "explain": "Classifying first lets each route get a short, focused prompt and only the tools it needs. The generalist was not dumb; it was choosing among too many options with one prompt that tried to cover everything."
+}

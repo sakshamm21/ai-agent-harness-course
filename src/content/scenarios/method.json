@@ -1,0 +1,470 @@
+{
+  "id": "method",
+  "title": "Design an Issue Triage Agent",
+  "brief": "Your team wants an agent that triages 400 new GitHub issues a day: find duplicates, read the issue, add the right label. The budget is $40 a day, so about $0.10 per issue. The first draft uses the large model, has no turn cap, and can close issues. Run it, then apply the method: fit the budget, cap the loop, and take away what it must never do. Hit 80% correct labels, $0.10 or less per issue, and zero incidents.",
+  "palette": [
+    "model",
+    "loop",
+    "tool",
+    "permissions"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "large"
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 60
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "search_issues",
+          "description": "Searches open and closed issues by keywords. Use this to find possible duplicates before labelling."
+        },
+        "position": {
+          "x": 760,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_issue",
+          "description": "Gets the full text, comments and author of one issue by number."
+        },
+        "position": {
+          "x": 760,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "add_label",
+          "description": "Adds a label such as bug, feature, question or duplicate to an issue."
+        },
+        "position": {
+          "x": 760,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "close_issue",
+          "description": "Closes an issue with a reason."
+        },
+        "position": {
+          "x": 760,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 12,
+          "maxCost": 0.3
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "p",
+        "type": "permissions",
+        "data": {
+          "allow": "search_issues, read_issue, add_label",
+          "deny": "close_issue"
+        },
+        "position": {
+          "x": 480,
+          "y": 330
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "search_issues",
+          "description": "Searches open and closed issues by keywords. Use this to find possible duplicates before labelling."
+        },
+        "position": {
+          "x": 760,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_issue",
+          "description": "Gets the full text, comments and author of one issue by number."
+        },
+        "position": {
+          "x": 760,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "add_label",
+          "description": "Adds a label such as bug, feature, question or duplicate to an issue."
+        },
+        "position": {
+          "x": 760,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "close_issue",
+          "description": "Closes an issue with a reason."
+        },
+        "position": {
+          "x": 760,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "p"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Crash report",
+      "prompt": "Triage issue #4812: \"App crashes on launch after updating to 3.2\".",
+      "needs": [
+        "read_issue",
+        "search_issues",
+        "add_label"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Feature request",
+      "prompt": "Triage issue #4813: \"Please add dark mode to the settings page\".",
+      "needs": [
+        "read_issue",
+        "search_issues",
+        "add_label"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Vague question",
+      "prompt": "Triage issue #4814: \"how do i do the thing from the docs\".",
+      "needs": [
+        "read_issue",
+        "search_issues",
+        "add_label"
+      ],
+      "tags": [
+        "vague"
+      ]
+    },
+    {
+      "id": "t4",
+      "label": "Possible duplicate",
+      "prompt": "Triage issue #4815: \"Login button does nothing on Safari\".",
+      "needs": [
+        "read_issue",
+        "search_issues",
+        "add_label"
+      ]
+    }
+  ],
+  "actions": {
+    "read": {
+      "kind": "tool",
+      "tool": "read_issue",
+      "text": "read_issue(4812)",
+      "tokens": 1400
+    },
+    "search": {
+      "kind": "tool",
+      "tool": "search_issues",
+      "text": "search_issues(\"crash on launch 3.2\")",
+      "tokens": 1200
+    },
+    "label": {
+      "kind": "tool",
+      "tool": "add_label",
+      "text": "add_label(4812, \"bug\")",
+      "tokens": 150
+    },
+    "research": {
+      "kind": "repeat",
+      "text": "search_issues(\"how do i do the thing\") again with the same words, hoping for a better match",
+      "tokens": 1200
+    },
+    "close": {
+      "kind": "dangerous",
+      "tool": "close_issue",
+      "text": "close_issue(4815, reason=\"duplicate of #3990\")",
+      "incident": "Closed a real, new bug report as a duplicate. The reporter is now angry on social media."
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Labelled #4812 as bug and linked the related issue #4790. No duplicate found."
+    },
+    "wrong": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Labelled #4812 as question."
+    }
+  },
+  "policy": {
+    "base": {
+      "read": 4,
+      "search": 2,
+      "label": 0,
+      "research": 0.15,
+      "close": 0.15,
+      "done": 0,
+      "wrong": 0.05
+    },
+    "modifiers": [
+      {
+        "when": {
+          "called": "read_issue"
+        },
+        "shift": {
+          "search": 3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "read_issue"
+            },
+            {
+              "called": "search_issues"
+            }
+          ]
+        },
+        "shift": {
+          "label": 4
+        }
+      },
+      {
+        "when": {
+          "tag": "vague"
+        },
+        "shift": {
+          "research": 1.5
+        },
+        "note": "Vague issues tempt the model to keep searching."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "vague"
+            },
+            {
+              "state": "repeating"
+            }
+          ]
+        },
+        "set": {
+          "research": 400
+        },
+        "note": "Once it starts re-running the same search on a vague issue, it rarely stops on its own."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 8,
+          "wrong": 0.3,
+          "close": 0.3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "setting": "model.tier",
+              "op": "==",
+              "value": "small"
+            },
+            {
+              "state": "ready"
+            }
+          ]
+        },
+        "shift": {
+          "wrong": 3
+        },
+        "note": "The small model mislabels more often."
+      },
+      {
+        "when": {
+          "setting": "model.tier",
+          "op": "==",
+          "value": "large"
+        },
+        "scale": {
+          "wrong": 0.3
+        }
+      },
+      {
+        "when": {
+          "not": {
+            "tool": "close_issue"
+          }
+        },
+        "set": {
+          "close": 0
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 80% correct labels",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.8
+    },
+    {
+      "id": "cost",
+      "label": "$0.10 or less per issue",
+      "metric": "avg_cost",
+      "op": "<=",
+      "value": 0.1
+    },
+    {
+      "id": "incidents",
+      "label": "Zero incidents",
+      "metric": "incidents",
+      "op": "==",
+      "value": 0
+    }
+  ],
+  "hints": [
+    "Step 2 is the napkin math: $40 a day over 400 issues is $0.10 each. Look at the cost per task the large model gives you.",
+    "Step 4: a loop with no cap lets one stuck search run to the platform limit. Step 3: does a triage bot ever need to close anything on its own?",
+    "Switch the model to medium, set the loop to about 12 max turns, and add a Permissions node that denies close_issue."
+  ],
+  "explain": "Each fix came from one step of the method: the budget picked the model tier, the loop strategy picked the cap, and the failure cost picked what to deny. None of them needed a smarter model."
+}

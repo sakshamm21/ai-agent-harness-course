@@ -1,0 +1,75 @@
+{
+  "id": "rag",
+  "title": "Retrieval-Augmented Generation",
+  "brief": "Your docs chatbot answers questions about Acme's API. The model was trained before the current docs were written, so it answers from memory: most numbers are out of date, and none come with a source. Support rejects any answer without a source link. Answer at least 85% of questions correctly with a citation, for under $0.03 per question.",
+  "palette": ["user", "model", "loop", "retriever"],
+  "starter": {
+    "nodes": [
+      {"id": "u", "type": "user", "data": {}, "position": {"x": 0, "y": 120}},
+      {"id": "m", "type": "model", "data": {"tier": "medium"}, "position": {"x": 260, "y": 120}},
+      {"id": "l", "type": "loop", "data": {"maxTurns": 6}, "position": {"x": 520, "y": 120}}
+    ],
+    "edges": [
+      {"source": "u", "target": "m"},
+      {"source": "m", "target": "l"}
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {"id": "u", "type": "user", "data": {}, "position": {"x": 0, "y": 120}},
+      {"id": "r", "type": "retriever", "data": {"chunkSize": 500, "overlap": 50, "topK": 4}, "position": {"x": 0, "y": 280}},
+      {"id": "m", "type": "model", "data": {"tier": "medium"}, "position": {"x": 260, "y": 120}},
+      {"id": "l", "type": "loop", "data": {"maxTurns": 6}, "position": {"x": 520, "y": 120}}
+    ],
+    "edges": [
+      {"source": "u", "target": "m"},
+      {"source": "r", "target": "m"},
+      {"source": "m", "target": "l"}
+    ]
+  },
+  "tasks": [
+    {"id": "q1", "label": "Refund window", "prompt": "How many days do customers have to request a refund?", "tags": ["in_docs"]},
+    {"id": "q2", "label": "Rate limit", "prompt": "What is the API rate limit on the Pro plan?", "tags": ["in_docs"]},
+    {"id": "q3", "label": "SSO", "prompt": "Can I use SSO on the Team plan?", "tags": ["in_docs"]},
+    {"id": "q4", "label": "Not in the docs", "prompt": "Do you have a native SAP integration?", "tags": ["not_in_docs"]}
+  ],
+  "actions": {
+    "retrieve": {"kind": "think", "text": "Retriever: embedded the question, top chunks by cosine: billing.md#refunds (0.83), limits.md#pro (0.61), plans.md#sso (0.58). Pasted into the prompt with their source ids.", "tokens": 2000},
+    "retrieve_one": {"kind": "think", "text": "Retriever: top 1 chunk by cosine: changelog.md#2025-03 (0.71). It mentions the topic but not the answer.", "tokens": 500},
+    "retrieve_flood": {"kind": "think", "text": "Retriever: top chunks by cosine, all pasted in: 20 chunks from billing.md, limits.md, plans.md, changelog.md, faq.md ... (40,000 tokens)", "tokens": 40000},
+    "memory_wrong": {"kind": "answer", "correct": false, "text": "From what I know: refunds within 30 days, 1,000 requests per minute on Pro, and SSO on every plan. (Training data. All three are out of date.)"},
+    "memory_uncited": {"kind": "answer", "correct": false, "text": "I'm fairly sure about this, but I can't point you to a page. (No citation: support can't verify it, so the answer is rejected.)"},
+    "invent": {"kind": "answer", "correct": false, "text": "Yes, Acme has a native SAP integration under Settings → Integrations. (It does not. The model filled the gap.)"},
+    "not_found": {"kind": "answer", "correct": true, "text": "I couldn't find an SAP integration in the docs. The integrations page lists Salesforce, HubSpot and Zapier [integrations.md#list]. Want me to connect you with sales?"},
+    "wrong_chunk": {"kind": "answer", "correct": false, "text": "According to the changelog, this changed in March 2025 [changelog.md#2025-03]. (The cited chunk does not actually contain the answer.)"},
+    "cited_refund": {"kind": "answer", "correct": true, "text": "Customers can request a refund within 14 days of the charge [billing.md#refunds]."},
+    "cited_rate": {"kind": "answer", "correct": true, "text": "The Pro plan allows 600 requests per minute per API key; bursts over that get HTTP 429 [limits.md#pro]."},
+    "cited_sso": {"kind": "answer", "correct": true, "text": "No. SAML SSO is included on the Business plan and above, not Team [plans.md#sso]."}
+  },
+  "policy": {
+    "base": {"memory_wrong": 1.4, "memory_uncited": 0.6, "invent": 0, "not_found": 0, "wrong_chunk": 0, "retrieve": 0, "retrieve_one": 0, "retrieve_flood": 0, "cited_refund": 0, "cited_rate": 0, "cited_sso": 0},
+    "modifiers": [
+      {"when": {"tag": "not_in_docs"}, "set": {"invent": 1.4, "memory_wrong": 0, "memory_uncited": 0.3}, "note": "With nothing to look at, the model fills the gap."},
+      {"when": {"all": [{"edge": ["retriever", "model"]}, {"turn": "==", "value": 1}, {"setting": "retriever.topK", "op": "==", "value": 1}]}, "set": {"retrieve_one": 10, "memory_wrong": 0, "memory_uncited": 0, "invent": 0}},
+      {"when": {"all": [{"edge": ["retriever", "model"]}, {"turn": "==", "value": 1}, {"setting": "retriever.topK", "op": ">", "value": 1}, {"setting": "retriever.topK", "op": "<=", "value": 8}]}, "set": {"retrieve": 10, "memory_wrong": 0, "memory_uncited": 0, "invent": 0}},
+      {"when": {"all": [{"edge": ["retriever", "model"]}, {"turn": "==", "value": 1}, {"setting": "retriever.topK", "op": ">", "value": 8}]}, "set": {"retrieve_flood": 10, "memory_wrong": 0, "memory_uncited": 0, "invent": 0}},
+      {"when": {"all": [{"edge": ["retriever", "model"]}, {"turn": ">=", "value": 2}]}, "set": {"wrong_chunk": 0.4, "memory_wrong": 0.2, "memory_uncited": 0, "invent": 0, "retrieve": 0, "retrieve_one": 0, "retrieve_flood": 0, "cited_refund": 9, "cited_rate": 9, "cited_sso": 9}, "note": "The answer is in the prompt, with a source id to cite."},
+      {"when": {"all": [{"edge": ["retriever", "model"]}, {"turn": ">=", "value": 2}, {"setting": "retriever.topK", "op": "==", "value": 1}]}, "set": {"wrong_chunk": 3, "cited_refund": 4, "cited_rate": 4, "cited_sso": 4}, "note": "One chunk: when the top hit is wrong, there is no second chance."},
+      {"when": {"all": [{"edge": ["retriever", "model"]}, {"turn": ">=", "value": 2}, {"setting": "retriever.topK", "op": ">", "value": 8}]}, "set": {"wrong_chunk": 1.5, "cited_refund": 7, "cited_rate": 7, "cited_sso": 7}, "note": "Twenty chunks: the right one is buried in the middle."},
+      {"when": {"all": [{"edge": ["retriever", "model"]}, {"turn": ">=", "value": 2}, {"tag": "not_in_docs"}]}, "shift": {"not_found": 9}, "set": {"invent": 0.5, "cited_refund": 0, "cited_rate": 0, "cited_sso": 0}, "note": "Nothing relevant came back, so the grounded answer is 'not in the docs'."},
+      {"when": {"task": "q1"}, "scale": {"cited_rate": 0, "cited_sso": 0}},
+      {"when": {"task": "q2"}, "scale": {"cited_refund": 0, "cited_sso": 0}},
+      {"when": {"task": "q3"}, "scale": {"cited_refund": 0, "cited_rate": 0}}
+    ]
+  },
+  "goals": [
+    {"id": "accuracy", "label": "At least 85% correct, with a citation", "metric": "success_rate", "op": ">=", "value": 0.85},
+    {"id": "cost", "label": "Under $0.03 per question", "metric": "avg_cost", "op": "<=", "value": 0.03}
+  ],
+  "hints": [
+    "The model is answering from what it learned in training. Where are the current docs in this graph?",
+    "Add a Retriever and wire it into the Model, so the top chunks land in the prompt with their source ids.",
+    "Retriever → Model with Top k between 3 and 5. Top k of 1 misses too often; 20 floods the prompt and costs about $0.13 a question."
+  ],
+  "explain": "RAG puts the right text in front of the model before it answers, so it stops relying on training data and can point to its source. Top k is the dial: too few chunks miss the answer, too many bury it and multiply the bill."
+}

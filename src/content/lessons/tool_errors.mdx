@@ -1,0 +1,116 @@
+---
+title: "Tool Errors and Recovery"
+section: "tools"
+order: 12
+tagline: "Return errors the model can act on."
+realWorld: "API returns 500 and the agent hallucinates success"
+build:
+  type: "lab"
+  scenario: "tool_errors"
+terms:
+  - term: "actionable error"
+    def: "A short tool error message that says what failed, why if known, and what the model should do next, such as retry, change an argument or ask the user."
+  - term: "is_error"
+    def: "A flag on a tool_result block that tells the model the tool call failed, so it reads the content as an error instead of as data."
+  - term: "transient error"
+    def: "A failure that may succeed if you simply try again, such as a timeout, a dropped connection or a rate limit."
+usedIn: ["nanoharness/2"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "The carrier API times out and your harness returns an empty string as the tool result. What is the model most likely to do?"
+    options: ["Retry the call, because it knows the call failed", "Treat the empty result as data and answer anyway, often inventing a status", "Stop and ask the user for help"]
+    answer: 1
+    why: "An empty result looks like a successful call that found nothing. Without a clear error, the model has no reason to retry."
+  - q: "Which error message helps the model most?"
+    options: ["A 40-line Python traceback", "\"Error 500\"", "\"track_shipment timed out after 10s. The carrier API is slow right now. Safe to retry once.\""]
+    answer: 2
+    why: "It names what failed, gives the likely cause and says what to do next, in a few dozen tokens."
+  - q: "A call fails 35% of the time, independently. If the model retries up to 2 times, how often does it still fail?"
+    options: ["About 4%", "About 12%", "About 35%"]
+    answer: 0
+    why: "It fails only if all 3 tries fail: 0.35 × 0.35 × 0.35 ≈ 0.043."
+reading:
+  - title: "Anthropic docs: Tool use with Claude"
+    url: "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview"
+  - title: "Anthropic: Writing effective tools for agents"
+    url: "https://www.anthropic.com/engineering/writing-tools-for-agents"
+---
+
+## The tracking call failed. The agent said "out for delivery".
+
+Your order-status agent calls `get_order`, then `track_shipment` on the carrier's API. The carrier API drops about 1 call in 3. When it does, your harness pastes the exception into the conversation, and in roughly half of those cases the agent replies: "Good news, your order is out for delivery and should arrive today!"
+
+It never got a status. It made one up. The customer waits all day for a parcel that is still in a depot in Leeds.
+
+## An error is just more text to the model
+
+Here is what the model sees when the call fails:
+
+```text
+Traceback (most recent call last):
+  File "/srv/agent/tools/carrier.py", line 88, in track_shipment
+    resp = session.get(url, timeout=10)
+  ...
+ConnectionResetError: [Errno 104] Connection reset by peer
+```
+
+That is about 900 tokens of file paths and library internals. It does not say whether the lookup worked, whether trying again is safe, or what to tell the customer. The model has to guess, and the cheapest guess is the answer it was already heading towards.
+
+Some harnesses do worse. They catch the exception and return `""` or `"None"`. Now the failure looks like a successful call that found nothing, and the model has no reason to doubt it.
+
+The model can only recover from errors it can understand. Your harness decides what it understands.
+
+## Catch it, explain it, and say what to do next
+
+Wrap every tool so a failure becomes a short, honest tool result:
+
+```python
+def run_tool(call):
+    try:
+        out = TOOLS[call.name](**call.input)
+        return {"type": "tool_result", "tool_use_id": call.id, "content": out}
+    except TimeoutError:
+        msg = f"{call.name} timed out after 10s. The service is slow. Safe to retry once."
+    except KeyError as e:
+        msg = f"{call.name}: no order with id {e}. Check the number with the customer."
+    except Exception as e:
+        log.exception("tool failed")  # the full traceback goes to your logs, not the model
+        msg = f"{call.name} failed ({type(e).__name__}). Do not guess; tell the user it is unavailable."
+    return {"type": "tool_result", "tool_use_id": call.id, "content": msg, "is_error": True}
+```
+
+A good error message has three parts:
+
+- **What failed**, by tool name and argument.
+- **Why**, if you know it: a timeout, a bad id, a missing permission.
+- **What to do next**: retry, fix an argument, try another tool, or tell the user.
+
+The `is_error: true` flag tells the model this is a failure, not data. And for transient errors (timeouts, rate limits), your code can retry once or twice by itself before the model ever sees a problem.
+
+<Flow steps={[{ label: "Tool call", sub: "track_shipment" }, { label: "Fails", sub: "timeout", kind: "bad" }, { label: "Harness", sub: "short message + is_error", kind: "hl" }, { label: "Model", sub: "retries or tells the truth", kind: "good" }]} caption="The harness turns an exception into a message the model can act on." />
+
+## Let us check the math
+
+The tracking call fails 35% of the time. With raw tracebacks, say the model retries after half of those failures and guesses after the other half. With actionable errors, it retries up to 2 times.
+
+<Callout type="math" label="Let us check the math">
+**Raw errors.** Right status = first try works + fails, retries, works: 0.65 + 0.35 × 0.5 × 0.65 = 0.65 + 0.114 ≈ **76%**. About 1 customer in 4 gets a guess.<br />
+**Actionable errors.** It fails only if all 3 tries fail: 0.35³ ≈ 0.043, so **96%** get the right status.<br />
+**Tokens.** A traceback adds 900 tokens, and it rides along on, say, 3 more turns: 2,700 tokens. The short message adds 120 × 3 = 360.<br />
+At 1,000 orders a day, that is 350 failures × 2,340 tokens saved ≈ 819k tokens, about **$2.46 a day** at medium sim prices ($3 per million input, illustrative).
+</Callout>
+
+The tokens are a bonus. The real win is 20 more customers in every 100 getting a true answer.
+
+## The tradeoff: retries are not free either
+
+Telling the model "safe to retry" works only when it is true, and every retry costs something:
+
+- **Duplicate side effects.** Retrying `get_order` is harmless. Retrying `charge_card` after a timeout can charge twice, because the first call may have gone through. Make side-effecting tools idempotent ([Retries and Idempotent Tools](/c/idempotency/)).
+- **Retry loops.** A model told to retry can keep retrying a service that is down. Cap retries in code and in the turn budget ([Stop Conditions and Budgets](/c/stop_conditions/)), and fail over when a dependency is out ([Timeouts and Fallbacks](/c/timeouts/)).
+- **Leaking internals.** Raw errors can carry file paths, hostnames or keys. Send the model a summary, and keep the full trace in your logs ([Tracing](/c/tracing/)).
+
+## In the real world
+
+The Claude API builds this in. A `tool_result` can carry `is_error: true`, and Anthropic's docs suggest returning a helpful error message in that block so Claude can retry or explain. MCP does the same thing at the protocol level: a tool that runs but fails returns `isError: true` with a text message in the normal result, so the model sees it, while protocol problems like an unknown tool are reported as JSON-RPC errors to the client.

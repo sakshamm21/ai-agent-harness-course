@@ -1,0 +1,63 @@
+{
+  "id": "memory_types",
+  "title": "Kinds of Memory",
+  "brief": "Priya uses your meal-planning assistant three times this month. In session 1 she says she is vegetarian, allergic to peanuts and cooks for two. In sessions 2 and 3 she just asks for a plan. Right now the agent only has working memory (the context window), so every session starts from zero. Get at least 85% of sessions right in 1.5 turns or fewer on average.",
+  "palette": ["user", "model", "loop", "memory"],
+  "starter": {
+    "nodes": [
+      {"id": "u", "type": "user", "data": {}, "position": {"x": 0, "y": 120}},
+      {"id": "m", "type": "model", "data": {"tier": "medium"}, "position": {"x": 260, "y": 120}},
+      {"id": "l", "type": "loop", "data": {"maxTurns": 10}, "position": {"x": 520, "y": 120}},
+      {"id": "mem", "type": "memory", "data": {"kind": "window", "writePolicy": "always"}, "position": {"x": 260, "y": 280}}
+    ],
+    "edges": [
+      {"source": "u", "target": "m"},
+      {"source": "m", "target": "l"},
+      {"source": "mem", "target": "m"}
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {"id": "u", "type": "user", "data": {}, "position": {"x": 0, "y": 120}},
+      {"id": "m", "type": "model", "data": {"tier": "medium"}, "position": {"x": 260, "y": 120}},
+      {"id": "l", "type": "loop", "data": {"maxTurns": 10}, "position": {"x": 520, "y": 120}},
+      {"id": "mem", "type": "memory", "data": {"kind": "profile", "writePolicy": "always"}, "position": {"x": 260, "y": 280}}
+    ],
+    "edges": [
+      {"source": "u", "target": "m"},
+      {"source": "m", "target": "l"},
+      {"source": "mem", "target": "m"}
+    ]
+  },
+  "tasks": [
+    {"id": "s1", "label": "Session 1: first visit", "prompt": "I'm vegetarian, allergic to peanuts, and I cook for two. What should we have for dinner tonight?", "tags": ["first"]},
+    {"id": "s2", "label": "Session 2: a week later", "prompt": "Plan five dinners for this week, please.", "tags": ["returning"]},
+    {"id": "s3", "label": "Session 3: two weeks later", "prompt": "Quick snack idea for a long train ride tomorrow?", "tags": ["returning"]}
+  ],
+  "actions": {
+    "ask": {"kind": "think", "text": "Before I plan anything: do you have any dietary restrictions or allergies, and how many people are eating? (Priya, typing it all again: \"Vegetarian, peanut allergy, two of us. I told you this last time.\")", "tokens": 250},
+    "search_episodes": {"kind": "think", "text": "memory.search(\"Priya diet\") → 3 old transcript snippets: \"...dinner for two...\", \"...my sister eats fish...\", \"...peanut sauce recipe for a party...\"", "tokens": 2400},
+    "generic": {"kind": "answer", "correct": false, "text": "Here's your week: Monday chicken stir-fry, Tuesday satay noodles with peanut sauce, Wednesday salmon, Thursday beef chili, Friday pizza for four."},
+    "personal": {"kind": "answer", "correct": true, "text": "Vegetarian, peanut-free, for two: Monday chickpea curry, Tuesday mushroom risotto, Wednesday black bean tacos, Thursday halloumi traybake, Friday veggie pizza."}
+  },
+  "policy": {
+    "base": {"generic": 1, "ask": 1, "personal": 0.1, "search_episodes": 0},
+    "modifiers": [
+      {"when": {"tag": "first"}, "set": {"personal": 8, "generic": 0.3, "ask": 0.2}, "note": "The preferences are right there in the prompt."},
+      {"when": {"all": [{"tag": "returning"}, {"turn": ">=", "value": 2}]}, "set": {"personal": 8, "generic": 0.5, "ask": 0}, "note": "After asking again, the model has what it needs, one turn late."},
+      {"when": {"all": [{"tag": "returning"}, {"turn": "==", "value": 1}, {"setting": "memory.kind", "op": "==", "value": "profile"}, {"setting": "memory.writePolicy", "op": "!=", "value": "never"}]}, "set": {"personal": 9, "generic": 0.3, "ask": 0.2}, "note": "Semantic memory: the saved profile (vegetarian, peanut allergy, cooks for two) is in the prompt from turn 1."},
+      {"when": {"all": [{"tag": "returning"}, {"turn": "==", "value": 1}, {"setting": "memory.kind", "op": "==", "value": "vector"}, {"setting": "memory.writePolicy", "op": "!=", "value": "never"}]}, "set": {"search_episodes": 6, "ask": 0.5, "generic": 0.3, "personal": 0}, "note": "Episodic memory: the model searches old transcripts first."},
+      {"when": {"all": [{"tag": "returning"}, {"turn": ">=", "value": 2}, {"setting": "memory.kind", "op": "==", "value": "vector"}, {"setting": "memory.writePolicy", "op": "!=", "value": "never"}]}, "set": {"personal": 5, "generic": 2.5, "ask": 0}, "note": "Old snippets are noisy: the sister's fish and the party's peanut sauce leak into the plan."}
+    ]
+  },
+  "goals": [
+    {"id": "success", "label": "Get at least 85% of sessions right", "metric": "success_rate", "op": ">=", "value": 0.85},
+    {"id": "turns", "label": "1.5 turns or fewer on average (no asking again)", "metric": "avg_turns", "op": "<=", "value": 1.5}
+  ],
+  "hints": [
+    "Read session 2 in the transcript. Where would the agent have to look to know Priya is vegetarian?",
+    "The Memory node's kind is 'window': that is working memory, and it is gone when the session ends. Which kind keeps facts about the user between sessions?",
+    "Set the Memory node's kind to 'profile' (semantic memory: stable facts about the user) and keep the write policy on."
+  ],
+  "explain": "Working memory dies with the session. A small profile of stable facts, loaded into every prompt, is the right kind of memory for preferences; searching old transcripts (episodic memory) is slower and drags in noise."
+}

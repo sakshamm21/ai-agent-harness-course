@@ -1,0 +1,70 @@
+{
+  "id": "context_mgmt",
+  "title": "Context Management and Compaction",
+  "brief": "Two long migrations, each about 200 turns of roughly 300 tokens: 60,000 tokens of work through an 8,000-token window. The harness already compacts, but by truncating the oldest messages, and the oldest message is the task. Pick a strategy that lets at least 85% of runs finish correctly for $3.25 or less per task.",
+  "palette": ["user", "model", "loop", "tool", "compactor"],
+  "window": 8000,
+  "systemTokens": 1200,
+  "hardCap": 250,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 240 }, "position": { "x": 520, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text. Use this before changing a file." }, "position": { "x": 800, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the file." }, "position": { "x": 800, "y": 120 } },
+      { "id": "t3", "type": "tool", "data": { "name": "run_tests", "description": "Runs the test suite and lists failures. Use this after each batch of edits." }, "position": { "x": 800, "y": 240 } },
+      { "id": "c", "type": "compactor", "data": { "trigger": 0.8, "strategy": "truncate" }, "position": { "x": 260, "y": 280 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" },
+      { "source": "m", "target": "c" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 240 }, "position": { "x": 520, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text. Use this before changing a file." }, "position": { "x": 800, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the file." }, "position": { "x": 800, "y": 120 } },
+      { "id": "t3", "type": "tool", "data": { "name": "run_tests", "description": "Runs the test suite and lists failures. Use this after each batch of edits." }, "position": { "x": 800, "y": 240 } },
+      { "id": "c", "type": "compactor", "data": { "trigger": 0.7, "strategy": "summarize" }, "position": { "x": 260, "y": 280 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" },
+      { "source": "m", "target": "c" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Jest to Vitest, 64 test files", "prompt": "Migrate all 64 test files in tests/ from Jest to Vitest. Keep every test passing. Do not touch tests/legacy/.", "needs": ["read_file", "edit_file", "run_tests"], "tokensPerTurn": 300 },
+    { "id": "t2", "label": "Logger to structured logs, 70 call sites", "prompt": "Replace every console.log call in src/ with logger.info and structured fields. Leave scripts/ alone.", "needs": ["read_file", "edit_file", "run_tests"], "tokensPerTurn": 300 }
+  ],
+  "actions": {
+    "read": { "kind": "tool", "tool": "read_file", "text": "read_file(\"tests/orders/checkout.test.ts\")" },
+    "edit": { "kind": "tool", "tool": "edit_file", "text": "edit_file(\"tests/orders/checkout.test.ts\", \"jest.fn()\", \"vi.fn()\")" },
+    "test": { "kind": "tool", "tool": "run_tests", "text": "run_tests(\"tests/orders\")" },
+    "done": { "kind": "answer", "correct": true, "text": "Done. Every file in scope is migrated, the excluded folder is untouched, and all 812 tests pass." },
+    "drift": { "kind": "answer", "correct": false, "text": "Done. I also rewrote tests/legacy/ and scripts/ for consistency. (The task said to leave those alone, but that line is no longer in the context.)" },
+    "early": { "kind": "answer", "correct": false, "text": "Done. Migrated the test files I found." }
+  },
+  "policy": {
+    "base": { "read": 2, "edit": 2, "test": 0.6, "done": 0, "drift": 0, "early": 0.0002 },
+    "modifiers": [
+      { "when": { "turn": ">=", "value": 190 }, "shift": { "done": 3 }, "note": "About 190 turns in, the last file is migrated." },
+      { "when": { "state": "lost_instructions" }, "shift": { "drift": 0.06 }, "scale": { "done": 0.1 }, "note": "Without the original task in view, the agent drifts out of scope." }
+    ]
+  },
+  "goals": [
+    { "id": "finish", "label": "At least 85% of runs finish correctly", "metric": "success_rate", "op": ">=", "value": 0.85 },
+    { "id": "cost", "label": "$3.25 or less per task", "metric": "avg_cost", "op": "<=", "value": 3.25 }
+  ],
+  "hints": [
+    "Open a failing transcript and find the first compaction. What did truncation drop?",
+    "Truncation throws away the oldest messages, and the oldest message is the task. Pick a strategy that keeps the task and shrinks the rest.",
+    "Set the Compactor strategy to summarize (or offload) and trigger it at about 0.7 of the window."
+  ],
+  "explain": "Summarize and offload both keep the task and shrink the history, so the run survives 200 turns in an 8k window. Truncate and no compaction both lose the task, and the agent drifts."
+}

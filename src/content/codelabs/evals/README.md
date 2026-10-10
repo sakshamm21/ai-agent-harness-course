@@ -1,0 +1,38 @@
+---
+title: "Why Evals Come First"
+realModel: false
+---
+
+## The scenario
+
+You run a small support agent. It has one tool, `get_order`, and five test orders:
+
+| Order | Item | Status | Price |
+|---|---|---|---|
+| A-1001 | headphones | delivered 12 days ago | $89 |
+| A-1002 | desk lamp | delivered 45 days ago | $35 |
+| A-1003 | mug | in transit, arriving Thursday | $14 |
+| A-1004 | backpack | processing (not shipped) | $60 |
+| A-1005 | keyboard | delivered 31 days ago | $120 |
+
+The policy: refunds only within 30 days of delivery; orders can be cancelled only before they ship; anyone who threatens a chargeback, a lawyer or a formal complaint goes to a human.
+
+`v1` is in production. A teammate wrote `v2` with a "friendlier" prompt and says it is better: it now helps people who are locked out. Both are scripted with `MockModel`, so every run gives the same answers. Your job is to decide, with numbers, whether to ship `v2`.
+
+## Your task
+
+1. Press **Run**. Read what `v1` says to the five starter cases. Try a few questions of your own with `print(v1("..."))`.
+2. Grow `CASES` to **20 cases** across five categories: `refund`, `order_status`, `cancel`, `account`, `escalation` (3 or more each). Each case lists strings the answer `must_include` and strings it `must_not_include`. Put the dangerous answer in `must_not_include` (for example `"started a refund"` on an order outside the window).
+3. Finish `grade(case, answer)`: lowercase both sides; pass only if every `must_include` string appears and no `must_not_include` string does.
+4. Finish `score(agent, cases)`: run every case and return `{"overall": ..., "by_category": {...}, "failed": [...ids]}`.
+5. Finish `should_ship(old, new)`: say yes only if the overall score holds **and** no category drops.
+6. Press **Run** again and read the two score cards. Then **Check**.
+
+## What the checks look for
+
+- At least 20 cases with unique ids, at least 4 categories with 3 or more cases each, and at least 5 negative checks.
+- `grade` is case-insensitive and enforces both lists.
+- `score` returns the right overall and per-category pass rates on a small fixed set.
+- `should_ship` refuses a candidate whose average holds while one category drops.
+- `v1` passes at least 80% of your cases (your expectations match the agent you trust).
+- Your set contains at least one case that `v1` passes and `v2` fails, and `ship_v2` ends up `False`.

@@ -1,0 +1,100 @@
+---
+title: "When Not to Build an Agent"
+section: "foundations"
+order: 7
+tagline: "Most problems want a single well-made call."
+realWorld: "Teams replacing a 3-line regex with a $2 agent run"
+build:
+  type: "lab"
+terms:
+  - term: "single call"
+    def: "One model request with a clear prompt and no loop: the right tool for classification, extraction, translation and rewriting."
+  - term: "known path"
+    def: "A task whose steps you can write down before you see the input. Known-path tasks want code or a workflow, not an agent."
+  - term: "deterministic code"
+    def: "Ordinary code, like a regex or a lookup, that gives the same answer every time for free. Always the first thing to try."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "You need to check whether an ID matches \"ORD- plus 8 digits\". What should you use?"
+    options: ["An agent with a search tool", "A single model call", "A regex"]
+    answer: 2
+    why: "The rule is exact and known in advance. A regex is free, instant and never wrong about it. A model can only add cost and error."
+  - q: "Which of these jobs most needs an agent?"
+    options: ["Translating a reply into Spanish", "Finding out why last night's export failed", "Tagging a ticket's sentiment"]
+    answer: 1
+    why: "Debugging needs exploration: read the logs, follow the clue to the code, check the data. The other jobs are one input, one output."
+  - q: "An agent run costs $0.155 and a single call costs $0.0065. At 10,000 jobs a day, how much does the agent add per day?"
+    options: ["About $15", "About $150", "About $1,485"]
+    answer: 2
+    why: "10,000 × ($0.155 − $0.0065) = 10,000 × $0.1485 = $1,485 a day, for answers that are no better."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "Anthropic docs: Prompt engineering overview"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview"
+---
+
+## The agent took three turns to read an order number
+
+Your team built one agent for every back-office job: a large model, a loop, and tools for the wiki, the logs, the warehouse and the repo. You send it an email and ask for the order number in it.
+
+It searches the wiki for "order number format conventions", runs a SQL query for similar orders, and then answers. The answer is right. It took 3 model calls and cost about $0.155. The line of code that does the same job is `re.search(r"ORD-\d{8}", email)`. It costs nothing, takes a microsecond, and has never once looked up the wrong order.
+
+## Freedom only helps when there is something to explore
+
+An agent is a model that chooses its own next step ([Chatbot vs Workflow vs Agent](/c/chat_vs_agent/)). That freedom is valuable when you cannot know the steps in advance. When you can, it is pure overhead:
+
+- **Cost.** Every extra step resends the whole context. Three calls cost far more than three times one call, because each one is bigger.
+- **Latency.** Steps run one after another. Three calls on a large model is about 10 seconds for an answer a regex gives instantly.
+- **New ways to fail.** Give a model tools and a loop, and it will use them. In the lab, the agent sometimes "helpfully" looks up similar orders and answers for the wrong one. A single call cannot make that mistake because it has nowhere to wander.
+
+Most jobs that teams hand to agents are classification, extraction, translation or rewriting: one input, one output, a known path.
+
+## Climb the ladder, one rung at a time
+
+Before you build an agent, ask whether each rung below it can do the job. Stop at the first one that can.
+
+<Flow steps={[{ label: "Plain code", sub: "regex, lookup, rules", kind: "good" }, { label: "One model call", sub: "clear prompt, structured output" }, { label: "Workflow", sub: "fixed steps in your code" }, { label: "Agent", sub: "only when the path is unknown", kind: "hl" }]} caption="Each rung costs more and behaves less predictably than the one before it." />
+
+For the five jobs in the lab:
+
+- Pull an order number out of an email: **plain code**, or one call if the formats vary.
+- Tag sentiment, translate a reply: **one model call** each.
+- Check an ID format: **plain code**.
+- Find out why the nightly export failed: **agent**. It has to read the logs, follow the error to the code, and check the table. Nobody can write those steps down in advance.
+
+In the lab all five jobs start in one large-model agent. Add a router in front so the one-shot jobs get a single call and only the export job enters the loop, then see whether the big model is still needed.
+
+## Let us check the math
+
+Illustrative sim prices per million input/output tokens: medium $3/$15, large $15/$75. Every call starts from 1,400 tokens of system prompt, tools and task, and writes 150 tokens.
+
+<Callout type="math" label="Let us check the math">
+**Agent on the order-number job (large):** calls of 1,400, then 2,600 (after a 1,200-token wiki result), then 4,100 (after a 1,500-token SQL result) = 8,100 input.<br />
+8,100 × $15/M + 450 × $75/M = $0.1215 + $0.0338 ≈ **$0.155**.
+
+**One call (medium):** 1,400 × $3/M + 150 × $15/M = $0.0042 + $0.0023 = **$0.0065**. About 24 times cheaper.
+
+**At 10,000 emails a day:** agent $1,550 a day, single call $65 a day, regex about **$0**.
+
+**The export job still needs the agent (medium):** 4 calls of 1,400, 2,900, 4,100 and 4,700 tokens = 13,100 input, 600 output.<br />
+13,100 × $3/M + 600 × $15/M = $0.039 + $0.009 = **$0.048**.
+
+**Routed mix of all five jobs:** (4 × $0.0065 + $0.048) / 5 ≈ **$0.015** a job, against about $0.17 a job for the all-agent setup.
+</Callout>
+
+## The tradeoff: now you have two paths and a decision to get right
+
+Splitting the work means something has to choose the path. A router that sends the export job to a single call gets a confident guess ("probably a timeout") instead of a diagnosis. You also maintain two code paths, two prompts and two sets of tests instead of one.
+
+Ways to manage it:
+
+- **Route on clear signals.** Job type, source system or a cheap classifier call usually beat a clever prompt. [Routing](/c/routing/) covers how to measure misroutes.
+- **Escalate on failure.** If the single call's [structured output](/c/structured/) fails validation, hand that one job to the agent instead of retrying forever.
+- **Keep both paths honest.** A small eval set per path catches the day a prompt change breaks one of them ([Why Evals Come First](/c/evals/)).
+
+## In the real world
+
+Anthropic's "Building effective agents" makes the same argument: find the simplest solution that works and add complexity only when it clearly improves results, which "might mean not building agentic systems at all". It notes that a single call with retrieval and good examples is often enough, and that agents trade latency and cost for better performance on open-ended tasks. The skill this section ends on is knowing which kind of task is in front of you.

@@ -1,0 +1,101 @@
+---
+title: "ReAct: Reason then Act"
+section: "tools"
+order: 10
+tagline: "Thinking between tool calls makes fewer wrong moves."
+realWorld: "Research assistants that plan their next search"
+build:
+  type: "lab"
+  scenario: "react"
+terms:
+  - term: "ReAct"
+    def: "A prompting pattern (Reason + Act) where the model writes a short thought before each action, then reads the observation and thinks again."
+  - term: "observation"
+    def: "The tool result the model reads after an action; in ReAct each observation is followed by a new thought."
+  - term: "interleaved thinking"
+    def: "Reasoning the model does between tool calls, after reading one result and before choosing the next action."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-09
+quiz:
+  - q: "What does a ReAct thought add that a plain tool call does not?"
+    options: ["Access to new tools", "A written statement of what the model learned, what is missing and what it will do next", "A guarantee that the tool call succeeds"]
+    answer: 1
+    why: "The thought is text the model conditions its next action on. Writing the plan down makes the next move follow from the evidence instead of from habit."
+  - q: "Reasoning adds about 150 output tokens per turn but cuts a task from 6 turns to 4. Why can it still be cheaper?"
+    options: ["Output tokens are free", "Each skipped turn would have resent the whole growing context as input", "Thoughts are deleted before they are billed"]
+    answer: 1
+    why: "Every turn pays for the full context again. Two fewer turns at 10k+ tokens each outweigh a few hundred extra output tokens."
+  - q: "For which task is turning on reasoning most likely a waste?"
+    options: ["A one-step lookup: get the order status and read it back", "A research question that needs three searches and a comparison", "Debugging a failing test across several files"]
+    answer: 0
+    why: "With one obvious action there is nothing to plan, so the thought only adds tokens and latency."
+reading:
+  - title: "ReAct: Synergizing Reasoning and Acting in Language Models (Yao et al.)"
+    url: "https://arxiv.org/abs/2210.03629"
+  - title: "Anthropic docs: Tool use with Claude"
+    url: "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview"
+---
+
+## Your research agent reached for the calculator first
+
+You ask a research assistant: "Did Acme raise the price of its Pro plan last quarter?" It has three tools: `web_search`, `read_page` and `calculator`. Over 60 runs, about 4 in 10 of its tool calls do no useful work, and about 4 in 10 answers are wrong.
+
+The transcripts show the pattern. It calls `calculator("49 * 1.2")` before it has looked up a single price. It searches twice for the same thing. Or it reads one search snippet from a 2024 blog post and answers "yes, about 20%" without opening the pricing page.
+
+## It acts before it has decided what to do
+
+Each turn, the model reads the conversation and picks the next action. Nothing forces it to work out *why* first. The most likely next token after a pricing question might be a calculator call, because pricing questions often involve arithmetic. That is a reflex, not a plan.
+
+The evidence it has also goes unexamined. A search result comes back with five links. Which one is the vendor's own page? Which is stale? If the model never writes that down, the next action is chosen from the raw result, and the cheapest move, answering from the snippet, often wins.
+
+## Make it think out loud between actions
+
+ReAct (Yao et al., 2022) interleaves **reasoning** and **acting**. Before each action the model writes a thought: what it just learned, what is still missing, and what it will do next. Then it acts, reads the observation, and thinks again.
+
+```text
+Thought: I need Acme's Pro price now and last quarter. Search first; no math yet.
+Action: web_search("Acme Pro plan price 2026")
+Observation: 1. acme.example/pricing  2. a 2024 blog post  3. a reseller page
+Thought: Result 1 is the official page. The blog is old. Read result 1.
+Action: read_page("https://acme.example/pricing")
+Observation: Pro: $59/month. Archived copy from June: $49/month.
+Thought: $59 - $49 = $10, a 20% rise. I have what I need.
+Answer: Yes. Pro went from $49 to $59 a month, up 20%.
+```
+
+<Flow steps={[{ label: "Thought", sub: "what do I know, what next?", kind: "hl" }, { label: "Action", sub: "one tool call" }, { label: "Observation", sub: "the tool result" }]} loop loopLabel="think again before the next action" caption="The ReAct loop. A thought sits between every observation and the next action." />
+
+You can get this two ways:
+
+- **Prompt for it.** Add to the system prompt: "Before each tool call, write one or two sentences: what you learned, what is missing, and what you will do next." The model writes the text before its `tool_use` block.
+- **Use built-in reasoning.** Models with extended thinking can reason between tool calls. Anthropic calls this interleaved thinking.
+
+The thought is not decoration. The model's next action is conditioned on everything before it, including its own words. Writing "the blog is old" makes reading the blog much less likely.
+
+In the paper, ReAct beat imitation and reinforcement learning baselines on two interactive benchmarks, ALFWorld and WebShop, by 34 and 10 points of absolute success rate, with only one or two examples in the prompt.
+
+## Let us check the math
+
+Thoughts cost output tokens, which are 5 times the price of input at sim prices. Say a task starts at 4,000 tokens of context and each turn adds 1,500. Without reasoning it takes 6 turns, 2 of them wasted. With reasoning it takes 4, and each thought adds 150 output tokens that also stay in the context.
+
+<Callout type="math" label="Let us check the math">
+**Without reasoning**, 6 turns: input 4k + 5.5k + 7k + 8.5k + 10k + 11.5k = 46.5k tokens. Output 6 × 100 = 600.<br />
+At medium sim prices ($3 / $15 per million, illustrative): $0.1395 + $0.0090 = **$0.149**.<br />
+**With reasoning**, 4 turns of 1,650 added tokens each: input 4k + 5.65k + 7.3k + 8.95k = 25.9k tokens. Output 4 × 250 = 1,000.<br />
+$0.0777 + $0.0150 = **$0.093**, about 38% cheaper, because two fewer turns means two fewer resends of a 10k-token context.
+</Callout>
+
+The saving comes from fewer turns, not from the thinking. On a one-step task there are no turns to save, and the 150 tokens per thought are pure overhead.
+
+## The tradeoff: thinking is not free
+
+Reasoning costs tokens and time on every turn, and it only pays off when it prevents wrong moves:
+
+- **Latency.** Each thought is generated before the action, so every turn gets slower. Turn reasoning on for multi-step tasks, and route simple ones to a cheaper path ([Routing](/c/routing/)).
+- **Plans that drift.** A thought per step is a local plan. For long tasks, write the whole plan up front and update it ([Planning](/c/planning/)).
+- **Plausible but wrong thoughts.** A confident thought can justify a bad action. Grade the steps, not just the answer ([Trajectory Evals](/c/trajectory_evals/)).
+
+## In the real world
+
+Coding and research agents built on Claude show this pattern openly: a sentence like "Let me check how pagination is handled first" appears before the `read_file` call. Anthropic has also described a "think" tool, a tool with no side effects that simply gives the model a place to reason mid-task, and reported gains on customer-service benchmarks where the agent must follow policy across many tool calls.

@@ -1,0 +1,108 @@
+---
+title: "Retries and Idempotent Tools"
+section: "reliability"
+order: 40
+tagline: "A retried tool call must not charge the card twice."
+realWorld: "Duplicate orders from retried agent calls"
+build:
+  type: "lab"
+  scenario: "idempotency"
+terms:
+  - term: "idempotent"
+    def: "An operation is idempotent when doing it twice has the same effect as doing it once, so it is always safe to retry."
+  - term: "idempotency key"
+    def: "A unique id sent with a request so the server can recognise a retry of the same operation and return the first result instead of doing the work again."
+  - term: "exponential backoff"
+    def: "Waiting longer after each failed attempt (for example 1 s, 2 s, 4 s), usually with random jitter, so retries do not pile onto a struggling service."
+usedIn: ["supportbot/3"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "charge_card timed out after 10 seconds. What do you know about the charge?"
+    options: ["It failed, so retrying is safe", "It succeeded", "Nothing: it may or may not have gone through"]
+    answer: 2
+    why: "A timeout means you stopped waiting, not that the work stopped. The server may have charged the card and the reply got lost."
+  - q: "Who should generate the idempotency key?"
+    options: ["The model, as a tool argument", "The harness, once per logical operation, and reuse it on every retry", "The payment provider, after the charge"]
+    answer: 1
+    why: "The model may produce a new key on each attempt, which defeats the purpose. The harness creates one key per intended charge and sends the same one on every retry."
+  - q: "With a 30% timeout rate and 3 attempts, roughly what share of checkouts still fail?"
+    options: ["About 2.7%", "About 9%", "About 30%"]
+    answer: 0
+    why: "All three attempts must time out: 0.3 × 0.3 × 0.3 = 0.027. Retries make the checkout reliable; the key makes the retries safe."
+reading:
+  - title: "Stripe API: Idempotent requests"
+    url: "https://docs.stripe.com/api/idempotent_requests"
+  - title: "Stripe engineering: Designing robust and predictable APIs with idempotency"
+    url: "https://stripe.com/blog/idempotency"
+---
+
+## The retry worked. The customer paid twice.
+
+Your checkout agent creates an order, then calls `charge_card`. The payment API is having a bad day: 30% of calls time out. The agent does the sensible thing and retries, and almost every checkout completes.
+
+Then the support tickets start. Over 60 checkouts, 6 customers were charged twice. Each "failed" call had in fact gone through; only the reply was lost.
+
+## A timeout is not a failure
+
+A remote call has three outcomes, not two:
+
+1. **It succeeded** and you got the reply.
+2. **It failed** and you got an error that says so.
+3. **You do not know.** The connection dropped, or you stopped waiting after 10 seconds. The server may have finished the work a moment later.
+
+Case 3 is the dangerous one. For a read, retrying is free: reading an order twice changes nothing. For a call with a **side effect** (charging a card, sending an email, creating a ticket), retrying an unknown outcome can do the work twice.
+
+Agents make this worse in two ways. The model sees "Timed out, safe to retry" and retries at once. And models sometimes repeat a tool call for no reason at all. Your harness cannot stop every retry, so the tool has to be safe to retry.
+
+## Send the same key with every retry
+
+An **idempotency key** is a unique id for one intended operation. The server stores the result of the first request with that key. A retry with the same key gets the stored result back instead of a second charge.
+
+<Flow steps={[{ label: "Harness", sub: "key = ord_5521:charge" }, { label: "charge_card", sub: "times out", kind: "bad" }, { label: "Retry", sub: "same key" }, { label: "Payment API", sub: "key seen: return first result", kind: "good" }]} caption="Two requests, one charge." />
+
+The key belongs to the harness, not the model. If the model wrote the key into the arguments, it might invent a fresh one on each attempt. Derive it from what the operation *is*, so every retry of the same charge gets the same key:
+
+```python
+def charge_card(order_id, amount):
+    key = f"{order_id}:charge"          # same intent, same key, every attempt
+    for attempt in range(3):
+        try:
+            return payments.charge(order_id, amount,
+                                   headers={"Idempotency-Key": key},
+                                   timeout=10)
+        except Timeout:
+            time.sleep(2 ** attempt + random.random())  # 1s, 2s, 4s + jitter
+    return {"error": "Payment status unknown after 3 tries. "
+                     "Retrying with the same key is safe; it will not charge twice."}
+```
+
+Two more habits go with it. Retry with **exponential backoff and jitter**, so a struggling service is not hit by every client at the same second. And when a tool you do not control has no idempotency support, **check before you act again**: `get_charges(order_id)` before a retry tells you whether the first one landed.
+
+## Let us check the math
+
+Use the lab's numbers: 30% of calls time out, and half of those timeouts happen after the card was already charged.
+
+<Callout type="math" label="Let us check the math">
+**Hidden charges:** 30% × 50% = **15%** of first attempts charge the card and still report a timeout.<br />
+**Without a key:** every one of those gets retried and charged again. At 2,000 checkouts a day, that is 2,000 × 15% = **300 double charges a day**. At an average order of $100, $30,000 a day to refund, plus support time and angry customers.<br />
+**With a key:** the retry returns the first result. **0 double charges.**<br />
+**Reliability of the retry:** a checkout fails only if all 3 attempts time out: 0.3³ = **2.7%**. So 97.3% complete, the same as before. The key does not change how often you retry; it makes the retries harmless.<br />
+**Cost:** one stored row per key. Stripe keeps keys for at least 24 hours: about 2,000 rows a day here.
+</Callout>
+
+## The tradeoff: what counts as "the same" operation
+
+Idempotency keys move the hard question into one place: when are two calls the same intent, and when are they two real purchases?
+
+- **Too broad a key** blocks legitimate repeats. If the key is just the customer id, a second real order today looks like a retry. Scope it to the operation: order id plus action, or a fresh UUID stored when the agent first decides to charge.
+- **Too narrow a key** (a new UUID per attempt) does nothing. Generate it once and persist it with the task, so a crash and [resume](/c/sessions/) reuses it.
+- **Not every tool supports keys.** For those, check state before retrying, make the error message say whether a retry is safe ([Tool Errors](/c/tool_errors/)), and put the riskiest calls behind [Human in the Loop](/c/hitl/).
+
+Stripe's implementation adds one more safeguard: if a retry with a known key arrives with *different* parameters, it returns an error instead of guessing.
+
+## In the real world
+
+Stripe's API is the standard example. You send an `Idempotency-Key` header on a POST; Stripe saves the status code and body of the first request with that key, whether it succeeded or failed, and returns the same response for any retry. Keys can be pruned once they are at least 24 hours old. Many payment and messaging APIs offer the same pattern, and an agent tool that wraps them should pass a key through on every call.
+
+You will make the support bot's `issue_refund` safe to retry in part 3 of the supportbot project.

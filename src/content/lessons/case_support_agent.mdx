@@ -1,0 +1,99 @@
+---
+title: "Design a Customer Support Agent (like Intercom Fin)"
+section: "cases"
+order: 52
+tagline: "Answer from the help center, route first, act within limits, and hand off to a human when policy says so."
+realWorld: "Help-center support agents like Intercom Fin"
+build:
+  type: "lab"
+  scenario: "case_support_agent"
+terms:
+  - term: "resolution rate"
+    def: "The share of conversations the agent closes correctly without a human, the main success metric for a support agent."
+  - term: "escalation"
+    def: "Handing a conversation to a human agent, with a short summary, when the request is outside policy, outside the help center, or the customer asks for a person."
+  - term: "approval threshold"
+    def: "A policy limit, such as refunds over $100, above which the agent may prepare an action but a human must approve it."
+usedIn: ["supportbot/1"]
+readingMinutes: 8
+updated: 2026-10-10
+quiz:
+  - q: "A customer asks about a billing policy. Why should the agent answer from retrieved help-center articles instead of from the model's own knowledge?"
+    options: ["Retrieved answers are always shorter", "The model has never seen your policy, so without retrieval it invents a plausible one", "Retrieval is cheaper than generating text"]
+    answer: 1
+    why: "Your refund window or plan-switching rule is not in the model's training data. Retrieval puts the real text in the context and lets the answer cite it."
+  - q: "Policy caps agent refunds at $100. What is the main mechanism, and what is the backstop?"
+    options: ["Main: an approval gate on every refund. Backstop: none", "Main: the router and the escalate tool send big refunds to a human. Backstop: an approval gate on irreversible actions", "Main: a larger model. Backstop: a longer prompt"]
+    answer: 1
+    why: "The agent should route over-limit refunds to a human by design. The approval gate catches the rare case where it tries anyway, and should fire rarely."
+  - q: "At $0.063 per conversation, how many conversations of compute does one wrong $480 refund cost?"
+    options: ["About 76", "About 760", "About 7,600"]
+    answer: 2
+    why: "$480 / $0.063 ≈ 7,600. That ratio is why refunds get hard limits even when the agent is cheap."
+reading:
+  - title: "Intercom: Fin AI Agent"
+    url: "https://www.intercom.com/fin"
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## Step 1: most questions are easy, and a few are expensive
+
+An online store gets 3,000 support conversations a day. Most are the same few questions: where is my order, how do I change my plan, can I get a refund. A support agent should resolve those, quickly and correctly, and hand the rest to people.
+
+The failure cost is lopsided. A slightly clumsy answer costs a little goodwill. A made-up policy ("annual plans can only start on the 1st") creates a complaint. A refund the agent was not allowed to give costs real money. So the design is: answer freely from the help center, act within limits, and escalate above them.
+
+This lesson describes a design *like* Intercom Fin, based on Intercom's public product pages; it is not how Fin works internally. Publicly, Fin answers from a company's help-center content, can take actions through connected systems, and hands conversations to the human team.
+
+## Step 2: cheap per conversation, expensive per mistake
+
+A typical conversation is 4 turns. Each turn's context is about 3.5k tokens to start (1.5k system prompt and tools, four retrieved help-center chunks of 400 tokens, the customer's message) and grows about 500 tokens a turn.
+
+<Callout type="math" label="Let us check the math">
+Input: 3.5k + 4k + 4.5k + 5k = **17k tokens**. Output: 4 × 200 = 800 tokens.<br />
+Medium tier (sim prices, $3/$15 per million): 17,000 × $3/M + 800 × $15/M = $0.051 + $0.012 = **$0.063 per conversation**.<br />
+A small-model router classifies each conversation first: about 500 tokens in, 10 out, so $0.0005.<br />
+3,000 a day × $0.0635 ≈ **$190 a day** for the agent.<br />
+If a human costs $5 a ticket (illustrative) and the agent resolves 60%, human work drops from 3,000 × $5 = $15,000 to 1,200 × $5 = **$6,000 a day**.<br />
+One wrong $480 refund = $480 / $0.063 ≈ **7,600 conversations** of compute.
+</Callout>
+
+The compute is not the problem. The tail is. That is why the refund limit is a hard rule in the harness and not a sentence in the prompt.
+
+## Step 3: tools that match the policy
+
+| Tool | Does | Permission |
+|---|---|---|
+| help-center retriever | finds the 4 best chunks for the question | always on |
+| `lookup_order` | order items, amount, shipping status | allow |
+| `issue_refund` | refunds to the original payment method | allow up to $100; approval above |
+| `escalate_to_human` | hands off with a summary | allow |
+
+The escalate tool is the one teams forget. Without it, the agent's only options on a $480 refund are to refuse unhelpfully or to refund anyway. With it, the right move is also the easy move: "I've passed this to our billing team with the details; they reply within a day." The summary matters, so the customer does not repeat themselves.
+
+## Step 4: route first, then a short loop
+
+<Flow steps={["Customer", { label: "Router", sub: "question / order / refund / other", kind: "hl" }, { label: "Agent loop", sub: "retrieve, look up, act" }, { label: "Approval gate", sub: "refunds over $100" }, "Reply or handoff"]} caption="A support agent like Fin: classify, answer from sources, act within limits, escalate above them." />
+
+A [router](/c/routing/) classifies each conversation before the main model sees it. A policy question goes to a prompt that answers only from retrieved articles and cites them ([RAG](/c/rag/)). A refund goes to a prompt that states the $100 limit and the escalation path. Routing also stops wasted calls: a billing question should not trigger `lookup_order`.
+
+The loop is short: cap it at about 10 turns. Context stays small, so no compaction is needed. Keep a [session](/c/sessions/) per conversation, so a customer who comes back tomorrow does not start over.
+
+## Step 5: evals on outcomes and on tool calls
+
+Build an eval set from 40 or more real past conversations, labelled with the right outcome: answered with the right article, looked up the right order, refunded the right amount, escalated. Score two things:
+
+- **Outcome**, with an [LLM judge](/c/llm_judge/) for answer quality and exact checks for facts like amounts.
+- **Tool calls**, with [trajectory checks](/c/trajectory_evals/): did it call `issue_refund` only when allowed?
+
+Guardrails: redact card numbers and addresses from replies ([Guardrails](/c/guardrails/)), and treat retrieved articles as data, because a poisoned article is a [prompt injection](/c/prompt_injection/) path. The approval gate on refunds over $100 is the backstop ([Human in the Loop](/c/hitl/)). If it fires often, the router or prompt is wrong.
+
+## Step 6: the tradeoff is resolution rate against risk
+
+Every escalation costs you a human ticket; every wrong action costs you more. Tight limits lower resolution rate. Loose limits raise incident risk. Three ways to tune it:
+
+- **Raise limits with evidence.** Start at $100. If 200 refunds in a row were correct, try $150 for a week.
+- **Measure the handoff, not just the bot.** A good escalation summary cuts the human's handling time, which is part of the agent's value.
+- **Fix gaps in the help center.** Questions that keep escalating usually mean a missing article, which is cheaper to write than a smarter prompt.
+
+In the lab, the draft answers policy from memory and refunds $480 on its own. Add the retriever, the router, the escalation tool and the approval gate. Then build it for real in [supportbot](/p/supportbot/).

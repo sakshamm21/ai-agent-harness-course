@@ -1,0 +1,99 @@
+---
+title: "Retrieval-Augmented Generation"
+section: "memory"
+order: 26
+tagline: "Look it up, then answer, with citations."
+realWorld: "Docs chatbots; legal research tools"
+build:
+  type: "lab"
+  scenario: "rag"
+terms:
+  - term: "RAG"
+    def: "Retrieval-augmented generation: search a document store for passages relevant to the question, put them in the prompt, and have the model answer from them."
+  - term: "top k"
+    def: "How many of the highest-scoring chunks the retriever returns and pastes into the prompt."
+  - term: "citation"
+    def: "A pointer from a claim in the answer to the source passage that supports it, so a reader can check it."
+  - term: "grounding"
+    def: "Making the model answer from supplied sources rather than from what it learned in training."
+usedIn: ["supportbot/2"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Why does a model answer questions about your product's current docs wrongly without RAG?"
+    options: ["Its training data predates the docs, or never contained them, so it answers from stale or general knowledge", "It refuses to answer product questions", "It can read your website on its own, but slowly"]
+    answer: 0
+    why: "A model only knows what was in its training data. Your private or recent docs were not there, so it fills the gap with plausible text."
+  - q: "You raise top k from 4 to 20 chunks of 2,000 tokens. What happens?"
+    options: ["Accuracy always rises because the answer is more likely to be included", "The prompt grows by tens of thousands of tokens, cost rises several times, and the right chunk can get lost among the others", "Nothing changes, because the model only reads the first chunk"]
+    answer: 1
+    why: "In the lab, top k 20 costs about $0.13 a question instead of $0.02, and accuracy drops from 91% to 81%."
+  - q: "The docs do not mention an SAP integration. What should a good RAG answer say?"
+    options: ["Describe how the integration probably works", "Say it is not in the docs, cite what the docs do list, and offer a next step", "Refuse to answer"]
+    answer: 1
+    why: "Grounding cuts both ways: if the sources do not contain the answer, the right answer is that they do not, not an invention."
+reading:
+  - title: "Lewis et al. (2020): Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks"
+    url: "https://arxiv.org/abs/2005.11401"
+  - title: "Anthropic: Introducing Contextual Retrieval"
+    url: "https://www.anthropic.com/news/contextual-retrieval"
+---
+
+## The bot said 30 days. The docs say 14.
+
+You launch a docs chatbot for Acme's API. A customer asks how long they have to request a refund. The bot says 30 days, confidently. The docs say 14, and have since March.
+
+In the lab, the bot answers 4 test questions with **0% correct and cited**. Three answers come from training data that is out of date. The fourth question asks about an SAP integration that does not exist, and the bot describes where to find it in Settings.
+
+## The model answers from memory, and its memory is not your docs
+
+A model knows what was in its training data, frozen at its training cutoff. Your docs are newer than that, or private, so they were never in it. When asked, the model does what it always does: it writes the most likely answer. For "refund window", the most likely answer across the internet is 30 days.
+
+Two problems follow. The answer is often wrong, and even when it is right, nobody can check it, because it has no source.
+
+## Retrieve first, then generate
+
+**Retrieval-augmented generation (RAG)**, named in a 2020 paper by Lewis and colleagues, fixes both. Before the model answers, your code searches the docs and pastes the best passages into the prompt.
+
+- **Offline:** split the docs into chunks, [embed](/c/embeddings/) each one, and store the vectors with a source id like `billing.md#refunds`.
+- **At question time:** embed the question, take the **top k** chunks by cosine similarity, and put them in the prompt.
+- **In the prompt:** tell the model to answer only from the sources, cite the id of each passage it used, and say so when the sources do not contain the answer.
+
+```text
+<sources>
+<source id="billing.md#refunds">Refunds can be requested within 14 days of the charge...</source>
+<source id="limits.md#pro">The Pro plan allows 600 requests per minute per key...</source>
+</sources>
+Answer using only the sources above. Cite the source id after each claim,
+like [billing.md#refunds]. If the sources do not answer the question, say so.
+```
+
+<Flow steps={["Question", { label: "Embed + search", sub: "top k chunks" }, { label: "Prompt", sub: "sources + question", kind: "hl" }, "Model", { label: "Answer", sub: "with citations", kind: "good" }]} caption="RAG: the right text is in front of the model before it writes a word." />
+
+The citation is the part people underrate. It turns "trust me" into "check page 4", which is what lets support, lawyers or doctors use the answer at all. In the lab, wiring a Retriever into the model takes the bot from 0% to **91%** correct with a citation, including "I couldn't find an SAP integration in the docs".
+
+## Let us check the math
+
+Top k is the dial. Using the lab's numbers and the sim price for a medium model ($3 per million input tokens, $15 per million output, illustrative):
+
+<Callout type="math" label="Let us check the math">
+**Top k = 4 chunks of 500 tokens.** The prompt grows by 2,000 tokens. Across the retrieval turn and the answer turn the bill is about **$0.019** per question. Accuracy **91%**.<br />
+**Top k = 1.** Cheaper, about $0.014, but when the top hit is the wrong chunk there is no second chance: accuracy **61%**.<br />
+**Top k = 20, chunks of 2,000 tokens.** 20 × 2,000 = 40,000 extra tokens. 41,400 × $3/M ≈ $0.124 for the answer turn alone, about **$0.13** per question, 7 times the cost. Accuracy falls to **81%**, because the right chunk is buried among 19 others.
+</Callout>
+
+More context is not free and not always better. Models are measurably worse at using facts in the middle of a long prompt than at its start or end, so a few good chunks beat many mediocre ones.
+
+## The tradeoff: retrieval is now your single point of failure
+
+RAG makes the answer only as good as what the retriever finds.
+
+- **Missed retrieval means a wrong answer.** If the right chunk is not in the top k, the model either says "not found" or, worse, stitches together something from the wrong chunks. How you split documents decides much of this: [Chunking and Indexing](/c/chunking/).
+- **Citations can be decorative.** A model can cite a chunk that does not support its claim. Check them: an exact-match test that the quoted text exists, or a grader ([LLM-as-Judge](/c/llm_judge/)).
+- **One search is one guess.** For questions that need several hops ("which plan has SSO, and what does it cost?"), let the model search more than once, which is [Agentic Search vs RAG](/c/agentic_search/).
+
+Retrieval also adds a moving part to keep fresh: when the docs change, the index has to change with them.
+
+## In the real world
+
+Anthropic's own write-up on contextual retrieval reports that adding a short, chunk-specific context to each chunk before embedding, combined with keyword (BM25) search, cut failed retrievals by 49%, and by 67% with a reranking step on top. The Claude API also has a citations feature: you pass documents in the request and the response marks which passages each claim came from, so you do not have to parse `[source]` tags yourself.

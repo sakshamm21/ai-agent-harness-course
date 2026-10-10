@@ -1,0 +1,371 @@
+{
+  "id": "determinism",
+  "title": "Taming Nondeterminism",
+  "brief": "Your CI runs the agent on three refactoring tasks, 50 times each. The same input passes on one run and fails on the next: about 1 run in 4 the agent says \"done\" after missing a call site. Get the pass rate to 95% or better across all 150 runs, so a red build means a real regression.",
+  "runs": 50,
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "judge"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "temperature": 1
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 15
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "grep",
+          "description": "Searches the repo for a regex and returns matching lines with file and line number."
+        },
+        "position": {
+          "x": 740,
+          "y": 60
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 220
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "temperature": 0
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 15
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "grep",
+          "description": "Searches the repo for a regex and returns matching lines with file and line number."
+        },
+        "position": {
+          "x": 740,
+          "y": 60
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text."
+        },
+        "position": {
+          "x": 740,
+          "y": 180
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the type checker and test suite and returns every failure with file and line."
+        },
+        "position": {
+          "x": 740,
+          "y": 300
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Rename a function",
+      "prompt": "Rename getUser to fetchUser everywhere in the repo.",
+      "needs": [
+        "grep",
+        "edit_file"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Change a signature",
+      "prompt": "Add a required `locale` argument to formatPrice and update every caller.",
+      "needs": [
+        "grep",
+        "edit_file"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Remove a flag",
+      "prompt": "Delete the ENABLE_LEGACY_CHECKOUT flag and the code paths behind it.",
+      "needs": [
+        "grep",
+        "edit_file"
+      ]
+    }
+  ],
+  "actions": {
+    "grep": {
+      "kind": "tool",
+      "tool": "grep",
+      "text": "grep(\"getUser\\\\(\")  → 7 matches in 4 files",
+      "tokens": 700
+    },
+    "edit": {
+      "kind": "tool",
+      "tool": "edit_file",
+      "text": "edit_file(\"src/api/users.ts\", \"getUser(\", \"fetchUser(\")  (and 3 more files)",
+      "tokens": 400
+    },
+    "test": {
+      "kind": "tool",
+      "tool": "run_tests",
+      "text": "run_tests()  → 312 passed",
+      "tokens": 500
+    },
+    "tangent": {
+      "kind": "think",
+      "text": "While I'm here, I could also tidy up the imports in this file...",
+      "tokens": 250
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Renamed getUser to fetchUser in 4 files (7 call sites). Type check and tests pass."
+    },
+    "done_early": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Done. Renamed getUser to fetchUser in src/api/users.ts and its callers."
+    }
+  },
+  "policy": {
+    "base": {
+      "grep": 4,
+      "edit": 0,
+      "test": 0,
+      "tangent": 0,
+      "done": 0,
+      "done_early": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "called": "grep"
+        },
+        "shift": {
+          "edit": 4
+        }
+      },
+      {
+        "when": {
+          "setting": "model.temperature",
+          "op": ">",
+          "value": 0.5
+        },
+        "shift": {
+          "tangent": 0.6
+        },
+        "note": "High temperature samples the less likely next steps more often."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 3,
+          "done_early": 0.5
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "setting": "model.temperature",
+              "op": ">",
+              "value": 0.5
+            }
+          ]
+        },
+        "shift": {
+          "done_early": 0.6
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "setting": "model.temperature",
+              "op": "<=",
+              "value": 0.2
+            }
+          ]
+        },
+        "scale": {
+          "done_early": 0.6
+        },
+        "note": "Temperature 0 narrows the spread but does not remove the mistake the model is most likely to make."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "tool": "run_tests"
+            },
+            {
+              "not": {
+                "called": "run_tests"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "test": 12
+        }
+      },
+      {
+        "when": {
+          "called": "run_tests"
+        },
+        "scale": {
+          "done_early": 0.1
+        },
+        "shift": {
+          "done": 3
+        },
+        "note": "A failing type check tells the model exactly which call site it missed."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "pass",
+      "label": "Pass at least 95% of 150 runs",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.95
+    }
+  ],
+  "hints": [
+    "Run it and scroll through a few failing runs. The input is identical every time. What differs is which step the model sampled.",
+    "Turning the temperature down helps, but not enough on its own: the model's most likely mistake is still likely at temperature 0.",
+    "Set temperature to 0 and give the agent a deterministic check: a run_tests tool wired to the loop. (A Judge node also works, at extra cost per run.)"
+  ],
+  "explain": "Lower temperature shrinks the spread of what the model does; a deterministic check (tests, a type checker, a schema) catches what is left. Together they turn a coin-flip CI job into a signal."
+}

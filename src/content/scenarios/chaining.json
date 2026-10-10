@@ -1,0 +1,64 @@
+{
+  "id": "chaining",
+  "title": "Prompt Chaining",
+  "brief": "Marketing wants three pieces of launch copy. Each brief has 4 hard rules: a word limit, the discount code SPRING20, the legal line, and no banned words. One big prompt gets all four right only about half the time. Get at least 85% of pieces right, in 6 turns or fewer on average.",
+  "palette": ["user", "model", "loop", "tool"],
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "systemPrompt": "Write launch copy that follows every rule in the brief." }, "position": { "x": 260, "y": 120 } }
+    ],
+    "edges": [{ "source": "u", "target": "m" }]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "systemPrompt": "Write launch copy that follows every rule in the brief." }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 10 }, "position": { "x": 520, "y": 120 } },
+      { "id": "s1", "type": "tool", "data": { "name": "write_outline", "description": "Step 1. Writes a bullet outline of the copy from the brief: headline, 3 points, call to action." }, "position": { "x": 780, "y": 0 } },
+      { "id": "s2", "type": "tool", "data": { "name": "check_outline", "description": "Gate. Checks the outline in code against the brief rules (code present, legal line, banned words) and lists any misses." }, "position": { "x": 780, "y": 120 } },
+      { "id": "s3", "type": "tool", "data": { "name": "write_copy", "description": "Step 3. Writes the final copy from a checked outline, within the word limit." }, "position": { "x": 780, "y": 240 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "s1" }, { "source": "l", "target": "s2" }, { "source": "l", "target": "s3" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Launch email", "prompt": "Write the spring launch email for Ledgerly. Max 150 words. Must include code SPRING20 and the line 'Offer ends April 30. Terms apply.' Never say 'revolutionary' or 'free'.", "needs": ["write_outline", "check_outline", "write_copy"] },
+    { "id": "t2", "label": "Landing page hero", "prompt": "Write the landing page hero for the Ledgerly spring sale. Max 40 words. Must include SPRING20 and 'Terms apply.' No exclamation marks.", "needs": ["write_outline", "check_outline", "write_copy"] },
+    { "id": "t3", "label": "App store blurb", "prompt": "Write the app store 'What's new' text for Ledgerly 4.0. Max 80 words. Mention the SPRING20 code and the legal line. Do not compare to competitors by name.", "needs": ["write_outline", "check_outline", "write_copy"] }
+  ],
+  "actions": {
+    "one_ok": { "kind": "answer", "correct": true, "text": "Here is your copy: 'Close your books in half the time. Use SPRING20 for 20% off your first year. Offer ends April 30. Terms apply.' (138 words, all four rules met)", "outputTokens": 400 },
+    "one_miss": { "kind": "answer", "correct": false, "text": "Here is your copy: 'Meet the revolutionary new Ledgerly! Close your books in half the time...' (212 words, no SPRING20 code, legal line missing)", "outputTokens": 400 },
+    "outline": { "kind": "tool", "tool": "write_outline", "text": "write_outline(brief) → headline, 3 points, CTA with SPRING20", "tokens": 400 },
+    "check": { "kind": "tool", "tool": "check_outline", "text": "check_outline(outline, rules=[limit, code, legal_line, banned_words])", "tokens": 150 },
+    "gate_fix": { "kind": "think", "text": "Gate flagged a miss: the outline has no legal line. Adding 'Offer ends April 30. Terms apply.' to the CTA before writing.", "tokens": 200 },
+    "copy": { "kind": "tool", "tool": "write_copy", "text": "write_copy(checked_outline, max_words=150)", "tokens": 500 },
+    "done": { "kind": "answer", "correct": true, "text": "Final copy attached. Gate passed: 141 words, SPRING20 present, legal line present, no banned words." },
+    "done_miss": { "kind": "answer", "correct": false, "text": "Final copy attached. (The unchecked outline had no legal line, so the copy has none either.)" }
+  },
+  "policy": {
+    "base": { "one_ok": 0.55, "one_miss": 0.45, "outline": 0, "check": 0, "gate_fix": 0, "copy": 0, "done": 0, "done_miss": 0 },
+    "modifiers": [
+      { "when": { "all": [{ "setting": "model.tier", "op": "==", "value": "large" }, { "not": { "tool": "write_outline" } }] }, "set": { "one_ok": 0.68, "one_miss": 0.32 }, "note": "A bigger model helps a little, but four rules in one pass still slip." },
+      { "when": { "tool": "write_outline" }, "scale": { "one_ok": 0.03, "one_miss": 0.03 }, "shift": { "outline": 5 }, "note": "With chain steps wired, the model follows them in order." },
+      { "when": { "all": [{ "called": "write_outline" }, { "tool": "check_outline" }, { "not": { "called": "check_outline" } }] }, "set": { "outline": 0 }, "shift": { "check": 6 } },
+      { "when": { "all": [{ "called": "write_outline" }, { "tool": "write_copy" }, { "any": [{ "called": "check_outline" }, { "not": { "tool": "check_outline" } }] }, { "not": { "called": "write_copy" } }] }, "set": { "outline": 0 }, "shift": { "copy": 4 } },
+      { "when": { "all": [{ "called": "check_outline" }, { "not": { "called": "write_copy" } }] }, "shift": { "gate_fix": 1.2 }, "note": "About 1 outline in 4 fails the gate and gets fixed before any copy is written." },
+      { "when": { "all": [{ "called": "write_copy" }, { "called": "check_outline" }] }, "set": { "done": 8, "done_miss": 0.25, "outline": 0, "check": 0, "gate_fix": 0, "copy": 0 } },
+      { "when": { "all": [{ "called": "write_copy" }, { "not": { "called": "check_outline" } }] }, "set": { "done": 3, "done_miss": 1.4, "outline": 0, "copy": 0 }, "note": "Without the gate, a bad outline flows straight into the final copy." }
+    ]
+  },
+  "goals": [
+    { "id": "success", "label": "At least 85% of pieces meet every rule", "metric": "success_rate", "op": ">=", "value": 0.85 },
+    { "id": "turns", "label": "6 turns or fewer on average", "metric": "avg_turns", "op": "<=", "value": 6 }
+  ],
+  "hints": [
+    "Read a failing transcript. Which rule slipped? Would a bigger model fix it? Try large and see.",
+    "Split the job into steps that each do one thing: outline, then copy. Something has to run the steps, so add a Loop.",
+    "Add three tools on the loop: write_outline, check_outline (the gate) and write_copy. Without check_outline, a bad outline still flows into the copy."
+  ],
+  "explain": "A chain trades one hard call for several easy ones, and the gate between them is plain code that catches a miss before it spreads. You pay for more calls; you get copy that follows the brief."
+}

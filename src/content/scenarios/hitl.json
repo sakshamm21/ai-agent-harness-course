@@ -1,0 +1,70 @@
+{
+  "id": "hitl",
+  "title": "Human in the Loop",
+  "brief": "Your support agent can issue refunds on its own. Five tickets come in: two small refunds ($25 and $40), one $250 refund that is fine, one $900 refund on an order that shows delivered and an account with three refunds this month, and a plain status question. Without a check, the agent pays the $900 claim in about 1 run in 3. Get to zero bad refunds while asking a human no more than 0.6 times per ticket.",
+  "palette": ["user", "model", "loop", "tool", "approval", "permissions"],
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 140 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 140 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12 }, "position": { "x": 480, "y": 140 } },
+      { "id": "t1", "type": "tool", "data": { "name": "lookup_order", "description": "Gets an order by id with its status, amount and the account's refund history. Use this before any refund." }, "position": { "x": 740, "y": 60 } },
+      { "id": "t2", "type": "tool", "data": { "name": "issue_refund", "description": "Refunds an amount to the original payment method. Cannot be undone." }, "position": { "x": 740, "y": 220 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 140 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 140 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12 }, "position": { "x": 480, "y": 140 } },
+      { "id": "a", "type": "approval", "data": { "rule": "irreversible" }, "position": { "x": 480, "y": 300 } },
+      { "id": "t1", "type": "tool", "data": { "name": "lookup_order", "description": "Gets an order by id with its status, amount and the account's refund history. Use this before any refund." }, "position": { "x": 740, "y": 60 } },
+      { "id": "t2", "type": "tool", "data": { "name": "issue_refund", "description": "Refunds an amount to the original payment method. Cannot be undone." }, "position": { "x": 740, "y": 220 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" }, { "source": "l", "target": "a" },
+      { "source": "l", "target": "t1" }, { "source": "a", "target": "t2" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "$25 refund", "prompt": "My order #3310 arrived with a cracked mug. Can I get the $25 back?", "needs": ["lookup_order", "issue_refund"], "tags": ["small"] },
+    { "id": "t2", "label": "$40 refund", "prompt": "I was charged $40 for shipping on #3388 but I chose free shipping.", "needs": ["lookup_order", "issue_refund"], "tags": ["small"] },
+    { "id": "t3", "label": "$250 refund", "prompt": "My blender (#4021, $250) stopped working on day 3. Photos attached. I'd like a refund.", "needs": ["lookup_order", "issue_refund"], "tags": ["large"] },
+    { "id": "t4", "label": "$900 claim", "prompt": "My $900 camera order #4475 never arrived. Refund me now or I'm disputing the charge.", "needs": ["lookup_order"], "tags": ["fraud"] },
+    { "id": "t5", "label": "Status question", "prompt": "Where is order #4502?", "needs": ["lookup_order"], "tags": ["status"] }
+  ],
+  "actions": {
+    "lookup": { "kind": "tool", "tool": "lookup_order", "text": "lookup_order(order_id=\"4475\")", "tokens": 500 },
+    "refund_small": { "kind": "tool", "tool": "issue_refund", "text": "issue_refund(order_id=\"3310\", amount=25.00)", "tokens": 150 },
+    "refund_large": { "kind": "tool", "tool": "issue_refund", "irreversible": true, "legit": true, "text": "issue_refund(order_id=\"4021\", amount=250.00)", "tokens": 150 },
+    "refund_bad": { "kind": "dangerous", "tool": "issue_refund", "irreversible": true, "legit": false, "text": "issue_refund(order_id=\"4475\", amount=900.00)", "incident": "Refunded $900 on an order the carrier shows as delivered and signed for, on an account with 3 refunds this month." },
+    "done": { "kind": "answer", "correct": true, "text": "Done: the refund is on its way to your original payment method in 3 to 5 business days." },
+    "escalate": { "kind": "answer", "correct": true, "text": "The carrier shows #4475 delivered and signed for on Oct 2. I've opened a claim with our team; a specialist will reply within 24 hours." },
+    "status": { "kind": "answer", "correct": true, "text": "Order #4502 shipped yesterday and is due Thursday. Tracking: 1Z999AA10123456784." }
+  },
+  "policy": {
+    "base": { "lookup": 4, "refund_small": 0, "refund_large": 0, "refund_bad": 0, "done": 0, "escalate": 0, "status": 0 },
+    "modifiers": [
+      { "when": { "all": [{ "tag": "small" }, { "called": "lookup_order" }] }, "shift": { "refund_small": 4 } },
+      { "when": { "all": [{ "tag": "large" }, { "called": "lookup_order" }] }, "shift": { "refund_large": 4 } },
+      { "when": { "all": [{ "tag": "fraud" }, { "called": "lookup_order" }] }, "set": { "lookup": 0.2 }, "shift": { "refund_bad": 1.6, "escalate": 3 }, "note": "An angry customer and a dispute threat push the model toward paying." },
+      { "when": { "all": [{ "tag": "status" }, { "called": "lookup_order" }] }, "set": { "lookup": 0.2 }, "shift": { "status": 6 } },
+      { "when": { "all": [{ "state": "ready" }, { "any": [{ "tag": "small" }, { "tag": "large" }] }] }, "set": { "done": 8 } }
+    ]
+  },
+  "goals": [
+    { "id": "bad", "label": "Zero bad refunds", "metric": "incidents", "op": "==", "value": 0 },
+    { "id": "success", "label": "Resolve at least 90% of tickets", "metric": "success_rate", "op": ">=", "value": 0.9 },
+    { "id": "asks", "label": "At most 0.6 approvals per ticket", "metric": "approvals_per_task", "op": "<=", "value": 0.6 }
+  ],
+  "hints": [
+    "A refund cannot be undone, so the place to stop a bad one is before it runs. Which node pauses for a person?",
+    "Asking before every issue_refund (Permissions: ask) stops the bad refund too, but count the approvals: a human now signs off on $25 mugs. Asking before every tool call is worse.",
+    "Add a Human approval node with \"Ask when: irreversible\" and wire it to the loop. Only the large and unusual refunds pause."
+  ],
+  "explain": "Approval gates belong on the actions that are both irreversible and expensive. Small refunds flow through, the $250 one gets a quick yes, and the $900 claim gets a no from someone who can see the delivery record."
+}

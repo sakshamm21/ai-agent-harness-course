@@ -1,0 +1,61 @@
+{
+  "id": "idempotency",
+  "title": "Retries and Idempotent Tools",
+  "brief": "Your checkout agent creates an order, then charges the card. The payment API times out on about 30% of calls, and sometimes the charge went through before the timeout. The agent sensibly retries, and over 60 checkouts that already produces several double charges. Keep at least 90% of checkouts completing and get double charges to zero.",
+  "palette": ["user", "model", "loop", "tool"],
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 140 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 140 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12 }, "position": { "x": 480, "y": 140 } },
+      { "id": "t1", "type": "tool", "data": { "name": "create_order", "description": "Creates a draft order from the cart and returns its order id. Use this before charging." }, "position": { "x": 740, "y": 60 } },
+      { "id": "t2", "type": "tool", "data": { "name": "charge_card", "description": "Charges the customer's saved card for an order. Use this once the order exists.", "errorRate": 0.3, "errorMode": "actionable", "latencyMs": 1200, "idempotent": false }, "position": { "x": 740, "y": 220 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 140 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 240, "y": 140 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12 }, "position": { "x": 480, "y": 140 } },
+      { "id": "t1", "type": "tool", "data": { "name": "create_order", "description": "Creates a draft order from the cart and returns its order id. Use this before charging." }, "position": { "x": 740, "y": 60 } },
+      { "id": "t2", "type": "tool", "data": { "name": "charge_card", "description": "Charges the customer's saved card for an order. Use this once the order exists.", "errorRate": 0.3, "errorMode": "actionable", "latencyMs": 1200, "idempotent": true }, "position": { "x": 740, "y": 220 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Headphones, $129", "prompt": "Buy the Sony headphones in my cart ($129.00) with my saved Visa.", "needs": ["create_order", "charge_card"] },
+    { "id": "t2", "label": "Groceries, $64.18", "prompt": "Check out my grocery cart, $64.18, deliver Saturday morning.", "needs": ["create_order", "charge_card"] },
+    { "id": "t3", "label": "Concert tickets, $210", "prompt": "Buy the two concert tickets I saved, $210 total.", "needs": ["create_order", "charge_card"] }
+  ],
+  "actions": {
+    "order": { "kind": "tool", "tool": "create_order", "text": "create_order(cart_id=\"c_8812\")  → order_id=\"ord_5521\"", "tokens": 250 },
+    "charge": { "kind": "tool", "tool": "charge_card", "sideEffect": true, "text": "charge_card(order_id=\"ord_5521\", amount=129.00)", "tokens": 200 },
+    "done": { "kind": "answer", "correct": true, "text": "Order ord_5521 is paid ($129.00, Visa ending 4242). Confirmation sent to your email." },
+    "give_up": { "kind": "answer", "correct": false, "text": "The payment service timed out. I couldn't confirm the charge, so please try again later." }
+  },
+  "policy": {
+    "base": { "order": 4, "charge": 0, "done": 0, "give_up": 0 },
+    "modifiers": [
+      { "when": { "called": "create_order" }, "shift": { "charge": 5 } },
+      { "when": { "state": "tool_error" }, "shift": { "give_up": 0.3 }, "note": "After an actionable timeout the model nearly always retries." },
+      { "when": { "state": "ready" }, "set": { "done": 8, "charge": 0 } }
+    ]
+  },
+  "goals": [
+    { "id": "dupes", "label": "Zero double charges in 60 checkouts", "metric": "incidents", "op": "==", "value": 0 },
+    { "id": "success", "label": "Complete at least 90% of checkouts", "metric": "success_rate", "op": ">=", "value": 0.9 }
+  ],
+  "hints": [
+    "Find a double charge in the transcript. The first charge_card call \"failed\", but did the money move?",
+    "Stopping retries (a low max turns) fixes the double charges and breaks the checkouts. The retry is right; the tool has to be safe to retry.",
+    "Open charge_card and turn on \"Idempotency key\". The payment API then recognises the retry as the same charge and returns the first result."
+  ],
+  "explain": "A timeout tells you nothing about whether the charge happened. With an idempotency key, the retry and the original are the same request to the payment API, so retrying is always safe."
+}

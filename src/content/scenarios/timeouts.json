@@ -1,0 +1,61 @@
+{
+  "id": "timeouts",
+  "title": "Timeouts, Fallbacks and Model Failover",
+  "brief": "It is a bad afternoon at your model provider: 30% of calls to your primary model come back 529 (overloaded). Your agent waits 30 seconds and tries again, and after three failures on one ticket it gives up. Three support tickets, 20 runs each. Finish at least 90% of them with an average under 18 seconds per ticket.",
+  "palette": ["user", "model", "loop", "tool", "fallback"],
+  "outageRate": 0.3,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 140 } },
+      { "id": "m", "type": "model", "data": { "tier": "large" }, "position": { "x": 240, "y": 140 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 15 }, "position": { "x": 480, "y": 140 } },
+      { "id": "t1", "type": "tool", "data": { "name": "search_kb", "description": "Searches the help-center articles and returns the top 3 matches. Use this before answering a product question." }, "position": { "x": 740, "y": 60 } },
+      { "id": "t2", "type": "tool", "data": { "name": "get_account", "description": "Gets the customer's plan, seats and billing status by account id." }, "position": { "x": 740, "y": 220 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 140 } },
+      { "id": "m", "type": "model", "data": { "tier": "large" }, "position": { "x": 240, "y": 140 } },
+      { "id": "f", "type": "fallback", "data": { "tier": "medium" }, "position": { "x": 240, "y": 300 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 15 }, "position": { "x": 480, "y": 140 } },
+      { "id": "t1", "type": "tool", "data": { "name": "search_kb", "description": "Searches the help-center articles and returns the top 3 matches. Use this before answering a product question." }, "position": { "x": 740, "y": 60 } },
+      { "id": "t2", "type": "tool", "data": { "name": "get_account", "description": "Gets the customer's plan, seats and billing status by account id." }, "position": { "x": 740, "y": 220 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "f" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Seat limit", "prompt": "Why can't I add a 6th person to my workspace? Account acme-221.", "needs": ["get_account", "search_kb"] },
+    { "id": "t2", "label": "SSO setup", "prompt": "How do I turn on SAML single sign-on for account northwind-08?", "needs": ["get_account", "search_kb"] },
+    { "id": "t3", "label": "Failed payment", "prompt": "My card was declined but I was still charged? Account blue-mesa-4.", "needs": ["get_account", "search_kb"] }
+  ],
+  "actions": {
+    "account": { "kind": "tool", "tool": "get_account", "text": "get_account(\"acme-221\")  → plan=Starter, seats=5/5", "tokens": 300 },
+    "search": { "kind": "tool", "tool": "search_kb", "text": "search_kb(\"seat limit starter plan\")", "tokens": 900 },
+    "done": { "kind": "answer", "correct": true, "text": "Your Starter plan includes 5 seats and all 5 are used. Upgrade to Team for up to 50 seats, or remove an inactive member under Settings > Members." },
+    "guess": { "kind": "answer", "correct": false, "text": "It might be a browser issue. Try clearing your cache and inviting them again." }
+  },
+  "policy": {
+    "base": { "account": 3, "search": 2, "done": 0, "guess": 0.1 },
+    "modifiers": [
+      { "when": { "state": "ready" }, "set": { "done": 10, "guess": 0.1 } }
+    ]
+  },
+  "goals": [
+    { "id": "success", "label": "Finish at least 90% of tickets", "metric": "success_rate", "op": ">=", "value": 0.9 },
+    { "id": "latency", "label": "Under 18 seconds per ticket on average", "metric": "avg_latency", "op": "<", "value": 18 }
+  ],
+  "hints": [
+    "Open a failed ticket in the transcript. How many seconds does each 529 cost, and what happens after the third?",
+    "Waiting longer does not help when the provider is overloaded. You need somewhere else to send the call.",
+    "Add a Fallback model (medium is fine) and wire the primary model to it. A 529 then costs one quick retry instead of 30 seconds."
+  ],
+  "explain": "An outage you planned for is a slower answer; one you did not plan for is a failed ticket. A fallback model turns a 30-second wait into a 2-second retry somewhere else."
+}

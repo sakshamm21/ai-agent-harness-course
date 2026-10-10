@@ -1,0 +1,377 @@
+{
+  "id": "orchestrator",
+  "title": "Orchestrator–Workers",
+  "brief": "Three research questions come in, and each one really has four parts. A single agent searches them one by one: its context fills with raw pages, it runs out of patience, and about two answers in three cover only some of the parts. Make a lead agent plan the split and hand each part to its own worker. Get at least 85% complete reports while the lead's context stays under 12,000 tokens.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "subagent"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "systemPrompt": "Research the question thoroughly and write a cited report."
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 14
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top 5 pages as text."
+        },
+        "position": {
+          "x": 740,
+          "y": 40
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 140
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "parallelTools": true,
+          "systemPrompt": "You are the lead researcher. Split the question into 4 independent parts, give each to a worker with a clear brief, then merge their findings into one cited report."
+        },
+        "position": {
+          "x": 240,
+          "y": 140
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 14
+        },
+        "position": {
+          "x": 480,
+          "y": 140
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "web_search",
+          "description": "Searches the web and returns the top 5 pages as text."
+        },
+        "position": {
+          "x": 740,
+          "y": 40
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "run_worker",
+          "description": "Starts a worker agent on one part of the question with its own brief and returns its findings with sources."
+        },
+        "position": {
+          "x": 740,
+          "y": 160
+        }
+      },
+      {
+        "id": "s",
+        "type": "subagent",
+        "data": {
+          "tier": "small"
+        },
+        "position": {
+          "x": 740,
+          "y": 280
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "t2",
+        "target": "s"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "q1",
+      "label": "Heat pump market",
+      "prompt": "Should we enter the German residential heat pump market in 2027? Cover demand, subsidies, installer capacity and competitors.",
+      "needs": [
+        "run_worker"
+      ]
+    },
+    {
+      "id": "q2",
+      "label": "Vector database choice",
+      "prompt": "Compare three hosted vector databases for 50M embeddings: cost, latency, filtering and data residency.",
+      "needs": [
+        "run_worker"
+      ]
+    },
+    {
+      "id": "q3",
+      "label": "Drug interaction review",
+      "prompt": "Summarize the evidence on combining metformin with GLP-1 agonists: efficacy, side effects, dosing and open trials.",
+      "needs": [
+        "run_worker"
+      ]
+    }
+  ],
+  "actions": {
+    "search": {
+      "kind": "tool",
+      "tool": "web_search",
+      "text": "web_search(\"part 2 of 4: subsidies 2027\") (lead reads 5 full pages itself)",
+      "tokens": 3500,
+      "latencyMs": 2000
+    },
+    "partial": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Report: detailed sections on the first two parts. The last two parts get one line each: 'more research needed'.",
+      "outputTokens": 900
+    },
+    "solo_full": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Report: all four parts covered, 14 sources (after a long single-threaded search).",
+      "outputTokens": 900
+    },
+    "plan": {
+      "kind": "think",
+      "text": "Plan: 4 independent parts. Worker briefs: (1) demand, (2) subsidies, (3) installer capacity, (4) competitors. Each: search, read, return a 300-word brief with sources and open questions. No overlap.",
+      "tokens": 400
+    },
+    "dispatch": {
+      "kind": "tool",
+      "tool": "run_worker",
+      "batch": 4,
+      "offloadable": true,
+      "text": "run_worker ×4 in parallel, one brief per part",
+      "tokens": 16000,
+      "latencyMs": 25000
+    },
+    "merge_ok": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Report: four sections from four worker briefs, merged and cross-checked, 23 sources, two open questions flagged.",
+      "outputTokens": 900
+    },
+    "merge_gap": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Report: merged the four briefs, but two workers searched the same thing and part 3 is missing. The lead did not notice.",
+      "outputTokens": 900
+    }
+  },
+  "policy": {
+    "base": {
+      "search": 3,
+      "partial": 0.15,
+      "solo_full": 0,
+      "plan": 0,
+      "dispatch": 0,
+      "merge_ok": 0,
+      "merge_gap": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "all": [
+            {
+              "called": "web_search"
+            },
+            {
+              "turn": ">=",
+              "value": 5
+            }
+          ]
+        },
+        "shift": {
+          "partial": 0.8,
+          "solo_full": 0.6
+        },
+        "note": "After a few searches the single agent wants to wrap up, often before every part is covered."
+      },
+      {
+        "when": {
+          "tool": "run_worker"
+        },
+        "scale": {
+          "search": 0.03,
+          "partial": 0.03,
+          "solo_full": 0.03
+        },
+        "note": "With workers available, the lead delegates instead of searching itself."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tool": "run_worker"
+            },
+            {
+              "state": "first_turn"
+            }
+          ]
+        },
+        "shift": {
+          "plan": 6
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tool": "run_worker"
+            },
+            {
+              "not": {
+                "state": "first_turn"
+              }
+            },
+            {
+              "not": {
+                "called": "run_worker"
+              }
+            }
+          ]
+        },
+        "set": {
+          "plan": 0.3
+        },
+        "shift": {
+          "dispatch": 6
+        }
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "plan": 0,
+          "dispatch": 0,
+          "search": 0,
+          "partial": 0,
+          "solo_full": 0,
+          "merge_ok": 8,
+          "merge_gap": 0.5
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "not": {
+                "has": "subagent"
+              }
+            }
+          ]
+        },
+        "shift": {
+          "merge_gap": 2.5
+        },
+        "note": "Without separate worker contexts, 16k tokens of raw pages land in the lead and the merge gets sloppy."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% complete reports",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "ctx",
+      "label": "Lead context stays under 12,000 tokens",
+      "metric": "max_context",
+      "op": "<",
+      "value": 12000
+    }
+  ],
+  "hints": [
+    "Read a failing report. Which parts got skipped, and how big was the lead's context by then?",
+    "Give the lead a run_worker tool and a planning prompt, so it splits the question into parts and hands them out instead of searching itself.",
+    "Workers need their own context windows: wire a Subagent node to run_worker, and turn on Parallel tool calls so the four workers run at once."
+  ],
+  "explain": "The lead does the two things only it can do, splitting and merging, and each worker spends a fresh context on one part. Four workers read four times as much, and the lead only sees their briefs."
+}

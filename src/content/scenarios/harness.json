@@ -1,0 +1,630 @@
+{
+  "id": "harness",
+  "title": "What Is an Agent Harness",
+  "brief": "Ten coding tasks, one fixed model (medium tier, do not change it). The wired graph is preset A, a bare harness: a loop with no turn cap, three tools with no descriptions, a raw shell, and nothing watching the context or the risky commands. Turn it into preset B by changing only the harness. Pass at least 85% of the tasks with zero incidents.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "compactor",
+    "permissions"
+  ],
+  "window": 16000,
+  "systemTokens": 2000,
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 60
+        },
+        "position": {
+          "x": 520,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": ""
+        },
+        "position": {
+          "x": 800,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": ""
+        },
+        "position": {
+          "x": 800,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": ""
+        },
+        "position": {
+          "x": 800,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "bash",
+          "description": "Runs any shell command."
+        },
+        "position": {
+          "x": 800,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 260,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 25
+        },
+        "position": {
+          "x": 520,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads one file from the repo and returns its text with line numbers. Use this before editing any file."
+        },
+        "position": {
+          "x": 800,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text. Use only after you have seen the current contents."
+        },
+        "position": {
+          "x": 800,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "run_tests",
+          "description": "Runs the pytest suite and reports each failing case. Use this to check a change before you say you are done."
+        },
+        "position": {
+          "x": 800,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "bash",
+          "description": "Runs any shell command."
+        },
+        "position": {
+          "x": 800,
+          "y": 330
+        }
+      },
+      {
+        "id": "c",
+        "type": "compactor",
+        "data": {
+          "trigger": 0.75,
+          "strategy": "summarize"
+        },
+        "position": {
+          "x": 260,
+          "y": 330
+        }
+      },
+      {
+        "id": "p",
+        "type": "permissions",
+        "data": {
+          "allow": "read_file, edit_file, run_tests",
+          "ask": "",
+          "deny": "bash"
+        },
+        "position": {
+          "x": 520,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      },
+      {
+        "source": "m",
+        "target": "c"
+      },
+      {
+        "source": "l",
+        "target": "p"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Off-by-one in pagination",
+      "prompt": "Page 2 of /orders repeats the last item of page 1. Fix it.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Timezone bug in daily report",
+      "prompt": "The daily report shows yesterday's date after 7pm. Fix it.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Null email crash",
+      "prompt": "Signup crashes when the email field is empty. Fix it.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t4",
+      "label": "Flaky retry test",
+      "prompt": "test_retry_backoff fails about one run in three. Make it reliable.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ],
+      "tags": [
+        "stuck"
+      ]
+    },
+    {
+      "id": "t5",
+      "label": "Rename userId across the API",
+      "prompt": "Rename userId to accountId in every handler, schema and test under api/.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ],
+      "tags": [
+        "long"
+      ],
+      "tokensPerTurn": 2600
+    },
+    {
+      "id": "t6",
+      "label": "Config loader to TOML",
+      "prompt": "Move the config loader from YAML to TOML and keep every test green.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ],
+      "tags": [
+        "long"
+      ],
+      "tokensPerTurn": 2600
+    },
+    {
+      "id": "t7",
+      "label": "Stale build cache",
+      "prompt": "The build fails with 'module not found' after the last merge. Fix the build.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ],
+      "tags": [
+        "risky"
+      ]
+    },
+    {
+      "id": "t8",
+      "label": "Broken import after refactor",
+      "prompt": "billing/invoice.py fails to import after yesterday's refactor. Fix it.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ]
+    },
+    {
+      "id": "t9",
+      "label": "Dead feature flag",
+      "prompt": "Remove the NEW_CHECKOUT feature flag and the code paths behind it.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ],
+      "tags": [
+        "risky"
+      ]
+    },
+    {
+      "id": "t10",
+      "label": "Upgrade lodash",
+      "prompt": "Upgrade lodash to v5 and fix the type errors it causes.",
+      "needs": [
+        "read_file",
+        "edit_file",
+        "run_tests"
+      ],
+      "tags": [
+        "long"
+      ],
+      "tokensPerTurn": 2600
+    }
+  ],
+  "actions": {
+    "read": {
+      "kind": "tool",
+      "tool": "read_file",
+      "text": "read_file(\"src/api/orders.py\")",
+      "tokens": 1500
+    },
+    "edit": {
+      "kind": "tool",
+      "tool": "edit_file",
+      "text": "edit_file(\"src/api/orders.py\", old=\"offset = page * size + 1\", new=\"offset = (page - 1) * size\")",
+      "tokens": 300
+    },
+    "test": {
+      "kind": "tool",
+      "tool": "run_tests",
+      "text": "run_tests()",
+      "tokens": 700
+    },
+    "flail": {
+      "kind": "think",
+      "text": "Not sure what these tools take. Trying read_file(\"orders\")... no such file. Maybe run_tests(\"--all\")?",
+      "tokens": 900
+    },
+    "guess": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Fixed. I updated the logic so it should work now. (No test run.)"
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Fixed. I read the file, changed the offset calculation, and all 48 tests pass."
+    },
+    "forget": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Done. I tidied up the logging helpers as requested."
+    },
+    "repeat": {
+      "kind": "repeat",
+      "text": "run_tests() again. Same failure in test_retry_backoff. Let me run it once more.",
+      "tokens": 700
+    },
+    "nuke": {
+      "kind": "dangerous",
+      "tool": "bash",
+      "text": "bash(\"rm -rf build/ node_modules/ .git/ && npm install\")",
+      "incident": "Incident: rm -rf deleted .git/ along with the build cache. Uncommitted work and history are gone."
+    }
+  },
+  "policy": {
+    "base": {
+      "read": 0,
+      "edit": 0,
+      "test": 0,
+      "flail": 1.2,
+      "guess": 0.35,
+      "done": 0,
+      "forget": 0,
+      "repeat": 0,
+      "nuke": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "tool": "read_file"
+        },
+        "shift": {
+          "read": 3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tool": "edit_file"
+            },
+            {
+              "called": "read_file"
+            }
+          ]
+        },
+        "shift": {
+          "edit": 3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tool": "run_tests"
+            },
+            {
+              "called": "edit_file"
+            }
+          ]
+        },
+        "shift": {
+          "test": 3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "toolQuality": "read_file",
+              "op": ">=",
+              "value": 0.75
+            },
+            {
+              "toolQuality": "edit_file",
+              "op": ">=",
+              "value": 0.75
+            },
+            {
+              "toolQuality": "run_tests",
+              "op": ">=",
+              "value": 0.75
+            }
+          ]
+        },
+        "scale": {
+          "flail": 0.1,
+          "guess": 0.1
+        },
+        "note": "Clear tool descriptions: the model stops guessing at arguments."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 8,
+          "guess": 0.2
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "long"
+            },
+            {
+              "turn": "<",
+              "value": 9
+            }
+          ]
+        },
+        "set": {
+          "done": 0,
+          "guess": 0
+        },
+        "note": "Big refactors need more passes before they are really done."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "stuck"
+            },
+            {
+              "called": "edit_file"
+            }
+          ]
+        },
+        "shift": {
+          "repeat": 4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "stuck"
+            },
+            {
+              "state": "repeating"
+            }
+          ]
+        },
+        "set": {
+          "repeat": 100
+        },
+        "note": "Once it starts re-running the flaky test it rarely stops on its own.",
+        "scale": {
+          "done": 0.05
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "risky"
+            },
+            {
+              "tool": "bash"
+            }
+          ]
+        },
+        "shift": {
+          "nuke": 0.45
+        },
+        "note": "Build trouble tempts the model into wiping caches with a raw shell."
+      },
+      {
+        "when": {
+          "state": "lost_instructions"
+        },
+        "set": {
+          "forget": 4
+        },
+        "scale": {
+          "done": 0.2
+        },
+        "note": "The task scrolled out of the window."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "Solve at least 85% of tasks",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "safe",
+      "label": "Zero incidents (no runaways, no destroyed repos)",
+      "metric": "incidents",
+      "op": "<=",
+      "value": 0
+    }
+  ],
+  "hints": [
+    "Read the failing transcripts. You will see four different failures: guessing at tool arguments, a flaky test re-run forever, the task falling out of the window on big refactors, and rm -rf. Each one is a missing harness part.",
+    "Give the three tools real descriptions (start with a verb, say when to use them), cap the loop well under 60 turns, add a Compactor, and add Permissions.",
+    "Descriptions like \"Reads one file from the repo and returns its text. Use this before editing any file.\" Loop max turns 25. Compactor: summarize at 0.75. Permissions: deny bash."
+  ],
+  "explain": "You never touched the model. Descriptions, a turn cap, a compactor and a deny rule are all harness, and together they took the same model from failing to passing."
+}

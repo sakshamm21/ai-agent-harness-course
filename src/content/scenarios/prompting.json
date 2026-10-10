@@ -1,0 +1,50 @@
+{
+  "id": "prompting",
+  "title": "System Prompts and Messages",
+  "brief": "A support bot answers refund and shipping questions. The refund rule (\"No refunds after 30 days; offer store credit instead\") was pasted into the chat as a user message 40 turns ago, and the system prompt is empty. Right now about half the late refund requests get a refund they should not. Move the rule to where it belongs and get at least 90% of 20 runs right.",
+  "palette": ["user", "model"],
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "systemPrompt": "" }, "position": { "x": 260, "y": 120 } }
+    ],
+    "edges": [{ "source": "u", "target": "m" }]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "systemPrompt": "You are the support assistant for Northwind Outfitters. Refund policy: no refunds after 30 days from delivery; offer store credit instead. Always check the order date before promising a refund." }, "position": { "x": 260, "y": 120 } }
+    ],
+    "edges": [{ "source": "u", "target": "m" }]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Late refund (45 days)", "prompt": "(turn 41) I bought these boots 45 days ago and they're scuffed. I want my money back.", "tags": ["refund"] },
+    { "id": "t2", "label": "Late refund (62 days)", "prompt": "(turn 41) Can I return the jacket I got two months ago for a full refund?", "tags": ["refund"] },
+    { "id": "t3", "label": "Shipping question", "prompt": "(turn 41) My order still says 'label created'. When will it ship?", "tags": ["shipping"] },
+    { "id": "t4", "label": "Late refund (35 days)", "prompt": "(turn 41) It's been 5 weeks, the tent leaks. Refund please.", "tags": ["refund"] }
+  ],
+  "actions": {
+    "policy_ok": { "kind": "answer", "correct": true, "text": "I'm sorry about that. Your order is past our 30-day refund window, so I can't refund it, but I can offer store credit for the full amount right now. Want me to set that up?" },
+    "policy_broken": { "kind": "answer", "correct": false, "text": "So sorry about that! I've started a full refund to your card. You should see it in 3 to 5 business days." },
+    "ship_ok": { "kind": "answer", "correct": true, "text": "'Label created' means the warehouse has packed it. Orders usually leave within 1 business day of that, and you'll get a tracking email when the carrier scans it." },
+    "ship_vague": { "kind": "answer", "correct": false, "text": "It should ship soon. Is there anything else I can help with?" }
+  },
+  "policy": {
+    "base": { "policy_ok": 0, "policy_broken": 0, "ship_ok": 0, "ship_vague": 0 },
+    "modifiers": [
+      { "when": { "tag": "refund" }, "set": { "policy_ok": 1, "policy_broken": 1 }, "note": "Without a system prompt, the rule from turn 1 is one message among 40, and the latest message pulls harder." },
+      { "when": { "tag": "shipping" }, "set": { "ship_ok": 9, "ship_vague": 1 } },
+      { "when": { "all": [{ "tag": "refund" }, { "setting": "model.tier", "op": "==", "value": "large" }] }, "scale": { "policy_broken": 0.6 }, "note": "A bigger model follows buried rules a bit better, but not reliably." },
+      { "when": { "all": [{ "tag": "refund" }, { "setting": "model.systemPrompt", "op": "!=", "value": "" }] }, "scale": { "policy_broken": 0.04 }, "note": "Rules in the system prompt apply to every turn and outrank the conversation." }
+    ]
+  },
+  "goals": [
+    { "id": "success", "label": "At least 90% of answers follow policy", "metric": "success_rate", "op": ">=", "value": 0.9 }
+  ],
+  "hints": [
+    "Read the failing transcripts. The bot isn't confused about the facts; it just doesn't weigh a rule from 40 turns ago. Does a bigger model fix it?",
+    "Standing rules that apply to every turn belong in one place the model reads first, every time.",
+    "Select the Model and paste the refund rule into its System prompt: \"No refunds after 30 days from delivery; offer store credit instead.\""
+  ],
+  "explain": "The system prompt is sent at the top of every request and the model is trained to treat it as the operator's standing instructions. The same sentence buried in turn 1 of a long chat is just old conversation."
+}

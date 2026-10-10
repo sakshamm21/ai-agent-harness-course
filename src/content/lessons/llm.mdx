@@ -1,0 +1,97 @@
+---
+title: "What an LLM Actually Does"
+section: "foundations"
+order: 1
+tagline: "It predicts the next token. Everything else is built on that."
+realWorld: "Autocomplete that sounds sure of itself, and citations that do not exist"
+build:
+  type: "code"
+terms:
+  - term: "large language model (LLM)"
+    def: "A neural network trained on a huge amount of text to predict the next token, given all the tokens before it."
+  - term: "token"
+    def: "The unit a model reads and writes: a word, part of a word, or a punctuation mark, roughly 4 characters of English text."
+  - term: "temperature"
+    def: "A sampling setting that reshapes the next-token probabilities: 0 always picks the most likely token, higher values make less likely tokens more common."
+  - term: "sampling"
+    def: "Picking the next token at random, weighted by the probabilities the model gave each candidate."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "A model gives three citations for a claim and two of them do not exist. What is the most accurate explanation?"
+    options: ["The model's database of papers is out of date", "It generated text that looks like a citation, token by token, without checking a source", "Temperature was set to 0"]
+    answer: 1
+    why: "An LLM has no lookup table of papers. It writes the most plausible next tokens, and a plausible citation is not the same as a real one."
+  - q: "The next-token probabilities are cat 0.5, dog 0.3, model 0.2. What does temperature 0 do?"
+    options: ["Picks cat every time", "Picks each token equally often", "Picks cat 50% of the time"]
+    answer: 0
+    why: "Temperature 0 means greedy decoding: the most likely token always wins, so the output repeats run after run."
+  - q: "A model streams 400 output tokens at about 50 tokens per second. Roughly how long until the answer is complete?"
+    options: ["About 0.4 seconds", "About 8 seconds", "It depends only on the length of the prompt"]
+    answer: 1
+    why: "Output is produced one token at a time: 400 / 50 = 8 seconds, plus the time to read the prompt before the first token."
+reading:
+  - title: "Anthropic docs: Glossary"
+    url: "https://docs.anthropic.com/en/docs/about-claude/glossary"
+  - title: "Anthropic docs: Streaming messages"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/streaming"
+---
+
+## You asked for three sources. Two of them do not exist.
+
+You ask a chat model for three papers that support a claim. It gives you three titles, authors, years and journals, formatted perfectly. You search for them. Two of the three were never written.
+
+This is not rare and it is not a glitch. In 2023 lawyers in a New York case, Mata v. Avianca, filed a brief that cited six court decisions that did not exist. A chatbot had written them, and the judge sanctioned the lawyers. To see why it happens, and why it will keep happening unless you design for it, you need to know what the model is actually doing.
+
+## It is autocomplete, run one token at a time
+
+A large language model (LLM) does one thing. It reads a sequence of **tokens**, which are words or pieces of words, and gives every possible next token a probability. Then one token is picked, added to the end, and the whole thing runs again.
+
+After "The capital of France is", the token " Paris" might get 0.96. After "A good paper on this is", there is no single right answer, so the probability spreads across thousands of plausible author names and titles. The model picks one, then the next, then the next. Each choice is locally reasonable. Nothing in the process checks that the finished citation points at a real paper.
+
+That is the key idea of this whole course: the model produces **plausible text**. It is very good plausible text, often correct, because the training data is full of correct facts. But "plausible" and "true" only overlap where the model saw enough evidence.
+
+## Generation is a loop: score, sample, append
+
+Here is the whole process. You will build a toy version of it in the code lab.
+
+<Flow steps={["Tokens so far", { label: "Model", sub: "scores every next token", kind: "hl" }, { label: "Sample", sub: "temperature reshapes odds" }, "Append token"]} loop loopLabel="repeat until a stop token or max_tokens" caption="Every answer, however long, is written one token at a time." />
+
+Two settings control the "sample" step:
+
+- **Temperature.** At 0, the model always takes the top token, so the same prompt gives the same text. At 1, it samples from the probabilities as they are. Above 1, unlikely tokens get boosted and the text gets stranger.
+- **max_tokens.** A hard cap on how many tokens it writes. Hit it and the answer stops mid-sentence.
+
+Because each token depends on the ones before it, an early odd pick sends the rest of the answer down a different path. That is why the same question can get two different answers.
+
+It also explains **streaming**. The model does not have the answer and then send it. It writes it piece by piece, so an API can send you each piece as it is made.
+
+## Let us check the math
+
+Use the toy model from the code lab. After "The", the next-token probabilities are cat 0.5, dog 0.3, model 0.2.
+
+<Callout type="math" label="Let us check the math">
+**Temperature 0.5** raises each probability to the power 1/0.5 = 2, then rescales so they sum to 1.<br />
+0.5² = 0.25, 0.3² = 0.09, 0.2² = 0.04. Total = 0.38.<br />
+New odds: cat 0.25/0.38 = **0.66**, dog 0.09/0.38 = **0.24**, model 0.04/0.38 = **0.11**.<br />
+Lower temperature made the favourite more likely (0.5 to 0.66).
+
+**One whole sentence** at temperature 1: "The cat sat ." has probability 0.7 (The) × 0.5 (cat) × 0.6 (sat) × 1.0 (.) = **0.21**. Run it 100 times and you get that exact sentence about 21 times. The other 79 are different.
+
+**Time.** If a model writes about 50 tokens per second, a 400-token answer takes 400 / 50 = **8 seconds** to finish. Streaming shows the first words in well under a second instead of a blank screen for 8.
+</Callout>
+
+## The tradeoff: low temperature buys repeatability, not truth
+
+Setting temperature to 0 makes the output more repeatable. It does not make it more correct. A greedy model invents a citation just as fluently; it simply invents the same one every time. And you lose variety you sometimes want, like several draft subject lines to pick from.
+
+The real fixes change what the model is predicting from:
+
+- **Give it the facts.** Put the source document in the prompt, or let it search. A model quoting text in its context is far more reliable than one recalling from training. See [Retrieval-Augmented Generation](/c/rag/).
+- **Let it check.** A model with [tools](/c/tools/) can look a paper up instead of guessing its title.
+- **Constrain the shape.** When code reads the answer, ask for [structured output](/c/structured/) and validate it. For runs that must repeat exactly, see [Taming Nondeterminism](/c/determinism/).
+
+## In the real world
+
+The Claude API exposes this loop directly. You set `temperature` (0 to 1) and `max_tokens` on each request, and when you ask for a stream you receive the answer as a series of small text deltas. If the response ends with `stop_reason: "max_tokens"`, the loop hit your cap before the model chose to stop. Every agent in this course is built on calls like this one.

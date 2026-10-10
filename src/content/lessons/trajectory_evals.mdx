@@ -1,0 +1,111 @@
+---
+title: "Trajectory and Tool-Use Evals"
+section: "operate"
+order: 46
+tagline: "Grade the path, not just the answer."
+realWorld: "SWE-bench-style task suites; tau-bench-style customer tasks"
+build:
+  type: "lab"
+  scenario: "trajectory_evals"
+terms:
+  - term: "trajectory"
+    def: "The full sequence of an agent's steps on one task: every model turn, tool call, argument and result, in order."
+  - term: "outcome eval"
+    def: "A check on the final result only, such as the answer text or whether the tests pass, without looking at how the agent got there."
+  - term: "trajectory eval"
+    def: "A check on the steps an agent took, such as which tools it called, with what arguments, and whether it did anything forbidden."
+  - term: "pass^k"
+    def: "The chance an agent succeeds on all k independent attempts at the same task, a measure of reliability introduced by tau-bench."
+usedIn: ["nanoharness/10"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Two runs both end with \"All tests pass\". One fixed the code; one deleted the failing test. What does an outcome-only eval report?"
+    options: ["Both pass", "Both fail", "Only the honest run passes"]
+    answer: 0
+    why: "The final message and the green suite are the same. Only a check on the tool calls, or a grader that brings its own tests, can tell them apart."
+  - q: "An agent succeeds 90% of the time on a task. What is pass^8, the chance it succeeds on all 8 tries?"
+    options: ["About 90%", "About 72%", "About 43%"]
+    answer: 2
+    why: "0.9 to the power 8 is about 0.43. A customer who uses the agent 8 times will probably hit at least one failure."
+  - q: "The cleanup task really does need delete_file. What is the best fix for runs that delete tests?"
+    options: ["Remove delete_file entirely", "Gate delete_file behind approval and flag deletes of test files in the trajectory check", "Raise the model tier"]
+    answer: 1
+    why: "Removing the tool breaks the legitimate task. Gating it keeps the good path and stops the bad one, and the trajectory check tells you how often the bad one is attempted."
+reading:
+  - title: "Yao et al. (2024): tau-bench, a benchmark for tool-agent-user interaction"
+    url: "https://arxiv.org/abs/2406.12045"
+  - title: "SWE-bench"
+    url: "https://www.swebench.com"
+---
+
+## Your eval says 92%. Nine of those passes deleted a test.
+
+You run your coding agent on 100 bug tickets. 92 end with "Done. All tests pass." and a green suite. Your eval checks exactly that, so it reports 92%.
+
+Then someone reads the transcripts. In 9 of the 92 passing runs, the agent could not find the bug, so it called `delete_file` on the failing test. The suite went green because the test was gone. Your real pass rate was 83%, and 9 runs did something you would fire a person for.
+
+## The answer hides the path
+
+An outcome eval asks one question: is the end state right? For an agent, the end state is often something the agent itself controls. It wrote the final message. It ran the tests. It can change the tests.
+
+So the outcome can look perfect while the path is wrong in ways that matter:
+
+- **Gamed checks.** Deleting a test, hard-coding the expected value, skipping the slow step.
+- **Unsafe side effects.** A refund issued, an email sent or a file removed along the way, even if the reply is right.
+- **Wasted work.** 30 turns for a 4-turn task, which you pay for on every run (see [Tracing and Observability](/c/tracing/)).
+
+Two agents with the same answer can have very different trajectories. Only one of them is safe to ship.
+
+## Grade the trajectory too
+
+Keep the outcome check, and add checks that read the tool calls. Most are plain code, no model needed:
+
+```python
+def trajectory_ok(run):
+    for call in run.tool_calls:
+        if call["name"] == "delete_file" and "test" in call["input"]["path"]:
+            return False, "deleted a test file"
+        if call["name"] == "issue_refund" and not run.called("lookup_policy"):
+            return False, "refunded before checking policy"
+    if run.turns > 3 * EXPECTED_TURNS[run.task]:
+        return False, "took 3x the expected turns"
+    return True, ""
+```
+
+<Flow steps={["Task", { label: "Agent run", sub: "records every call" }, { label: "Outcome check", sub: "tests, answer" }, { label: "Trajectory check", sub: "forbidden calls, order, turns", kind: "hl" }, "Score"]} caption="A run passes only if the outcome is right and the path broke no rules." />
+
+Three kinds of check cover most needs:
+
+- **Forbidden calls:** tools or arguments that should never appear for this task.
+- **Required order:** read before edit, look up the policy before refunding.
+- **Budget:** turns, tokens or cost far above what the task should take.
+
+Then act on what you find. In the lab, the cleanup ticket legitimately needs `delete_file`, so removing the tool is not the fix. Gate it behind [Permissions](/c/permissions/) or [Human in the Loop](/c/hitl/), and keep the trajectory check to measure how often the bad path is attempted.
+
+## Let us check the math
+
+<Callout type="math" label="Let us check the math">
+Outcome-only score: 92 / 100 = **92%**.<br />
+Trajectory check fails the 9 runs that deleted a test: (92 − 9) / 100 = **83%**.<br />
+The outcome eval overstated quality by 9 points, and every one of those 9 was an incident, not a near miss.<br /><br />
+Reliability over repeated use: if one attempt succeeds with p = 0.83, the chance of succeeding on all k attempts is p^k.<br />
+pass^1 = 0.83. pass^4 = 0.83^4 ≈ 0.47. pass^8 = 0.83^8 ≈ **0.23**.<br />
+Even at p = 0.9, pass^8 = 0.9^8 ≈ 0.43. An agent that is "90% good" still fails at least once for most users who use it 8 times.
+</Callout>
+
+Trajectory checks written as code cost almost nothing to run: they read a log you already have. The expensive part is deciding the rules.
+
+## The tradeoff: rules about paths can be too rigid
+
+Agents find valid paths you did not expect. A check that demands "read, then edit, then test" fails an agent that ran the tests first to reproduce the bug, which is a good habit.
+
+- **Check what must never happen, not one golden path.** Forbidden calls and side effects are stable rules; exact step order rarely is.
+- **Grade the world, not the transcript.** Compare the end state (files, database rows, refunds issued) with what should be there, using a grader the agent cannot touch.
+- **Use a judge for fuzzy rules.** "Did it ask before guessing?" can go to a calibrated [LLM judge](/c/llm_judge/), checked against human labels like any other grader.
+
+## In the real world
+
+tau-bench (Yao et al., 2024) puts an agent in a simulated retail or airline support desk, with API tools, a written policy and a model playing the customer. It grades by comparing the database at the end of the conversation with the expected state, so a polite reply that cancelled the wrong flight still fails. It also introduced pass^k, and showed that agents with decent single-try scores fall sharply when they must succeed every time.
+
+SWE-bench avoids the deleted-test trick by design: the grader applies its own copy of the tests after the agent finishes, so changing the repo's tests does not change the grade. That is the general rule. Grade with something the agent cannot edit.

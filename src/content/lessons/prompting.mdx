@@ -1,0 +1,110 @@
+---
+title: "System Prompts and Messages"
+section: "foundations"
+order: 3
+tagline: "Roles, instructions, and why order matters."
+realWorld: "A support bot that ignores policy because it was buried in turn 40"
+build:
+  type: "lab"
+terms:
+  - term: "system prompt"
+    def: "Instructions sent separately from the conversation, at the top of every request, that set the model's role and standing rules."
+  - term: "message roles"
+    def: "The labels on each message in a conversation: user for what the person (or your code) says, assistant for what the model said."
+  - term: "instruction placement"
+    def: "Where in the context an instruction sits. Rules in the system prompt apply to every turn; rules buried in old messages compete with everything after them."
+usedIn: ["nanoharness/6"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Where should a rule that applies to every conversation, like a refund policy, go?"
+    options: ["In the first user message", "In the system prompt", "Repeated in every assistant message"]
+    answer: 1
+    why: "The system prompt is sent with every request and the model treats it as the operator's standing instructions. A first user message is just old conversation by turn 40."
+  - q: "What do the assistant messages in a request contain?"
+    options: ["The model's earlier replies, which your code sends back each time", "Hidden instructions from the provider", "Only tool results"]
+    answer: 0
+    why: "The API is stateless, so you resend the whole conversation, including what the model said before, on every call."
+  - q: "A 1,500-token system prompt is sent on each of 40 turns. How many input tokens does it cost per conversation?"
+    options: ["1,500", "60,000", "It is free because it never changes"]
+    answer: 1
+    why: "40 × 1,500 = 60,000 tokens. Prompt caching can bill the repeated part at a fraction of the price, but it is still sent every time."
+reading:
+  - title: "Anthropic docs: Prompt engineering overview"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview"
+  - title: "Anthropic docs: Giving Claude a role with a system prompt"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts"
+---
+
+## The refund rule was in turn 1. The refund happened in turn 41.
+
+Your support bot has one firm rule: no refunds after 30 days, offer store credit instead. A teammate set it up by pasting that rule as the first message of the chat. It worked in testing.
+
+In production, conversations run long. By turn 41 a customer writes, "I bought these boots 45 days ago, I want my money back," and the bot replies, "I've started a full refund to your card." In the lab, about half of the late refund requests get exactly that answer.
+
+## Every message has a role, and roles carry weight
+
+A request to a chat model is not one block of text. It is a list of **messages**, each with a **role**:
+
+- **user**: what the person (or your code, speaking for them) says.
+- **assistant**: what the model said earlier. You send these back because the model remembers nothing between calls.
+- **system**: instructions from you, the operator, sent separately from the conversation.
+
+Models are trained to treat these differently. The system prompt is the standing brief: who you are, what you may and may not do. User messages are the conversation it is serving.
+
+Your refund rule was a user message. By turn 41 it is one message among 40, written a long time ago, and the newest message, a frustrated customer asking for money, pulls hardest. Recent, specific text tends to win over old, general text. Nothing was forgotten; the window is not full. The rule just lost the argument.
+
+## Put standing rules in the system prompt
+
+The fix is to put each instruction where its job says it belongs:
+
+```python
+resp = client.messages.create(
+    model=MODEL,
+    max_tokens=500,
+    system=(
+        "You are the support assistant for Northwind Outfitters.\n"
+        "Refund policy: no refunds after 30 days from delivery; "
+        "offer store credit instead. Check the order date first."
+    ),
+    messages=history + [{"role": "user", "content": new_message}],
+)
+```
+
+<Stack blocks={[{ label: "System: role + rules", tokens: 1500, kind: "good" }, { label: "Turns 1 to 40", tokens: 9000 }, { label: "Latest message", tokens: 300, kind: "hl" }]} caption="What the model reads on turn 41. The rules sit in the one place it always treats as standing instructions." />
+
+A simple rule of thumb for order:
+
+- **System prompt**: role, rules, tone, output format. Things true for every turn.
+- **Early user messages**: background documents and data for this conversation.
+- **Latest user message**: the specific question, as close to the end as possible.
+
+In the lab you move one sentence, the refund rule, from the chat into the system prompt, and compare pass rates over 20 runs.
+
+## Let us check the math
+
+The lab has three late refund requests and one shipping question per run.
+
+<Callout type="math" label="Let us check the math">
+**Rule in turn 1:** the model chooses "refund" and "store credit" about equally, so each refund ticket is right about 50% of the time. The shipping question is right about 90%.<br />
+Pass rate: (3 × 0.50 + 0.90) / 4 = **0.60**.
+
+**Rule in the system prompt:** the wrong refund drops to about 1 in 25, so each refund ticket is right about 96%.<br />
+Pass rate: (3 × 0.96 + 0.90) / 4 = **0.945**.
+
+**In money:** at 1,000 late refund requests a month and $80 per order, 50% wrong is 500 × $80 = **$40,000** refunded against policy. At 4% wrong it is 40 × $80 = **$3,200**.
+</Callout>
+
+## The tradeoff: the system prompt rides on every call
+
+The system prompt is resent with every request. A 1,500-token prompt over a 40-turn conversation is 40 × 1,500 = 60,000 input tokens, about $0.18 at the illustrative sim price of $3 per million. And as it grows, rules start to conflict: "always be helpful" and "never refund after 30 days" pull in opposite directions on exactly the hard tickets.
+
+Ways to keep it under control:
+
+- **Cache the stable prefix.** Prompt caching bills a repeated system prompt at a fraction of the normal price. See [Prompt Caching and Cost Control](/c/caching/).
+- **Assemble it, do not accumulate it.** Build the prompt from parts each turn (rules, the relevant documents, recent history) rather than letting one huge prompt grow. See [Assembling the Context](/c/prompt_assembly/).
+- **Test the rules.** Keep a small set of tricky conversations and rerun them when the prompt changes ([Evals](/c/evals/)). A rule you never test is a rule you hope for.
+
+## In the real world
+
+The Claude Messages API takes the system prompt as a separate `system` field, not as a message in the list, and the `messages` list alternates `user` and `assistant` turns. Anthropic's prompt engineering guide recommends using the system prompt to give Claude a role, and putting long documents near the top with the question at the end. In part 6 of the nanoharness project you load a project's `AGENTS.md` file into the system prompt, so its rules apply on every turn.

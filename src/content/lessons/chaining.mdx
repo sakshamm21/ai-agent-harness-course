@@ -1,0 +1,102 @@
+---
+title: "Prompt Chaining"
+section: "patterns"
+order: 30
+tagline: "Break the job into fixed steps with checks between them."
+realWorld: "Generate outline, check it, then write the marketing copy"
+build:
+  type: "lab"
+  scenario: "chaining"
+terms:
+  - term: "workflow"
+    def: "A system where your code fixes the order of model calls and tools in advance, as opposed to an agent, where the model chooses its own next step."
+  - term: "prompt chaining"
+    def: "A workflow that splits one task into a fixed sequence of model calls, where each call works on the output of the one before."
+  - term: "gate"
+    def: "A check between two chain steps, usually plain code, that stops or repairs the output before it reaches the next step."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "A single prompt follows each of four independent rules 86% of the time. Roughly how often does it follow all four?"
+    options: ["86%", "About 55%", "About 25%"]
+    answer: 1
+    why: "Independent rules multiply: 0.86 × 0.86 × 0.86 × 0.86 ≈ 0.55. Every rule you add is another chance to miss."
+  - q: "What makes a chain more reliable than one big prompt?"
+    options: ["Each step is easier, and a gate between steps catches misses before they spread", "Chains use a larger model automatically", "Chains skip the system prompt"]
+    answer: 0
+    why: "Each call has one job, and the gate is code that can check rules exactly, so an error in step 1 is fixed before step 2 builds on it."
+  - q: "When is a chain the wrong choice?"
+    options: ["When the steps are known in advance", "When you cannot say ahead of time which steps the task needs", "When a step can be checked in code"]
+    answer: 1
+    why: "A chain hard-codes the steps. If the path depends on what the model finds along the way, you need routing or an agent loop instead."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "Anthropic docs: Chain complex prompts"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts"
+---
+
+## Four rules in one prompt. Half the copy breaks one.
+
+Marketing sends you a brief for a launch email. It has four hard rules: at most 150 words, include the discount code SPRING20, include the line "Offer ends April 30. Terms apply.", and never say "revolutionary" or "free". You put the whole brief in one prompt and ask for the email.
+
+You run it on 100 briefs. About 55 come back clean. The other 45 break at least one rule: the code is missing, the legal line got paraphrased, or the copy runs to 212 words. Legal will not sign off on 45 emails.
+
+## Every rule is another chance to slip
+
+The model is not ignoring you. Say it follows any single rule 86% of the time. That sounds good. But the rules are independent, so the chance of following all four is 0.86 × 0.86 × 0.86 × 0.86 ≈ 0.55. That is the 55 you saw.
+
+There is a second problem. The model is doing three jobs at once: deciding what to say, saying it well, and checking the rules. A slip in the first job (an outline that forgets the legal line) flows straight into the final copy, and nothing in a single call ever looks back.
+
+A bigger model helps a little. In the lab, the large tier gets to about 68%. It still misses one email in three, at five times the price.
+
+## Split it into steps, and check between them
+
+[Anthropic's "Building effective agents"](https://www.anthropic.com/engineering/building-effective-agents) separates two kinds of systems. In an **agent**, the model decides its own next step. In a **workflow**, your code fixes the steps in advance. Prompt chaining is the simplest workflow: a fixed sequence of calls, each working on the output of the last, with a **gate** between them.
+
+<Flow steps={[{ label: "Outline", sub: "model call 1" }, { label: "Gate", sub: "code checks the rules", kind: "hl" }, { label: "Write copy", sub: "model call 2" }, { label: "Gate", sub: "word count, banned words", kind: "hl" }, "Ship"]} caption="A three-step chain. The gates are plain code, so they are exact and nearly free." />
+
+```python
+outline = model(f"Outline launch copy for this brief:\n{brief}")
+misses = check_rules(outline, brief)        # code: code present? legal line? banned words?
+if misses:
+    outline = model(f"Fix these misses: {misses}\n\n{outline}")
+copy = model(f"Write the final copy from this outline, max {limit} words:\n{outline}")
+assert len(copy.split()) <= limit and "SPRING20" in copy
+```
+
+Three things changed:
+
+- **Each call has one job.** Outlining is easy. Writing from a checked outline is easy. Neither has to juggle everything.
+- **The gate is code.** "Does the text contain SPRING20?" is a string check, not a judgment call. Code gets it right every time.
+- **Errors stop early.** A missing legal line is caught at the outline, where fixing it costs one short call, not after the copy is written.
+
+## Let us check the math
+
+Use the lab's sim prices (illustrative): the medium tier costs $3 per million input tokens and $15 per million output tokens.
+
+<Callout type="math" label="Let us check the math">
+**One prompt:** about 1,400 input tokens and 400 output tokens.<br />
+1,400 × $3/M + 400 × $15/M = $0.0042 + $0.0060 ≈ **$0.010 per email**, and 55% pass.<br />
+Cost per *usable* email: $0.010 / 0.55 ≈ **$0.019**.<br /><br />
+**Chain:** outline (1,500 in, 300 out) + copy (2,000 in, 400 out). The gates are code, so they cost nothing.<br />
+3,500 × $3/M + 700 × $15/M = $0.0105 + $0.0105 = **$0.021 per email**, and about 95% pass.<br />
+Cost per usable email: $0.021 / 0.95 ≈ **$0.022**.
+</Callout>
+
+The chain costs about twice as much per call, but almost the same per email you can actually send. And that ignores the real cost of the 45 bad emails: someone has to find them and fix them by hand.
+
+Latency goes the other way. Two calls in a row take about twice as long as one. For a marketing email nobody notices. For a chat reply, they might.
+
+## The tradeoff: a chain only knows the path you gave it
+
+A chain is rigid by design. That is what makes it reliable, and also what limits it:
+
+- **It cannot adapt.** If a brief needs research first, the chain will not notice. When the right steps depend on the input, classify first and pick a path ([Routing](/c/routing/)), or let the model drive ([The Agent Loop](/c/agent_loop/)).
+- **Each step adds latency and cost.** Keep the chain short, put cheap steps on a small model, and only add a step when a gate has something to check ([Cost and Latency Math](/c/cost/)).
+- **Gates only catch what you wrote down.** A rule you did not encode is a rule nobody checks. When the check needs judgment ("is the tone on brand?"), use a grader model with a clear rubric ([Evaluator–Optimizer](/c/evaluator_optimizer/)).
+
+## In the real world
+
+Many content pipelines run exactly this shape: outline, check, draft, check, then translate. Anthropic's post gives this kind of example: write marketing copy, then translate it into another language, as two separate steps. Structured output ([Structured Output](/c/structured/)) makes the gates easier, because a JSON outline is far simpler to check in code than free text.

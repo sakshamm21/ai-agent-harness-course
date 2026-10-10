@@ -1,0 +1,93 @@
+---
+title: "Chunking and Indexing"
+section: "memory"
+order: 27
+tagline: "Chunk size decides what the model can find."
+realWorld: "Policy answers cut mid-sentence"
+build:
+  type: "lab"
+  scenario: "chunking"
+terms:
+  - term: "chunk"
+    def: "One piece of a document, embedded and stored as its own unit, so retrieval returns chunks rather than whole documents."
+  - term: "chunk overlap"
+    def: "Tokens repeated at the end of one chunk and the start of the next, so a sentence near a boundary appears whole in at least one chunk."
+  - term: "contextual retrieval"
+    def: "Prepending a short description of where a chunk sits in its document (title, section, subject) before embedding it, so the chunk can be found on its own."
+usedIn: ["supportbot/1"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Your chunks are 2,000 tokens, whole chapters. What goes wrong?"
+    options: ["Nothing, bigger chunks always contain the answer", "Each vector averages many topics, so the right chapter ranks lower, and every retrieved chunk costs more prompt tokens", "The embedding model refuses inputs over 500 tokens"]
+    answer: 1
+    why: "One vector for 40 rules means 'billing in general'. In the lab, 2,000-token chunks drop accuracy to 61% and cost $0.031 a question."
+  - q: "With 400-token chunks and 60 tokens of overlap, what is the step between chunk starts?"
+    options: ["460 tokens", "400 tokens", "340 tokens"]
+    answer: 2
+    why: "Each new chunk starts 400 − 60 = 340 tokens after the previous one, so the last 60 tokens of one chunk are the first 60 of the next."
+  - q: "What is the simplest way to avoid cutting a rule away from its exception?"
+    options: ["Split on the document's own structure, such as headings and sections, before falling back to a token count", "Use 50-token chunks", "Raise top k to 50"]
+    answer: 0
+    why: "Authors already grouped related sentences into sections. Splitting on headings keeps them together; a fixed size is only the fallback for long sections."
+reading:
+  - title: "Anthropic: Introducing Contextual Retrieval"
+    url: "https://www.anthropic.com/news/contextual-retrieval"
+  - title: "Pinecone: Chunking Strategies for LLM Applications"
+    url: "https://www.pinecone.io/learn/chunking-strategies/"
+---
+
+## The bot quoted the rule and dropped the exception
+
+A customer paid for an annual plan 10 days ago and asks for a full refund. Your support bot answers: "Yes, refunds are available within 14 days of purchase." That is the rule. The next sentence in the handbook says annual plans are an exception and are refunded pro rata. The bot never saw it.
+
+The handbook is about 600 pages, 420,000 tokens, indexed in 100-token chunks. In the lab, the bot gets **40%** of questions right. Every wrong answer has the same shape: the right section was found, but only half of it.
+
+## Retrieval returns chunks, not documents
+
+[RAG](/c/rag/) never searches a document. It searches chunks: pieces you cut before embedding, each stored as its own vector. Whatever ends up in one chunk can be found together. Whatever is split across two chunks has to win two separate rankings to reach the model.
+
+A 100-token chunk holds about three sentences. Most handbook sections are 250 to 400 tokens. So the rule lands in one chunk, the exception in the next, and the question "can I get a full refund?" matches the rule much better than it matches "annual plans are an exception".
+
+Going the other way does not work either. A 2,000-token chunk holds a whole chapter. Its single vector is an average of 40 different rules, so it matches every billing question a little and none of them well.
+
+## Cut along the structure, then overlap the seams
+
+Good chunking follows the document, not a ruler.
+
+- **Split on structure first.** Headings, sections, list items, code functions. Authors already put related sentences together.
+- **Cap the size.** If a section is longer than your target (a few hundred tokens is a common start), split it by paragraphs.
+- **Overlap the boundaries.** Repeat the last 10 to 20% of each chunk at the start of the next, so a sentence near a cut appears whole somewhere.
+- **Carry context.** Prepend the document title and section path (`Handbook > Refunds > Annual plans`) to each chunk before embedding, so a chunk that says "this does not apply to them" still knows what "them" is.
+
+<Flow steps={["Handbook", { label: "Split on headings" }, { label: "Cap at ~400 tokens", sub: "60-token overlap", kind: "hl" }, { label: "Prepend title + section" }, { label: "Embed + index", kind: "good" }]} caption="Chunking pipeline. The index can only return what this step kept together." />
+
+In the lab, moving to 400-token chunks with 60 tokens of overlap takes accuracy from 40% to **91%**. The same size with no overlap gets 75%: most sections fit, but some exceptions still sit across a boundary.
+
+## Let us check the math
+
+Say a rule and its exception together span 80 tokens, starting at a random point. A fixed-size chunker places a cut every `s` tokens, where `s` is chunk size minus overlap. The pair is split when no single chunk contains all 80 tokens, which happens with probability (80 − overlap) / s.
+
+<Callout type="math" label="Let us check the math">
+**100 tokens, no overlap:** 80 / 100 = **80%** of rule-and-exception pairs are split.<br />
+**400 tokens, no overlap:** 80 / 400 = **20%** split.<br />
+**400 tokens, 60 overlap:** step 400 − 60 = 340, so (80 − 60) / 340 ≈ **6%** split.<br />
+**Index size:** 420,000 / 100 = 4,200 chunks; 420,000 / 400 = 1,050; with overlap 420,000 / 340 ≈ 1,235, about 18% more vectors to store.<br />
+**Prompt cost, top 3:** 3 × 400 = 1,200 tokens ≈ $0.0036 per question at the $3/M sim price; 3 × 2,000 = 6,000 tokens ≈ $0.018, five times more.
+</Callout>
+
+Overlap is cheap insurance. Here 18% more storage cuts the split rate from 20% to 6%. Splitting on headings does even better, because section boundaries are rarely in the middle of a rule.
+
+## The tradeoff: there is no single right size
+
+Chunk size trades precision against completeness, and the best value depends on your documents and your questions.
+
+- **Small chunks** match specific questions precisely but lose context. Fix with overlap, or retrieve small and then expand to the parent section before pasting it into the prompt.
+- **Large chunks** keep context but blur the vector and inflate the prompt. Fix by splitting on structure and adding the section path, so each chunk is about one thing.
+- **Re-chunking means re-embedding.** Every change to the chunker rebuilds the whole index. Measure first: keep a set of 30 to 50 real questions with known answer passages, and track how often the right chunk is in the top k ([Evals](/c/evals/)).
+
+For code, the cleanest chunk is often no chunk at all: let the agent open the file, which is [Agentic Search vs RAG](/c/agentic_search/).
+
+## In the real world
+
+Anthropic's contextual retrieval write-up starts from the same failure. A chunk like "The company's revenue grew by 3% over the previous quarter" does not say which company or which quarter. Their fix uses a model to write 50 to 100 tokens of context for each chunk ("This chunk is from ACME Corp's Q2 2023 filing...") and prepends it before embedding and keyword indexing. With prompt caching, generating that context for a whole corpus is a one-time cost.

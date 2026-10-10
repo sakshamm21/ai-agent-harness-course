@@ -1,0 +1,110 @@
+---
+title: "Human in the Loop"
+section: "reliability"
+order: 39
+tagline: "Ask before irreversible actions."
+realWorld: "Approving refunds over $100; approving a deploy"
+build:
+  type: "lab"
+  scenario: "hitl"
+terms:
+  - term: "human in the loop"
+    def: "A design where the agent pauses at chosen points and a person approves, edits or rejects the next action before it runs."
+  - term: "approval gate"
+    def: "A check in the harness that intercepts a specific kind of tool call (for example a refund over $100) and waits for a human decision."
+  - term: "irreversible action"
+    def: "An action whose effect you cannot undo by calling another tool: money sent, an email delivered, a production deploy, a deleted record without backup."
+  - term: "approval fatigue"
+    def: "What happens when people are asked to approve too often: they stop reading and approve everything, so the gate no longer protects anything."
+usedIn: ["supportbot/5", "nanoharness/3"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Which tool call most needs an approval gate?"
+    options: ["search_kb, which reads help articles", "issue_refund for $900 on an unusual account", "lookup_order, which reads an order"]
+    answer: 1
+    why: "Gate actions that are both irreversible and costly. Reads can be repeated or ignored; a $900 refund cannot be taken back."
+  - q: "You gate every tool call behind approval. What usually happens after a week?"
+    options: ["Incidents drop to zero forever", "Reviewers approve without reading, so the gate stops catching anything", "The model learns to stop calling tools"]
+    answer: 1
+    why: "Approval fatigue. A gate that fires on everything trains people to click yes. Fewer, better-targeted prompts get real attention."
+  - q: "What should the reviewer see in an approval prompt?"
+    options: ["Just the tool name", "The exact action and arguments, plus the evidence the agent used (order status, refund history)", "The full raw transcript of every turn"]
+    answer: 1
+    why: "The human can only catch a bad decision if they see what will happen and why. Too little hides the problem; too much buries it."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "OWASP Top 10 for LLM Applications (Excessive Agency)"
+    url: "https://genai.owasp.org/llm-top-10/"
+---
+
+## The agent paid a $900 claim it should have escalated
+
+Your support agent can look up orders and issue refunds. Most refunds are small and fine. Then a ticket arrives: *"My $900 camera never arrived. Refund me now or I'm disputing the charge."* The carrier shows it delivered and signed for, and the account has three refunds this month.
+
+You replay that ticket 20 times. In 7 of them, the agent pays. That is 35%, on the most expensive ticket in the queue.
+
+## A wrong answer is cheap. A wrong action is not.
+
+Models make mistakes at some rate no matter what you do. Most of the time that is fine, because most of what an agent does is reversible: a bad search gets searched again, a wrong draft gets rewritten, an edit gets reverted.
+
+A refund is different. Once the money leaves, there is no `undo_refund` tool. The same is true for an email that was delivered, a deploy to production, or a `DELETE` without a backup.
+
+So the question is not "is the model good enough?" It is "for which actions is *any* error rate too high?" Those actions need a second decision-maker, and today that is a person.
+
+## Pause at the irreversible step
+
+An approval gate sits between the loop and the risky tool. When the model asks for that tool, the harness stops, shows a person the exact action, and waits.
+
+<Flow steps={["Model", { label: "Loop", sub: "proposes issue_refund" }, { label: "Approval gate", sub: "irreversible and over $100?", kind: "hl" }, { label: "Human", sub: "approve / edit / deny", kind: "good" }, "issue_refund"]} caption="Only the risky calls stop. Everything else flows straight through." />
+
+The rule is code, not a prompt, so the model cannot argue with it:
+
+```python
+def needs_approval(call):
+    if call.name == "issue_refund":
+        return call.input["amount"] > 100
+    return call.name in {"deploy", "delete_account", "send_bulk_email"}
+
+def run_tool(call):
+    if needs_approval(call):
+        decision = ask_human(call, evidence=last_tool_results())
+        if decision.denied:
+            return tool_result(call.id, f"Denied by reviewer: {decision.reason}")
+        call = decision.edited_call or call
+    return TOOLS[call.name](**call.input)
+```
+
+Three details make it work:
+
+- **Show the evidence.** The reviewer sees `issue_refund(order="4475", amount=900)` *and* "delivered, signed for, 3 refunds this month". Without that, they are guessing too.
+- **A denial is a tool result.** The model gets "Denied: delivered and signed for" and can escalate politely instead of trying again.
+- **Waiting is a state.** A human may answer in an hour. Save the session so the agent can resume ([Sessions](/c/sessions/)).
+
+## Let us check the math
+
+Take 1,000 tickets a day. 40% ask for a refund, and a quarter of those are over $100. 2% of all tickets are bad claims averaging $400, and an ungated agent pays 35% of them.
+
+<Callout type="math" label="Let us check the math">
+**Loss without a gate:** 1,000 × 2% = 20 bad claims a day. 20 × 35% × $400 = **$2,800 a day**.<br />
+**Gate refunds over $100:** 1,000 × 40% × 25% = **100 approvals a day**. At 45 s each, that is 75 minutes of a person's time. At $40 an hour: **$50 a day**.<br />
+**Gate every refund:** 400 approvals a day, 5 hours of review, $200 a day. It stops no more fraud than the targeted gate, because the bad claims are the big ones.<br />
+**Gate every tool call:** about 3 calls per ticket is 3,000 prompts a day. Nobody reads 3,000 prompts.
+</Callout>
+
+The targeted gate costs $50 to save $2,800. Asking on everything costs more and protects less, because people stop reading.
+
+## The tradeoff: humans are slow, and they get tired
+
+A gate turns a 5-second ticket into one that waits for a person. And people are not perfect reviewers either.
+
+- **Latency.** Approvals can take minutes or hours. Reply to the customer right away ("a specialist will confirm within 24 hours"), run approvals asynchronously, and resume the session when the answer arrives.
+- **Fatigue.** Tune the threshold on real data so the gate fires rarely and mostly on cases that matter. Track the approve rate: if it is 99.5%, the gate is probably too wide. [Permissions](/c/permissions/) let you pick allow, ask or deny per tool.
+- **Reviewer error.** A tired reviewer approves a bad refund too. Put the strongest evidence first, and for the highest-stakes actions require two people or a hard limit in the payment system itself.
+
+## In the real world
+
+Claude Code is a human-in-the-loop agent by default: it asks before running shell commands or editing files unless you have allowed them, and its permission settings let you allow, ask or deny specific tools and commands. The same idea shows up in deploy pipelines with a manual approval step before production. In both, the expensive, hard-to-undo step waits for a yes; the cheap steps run on their own.
+
+You will build the y/n approval prompt into the nanoharness in part 3, and gate the support bot's refunds over $100 in part 5 of the supportbot project.

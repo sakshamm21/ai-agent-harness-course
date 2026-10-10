@@ -1,0 +1,64 @@
+{
+  "id": "caching",
+  "title": "Prompt Caching and Cost Control",
+  "brief": "Your support agent carries a 20,000-token prefix on every call: the full policy manual plus tool schemas. It never changes between calls, yet you pay full price for it on every turn of every ticket. Each ticket takes 3 or 4 turns. Get the average cost under $0.18 per ticket while keeping at least 90% of answers correct.",
+  "palette": ["user", "model", "loop", "tool"],
+  "systemTokens": 20000,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "cachePrefix": false }, "position": { "x": 240, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12 }, "position": { "x": 480, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "get_customer", "description": "Gets a customer's plan, region and account history by email. Use this first on every ticket." }, "position": { "x": 740, "y": 40 } },
+      { "id": "t2", "type": "tool", "data": { "name": "get_order", "description": "Gets an order's items, price and delivery status by order id. Use it when the ticket mentions an order." }, "position": { "x": 740, "y": 200 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "cachePrefix": true }, "position": { "x": 240, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 12 }, "position": { "x": 480, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "get_customer", "description": "Gets a customer's plan, region and account history by email. Use this first on every ticket." }, "position": { "x": 740, "y": 40 } },
+      { "id": "t2", "type": "tool", "data": { "name": "get_order", "description": "Gets an order's items, price and delivery status by order id. Use it when the ticket mentions an order." }, "position": { "x": 740, "y": 200 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Partial refund", "prompt": "I was charged for 3 seats but only use 2. Can I get the difference back? (dana@example.com)", "needs": ["get_customer", "get_order"] },
+    { "id": "t2", "label": "EU return", "prompt": "Order B-7712 arrived in Berlin and I want to return it. How long do I have?", "needs": ["get_customer", "get_order"] },
+    { "id": "t3", "label": "Upgrade proration", "prompt": "If I upgrade to the Team plan today, what do I pay this month? Order C-0031.", "needs": ["get_customer", "get_order"] }
+  ],
+  "actions": {
+    "customer": { "kind": "tool", "tool": "get_customer", "text": "get_customer(email=\"dana@example.com\")", "tokens": 500 },
+    "order": { "kind": "tool", "tool": "get_order", "text": "get_order(order_id=\"B-7712\")", "tokens": 800 },
+    "check_manual": { "kind": "think", "text": "Checks section 4.2 of the policy manual (already in the system prompt): EU customers get 30 days, everyone else 14. Proration is daily.", "tokens": 300 },
+    "done": { "kind": "answer", "correct": true, "text": "You are in the EU, so you have 30 days from delivery (until 2 November). I've emailed a prepaid return label." },
+    "wrong": { "kind": "answer", "correct": false, "text": "You have 14 days to return it. (Wrong: the manual gives EU customers 30 days.)" }
+  },
+  "policy": {
+    "base": { "customer": 3, "order": 0, "check_manual": 0, "done": 0, "wrong": 0.03 },
+    "modifiers": [
+      { "when": { "called": "get_customer" }, "shift": { "order": 3 } },
+      { "when": { "called": "get_order" }, "shift": { "check_manual": 2 } },
+      { "when": { "state": "ready" }, "set": { "done": 6, "wrong": 0.2 } },
+      { "when": { "all": [{ "state": "ready" }, { "setting": "model.tier", "op": "==", "value": "small" }] }, "shift": { "wrong": 2.5 }, "note": "The small model misreads the long manual more often." }
+    ]
+  },
+  "goals": [
+    { "id": "correct", "label": "At least 90% of answers correct", "metric": "success_rate", "op": ">=", "value": 0.9 },
+    { "id": "cost", "label": "Average cost under $0.18 per ticket", "metric": "avg_cost", "op": "<", "value": 0.18 }
+  ],
+  "hints": [
+    "Open the Trace tab. How many input tokens does each turn bill, and how much of that is the same 20,000-token prefix?",
+    "A smaller model is cheaper but gets the policy wrong. The manual is identical on every call, so it does not need to be billed in full every time.",
+    "Select the model and switch on \"Cache stable prefix\". The prefix comes first and never changes, so from turn 2 it bills at 10%."
+  ],
+  "explain": "Caching pays off because the expensive part of the prompt is stable and sits at the front. Every turn after the first reads it from cache at a tenth of the price, and the answers do not change."
+}

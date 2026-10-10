@@ -1,0 +1,94 @@
+---
+title: "Tracing and Observability"
+section: "operate"
+order: 47
+tagline: "Every model call and tool call, as a timeline."
+realWorld: "Debugging why an agent took 40 turns"
+build:
+  type: "lab"
+  scenario: "tracing"
+terms:
+  - term: "trace"
+    def: "The record of one request end to end, such as one ticket handled by an agent, made of nested spans that share a trace id."
+  - term: "span"
+    def: "One timed operation inside a trace, such as a model call or a tool call, with a start time, an end time, a parent and attributes like token counts and errors."
+  - term: "observability"
+    def: "Being able to answer new questions about what your system did from the data it already emits, without shipping new code to find out."
+usedIn: ["supportbot/8"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Most tickets take 3 turns; a few take 20 and end in a made-up answer. Where do you look first?"
+    options: ["The final answers of the slow tickets", "The trace of one slow ticket, at the first turn that went wrong", "The average turns metric"]
+    answer: 1
+    why: "Final answers and averages tell you something is wrong, not what. The trace shows the turn where the run left the normal path, and everything after it."
+  - q: "Why does one 20-turn spiral cost far more than 20/3 normal tickets?"
+    options: ["Tool calls are billed per turn", "Each turn resends a context that keeps growing, so input tokens grow with the square of the turns", "Spirals use a bigger model"]
+    answer: 1
+    why: "Turn 20 pays for everything in turns 1 to 19. In the worked example one spiral costs as much as about 27 normal tickets."
+  - q: "What should a span for a model call record, at minimum?"
+    options: ["Only the final answer", "Model, input and output tokens, cost, latency, and any error, linked to its parent trace", "The user's IP address"]
+    answer: 1
+    why: "Those fields let you sort, filter and add up runs: which turn was slow, which tool errored, where the money went."
+reading:
+  - title: "OpenTelemetry: Traces"
+    url: "https://opentelemetry.io/docs/concepts/signals/traces/"
+---
+
+## The agent took 20 turns. The answer does not say why.
+
+Your support agent should take 3 turns per ticket: look up the order, check the policy, answer. Your dashboard says the average is 6.2 turns and cost per ticket is five times the estimate. Some tickets end with "your order has shipped and should arrive tomorrow!" for orders that are stuck at the depot.
+
+You read the final answers. They tell you nothing. A wrong answer looks like a right one, only wrong. You need to see what happened on the way.
+
+## Logs of answers are not a record of the run
+
+An agent run is a chain of decisions. Each turn depends on what the previous tool returned. When the run goes wrong, the cause is usually early and the symptom is late: a tool returns something unhelpful on turn 2, and the model spends turns 3 to 20 reacting to it.
+
+If you only store the final answer, or one log line per request, the cause is gone. You also cannot add up costs per turn, so you cannot see that the slow runs are where the money goes.
+
+## Record every call as a span in a trace
+
+Give each ticket a **trace**. Inside it, record every model call and every tool call as a **span**: what ran, when it started and ended, its parent, and attributes such as tokens in and out, cost, and error.
+
+```python
+with tracer.span("ticket", ticket_id="T-5521") as root:
+    for turn in range(1, max_turns + 1):
+        with tracer.span("model.call", parent=root, turn=turn) as s:
+            resp = model.complete(messages, tools=tools)
+            s.set(model="medium", input_tokens=resp.usage.input_tokens,
+                  output_tokens=resp.usage.output_tokens)
+        for call in resp.tool_calls:
+            with tracer.span("tool." + call.name, parent=root, turn=turn) as t:
+                out, err = run_tool(call)
+                t.set(error=err, result_tokens=count_tokens(out))
+```
+
+<Flow steps={[{ label: "Turn 1", sub: "get_order: error, 900-token traceback", kind: "bad" }, { label: "Turn 2", sub: "re-reads it, retries the same way", kind: "bad" }, { label: "Turn 3..19", sub: "same error, context grows" }, { label: "Turn 20", sub: "guesses an answer", kind: "bad" }]} caption="A trace as a timeline. The first red span is the cause; the rest are symptoms." />
+
+To debug, open one slow trace and walk it from the top. Find the **first** span that differs from a good run. Here it is turn 1: `get_order` timed out and returned a raw stack trace. The model cannot tell that a retry would work, so it rewrites the call in odd ways and finally guesses. The fix is in the tool, not the loop: return an [actionable error](/c/tool_errors/) like "Timed out after 10s. Safe to retry." Then add a sensible [stop condition](/c/stop_conditions/) so a future spiral is cut short.
+
+## Let us check the math
+
+Assume a 1,400-token starting context and medium-tier sim prices: $3 per million input tokens, $15 per million output, 150 output tokens per turn (prices are illustrative).
+
+<Callout type="math" label="Let us check the math">
+**Normal ticket, 3 turns.** Contexts 1,400, 1,800, 2,400 = 5,600 input tokens.<br />
+5,600 × $3/M + 450 × $15/M = $0.0168 + $0.0068 ≈ **$0.024**.<br /><br />
+**Spiral, 20 turns.** Each failed retry adds about 900 tokens, so contexts run 1,400, 2,300, ... up to 1,400 + 19 × 900 = 18,500.<br />
+Sum = 20 × (1,400 + 18,500) / 2 = 199,000 input tokens.<br />
+199,000 × $3/M + 3,000 × $15/M = $0.597 + $0.045 ≈ **$0.64**, about 27 normal tickets.<br /><br />
+**If 1 ticket in 10 spirals:** 0.9 × $0.024 + 0.1 × $0.64 = $0.022 + $0.064 ≈ **$0.086 per ticket**, 3.6 times the normal cost. The average tells you something is off; only the trace shows which turn.
+</Callout>
+
+## The tradeoff: traces cost storage and can hold secrets
+
+Recording everything is the point, and also the problem.
+
+- **Volume.** A 20-turn trace with full prompts can be megabytes. Keep full traces for a sample of normal runs and for every failed, slow or expensive one; keep span metadata (tokens, cost, timing, errors) for all runs.
+- **Sensitive data.** Prompts and tool results contain customer emails, addresses and sometimes keys. Redact before you store, and restrict who can read traces (see [Guardrails](/c/guardrails/)).
+- **Traces are for finding, evals are for proving.** Once a trace shows a new failure, turn it into an [eval case](/c/evals/) so the fix stays fixed.
+
+## In the real world
+
+OpenTelemetry is the open standard most tracing tools speak. A trace is a tree of spans sharing a trace id; each span has a name, a start and end time, a parent span id and key-value attributes. Its semantic conventions for generative AI define attribute names like `gen_ai.request.model` and `gen_ai.usage.input_tokens`, so a model call shows up in your tracing backend like any other operation. Agent tracing products follow the same shape: one trace per task, one span per model or tool call, and a timeline view where you click the first red span.

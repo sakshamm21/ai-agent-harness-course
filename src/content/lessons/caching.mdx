@@ -1,0 +1,102 @@
+---
+title: "Prompt Caching and Cost Control"
+section: "operate"
+order: 48
+tagline: "Reuse the stable prefix; pay less, answer faster."
+realWorld: "Long system prompts cached across calls"
+build:
+  type: "lab"
+  scenario: "caching"
+terms:
+  - term: "prompt caching"
+    def: "A provider feature that stores the processed form of a prompt's opening section, so later requests that start with exactly the same tokens read it back at a fraction of the normal input price."
+  - term: "prefix"
+    def: "The opening part of a request, up to some point, compared token by token; a cache hit needs an exact match from the very first token."
+  - term: "cache TTL"
+    def: "How long a cached prefix stays available without being used before the provider evicts it (five minutes by default on the Anthropic API, refreshed on every hit)."
+usedIn: []
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "You put today's date and the user's name at the top of the system prompt, followed by a 20k-token manual. What happens to caching?"
+    options: ["It works as usual", "It misses on almost every request, because the prefix changes at the first tokens", "Only the date is cached"]
+    answer: 1
+    why: "A cache hit needs an exact prefix match from the first token. Put stable content first and anything that varies after it."
+  - q: "With reads at 10% of the input price, roughly what does a 4-turn ticket with a 20k-token stable prefix save?"
+    options: ["About 10%", "About 60%", "About 90%"]
+    answer: 1
+    why: "Turns 2 to 4 pay 10% for the 20k prefix, but turn 1 pays full price and the growing conversation is not cached. In the worked example cost falls from $0.26 to $0.10, about 62%."
+  - q: "Which change is most likely to make your cache hit rate collapse?"
+    options: ["Adding a new tool definition on every deploy", "Answering more tickets per hour", "Using a longer stable system prompt"]
+    answer: 0
+    why: "Tool definitions sit at the very start of the request. Changing them changes the prefix, so every request misses until the new version is cached."
+reading:
+  - title: "Anthropic docs: Prompt caching"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching"
+---
+
+## You pay for the same 20,000 tokens four times per ticket.
+
+Your support agent sends a 20,000-token prefix on every call: the full policy manual and the tool schemas. A ticket takes 4 turns. Each turn resends the manual, so a ticket bills about 84,000 input tokens, and about 80,000 of them are the same manual.
+
+At 2,000 tickets a day that is $523 a day, most of it for text that never changes.
+
+## The model re-reads what it already read
+
+Every turn of the [agent loop](/c/agent_loop/) is a new request. The model has no memory between requests, so the provider processes the whole prompt from scratch: the manual, the tools, the conversation so far. You pay the full input price for all of it, every time.
+
+But most of that prompt is identical from turn to turn and from ticket to ticket. The manual and the tool schemas are the same for every customer. Only the end of the prompt changes.
+
+## Cache the stable prefix
+
+Prompt caching lets the provider keep the processed form of the start of your prompt. On the Anthropic API you mark the end of the stable part with a `cache_control` breakpoint. The next request that begins with exactly the same tokens reads that prefix from cache instead of processing it again.
+
+```python
+resp = client.messages.create(
+    model=MODEL, max_tokens=1024,
+    tools=TOOLS,                                  # stable: same on every call
+    system=[{"type": "text", "text": POLICY_MANUAL,
+             "cache_control": {"type": "ephemeral"}}],   # cache up to here
+    messages=conversation,                        # changes every turn
+)
+print(resp.usage.cache_read_input_tokens, resp.usage.cache_creation_input_tokens)
+```
+
+<Stack blocks={[{ label: "Tool schemas", tokens: 3000, kind: "good" }, { label: "Policy manual", tokens: 17000, kind: "good" }, { label: "Conversation so far", tokens: 1500, kind: "hl" }, { label: "New tool result", tokens: 800, kind: "hl" }]} caption="Stable first, changing last. The green blocks are the cached prefix; only the rest is billed in full." />
+
+The rule that makes it work is **order**. The cache matches a prefix, token by token, from the first token. So:
+
+- Put the stable parts first: tools, then the system prompt, then fixed examples.
+- Put anything that varies after the breakpoint: the date, the user's name, retrieved documents, the conversation.
+- Do not edit the prefix casually. One changed character near the top means every request misses until the new version is cached.
+
+That is the same discipline as [Prompt Assembly](/c/prompt_assembly/): you decide what goes where, on purpose.
+
+## Let us check the math
+
+Medium-tier sim prices: $3 per million input tokens, $15 per million output, 150 output tokens per turn (prices are illustrative). The prefix plus the task is 20,200 tokens, and the four turns add 500, 800 and 300 tokens.
+
+<Callout type="math" label="Let us check the math">
+**No cache.** Input per turn: 20,200 + 20,700 + 21,500 + 21,800 = 84,200 tokens.<br />
+84,200 × $3/M = $0.2526, plus output 600 × $15/M = $0.009. Total ≈ **$0.26 per ticket**.<br /><br />
+**Cache reads at 10%.** Turns 2 to 4 each bill 18,000 fewer full-price tokens (20,000 at 10%): 84,200 − 3 × 18,000 = 30,200.<br />
+30,200 × $3/M + $0.009 ≈ **$0.10 per ticket**, about 62% less.<br /><br />
+**Cache write premium.** On the Anthropic API, writing a prefix to the 5-minute cache costs 1.25 times the input price: 20,000 × 0.25 × $3/M = $0.015 extra once. If tickets arrive more often than every 5 minutes, later tickets read the same cached prefix on turn 1 too, so you pay that write rarely.<br /><br />
+2,000 tickets a day: $523 → about **$200**.
+</Callout>
+
+Caching also cuts latency: the provider skips processing the cached tokens, so time to first token drops on long prompts.
+
+## The tradeoff: caching rewards a frozen prefix
+
+You save money only while the prefix stays identical and warm.
+
+- **Changes invalidate it.** A new tool, a reworded rule or a timestamp at the top resets the cache. Batch prompt changes, version them, and keep per-request details below the breakpoint.
+- **It expires.** The default cache lives 5 minutes after its last use (a 1-hour option exists at a higher write price). Low-traffic agents miss more often, so measure your hit rate from the `cache_read_input_tokens` field before you count the savings.
+- **It does not shrink the growing part.** The conversation after the breakpoint is still billed in full each turn. Long runs still need [Context Management](/c/context_mgmt/), and a model mix still matters ([Cost and Latency Math](/c/cost/)).
+
+There is also a minimum: prefixes shorter than the model's minimum cacheable length (1,024 tokens on many Claude models, more on some) are not cached at all.
+
+## In the real world
+
+Anthropic's prompt caching works as described: cache breakpoints with `cache_control`, prefixes matched in the order tools, system, messages, cache reads billed at 10% of the base input price, writes at 125% for the 5-minute cache, and up to 4 breakpoints per request. The lab simplifies this: switching on "Cache stable prefix" bills the system prompt and tool schemas at 10% from the second call of each ticket, with no write premium and no expiry.

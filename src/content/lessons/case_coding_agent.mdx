@@ -1,0 +1,101 @@
+---
+title: "Design a Coding Agent (like Claude Code)"
+section: "cases"
+order: 51
+tagline: "File tools, a shell, permission rules, compaction and subagents, sized with real numbers."
+realWorld: "Terminal coding agents like Claude Code, Codex CLI and OpenHands"
+build:
+  type: "lab"
+  scenario: "case_coding_agent"
+terms:
+  - term: "coding agent"
+    def: "An agent that works inside a code repository through file and shell tools: it reads code, edits files, runs tests and repeats until the change works."
+  - term: "permission rule"
+    def: "A per-tool setting (allow, ask or deny) that the harness checks before running a tool call, so risky commands need a human yes."
+  - term: "project memory file"
+    def: "A file in the repo, such as CLAUDE.md or AGENTS.md, that the harness loads into the system prompt so the agent knows the project's commands and conventions."
+usedIn: ["nanoharness/1"]
+readingMinutes: 8
+updated: 2026-10-10
+quiz:
+  - q: "Why does a coding agent use grep and read_file instead of loading the whole repo into the prompt?"
+    options: ["Models cannot read code files", "A real repo is far bigger than the window, and most of it is irrelevant to the task", "grep is cheaper per token than reading"]
+    answer: 1
+    why: "A mid-size repo is millions of tokens. Searching, then reading only what matters, keeps each turn small and the task in view."
+  - q: "Which tool should be on 'ask' by default in a coding agent?"
+    options: ["read_file", "grep", "bash"]
+    answer: 2
+    why: "Reads cannot hurt anything. A shell command can delete files or push to a remote, so it asks unless it matches an allowlisted command like the test runner."
+  - q: "A 20-turn task costs $1.74 with no caching. If 90% of input tokens are cache hits billed at 10%, about what does input cost instead of $1.62?"
+    options: ["About $0.31", "About $1.46", "About $0.16"]
+    answer: 0
+    why: "Effective input is 540k × (0.9 × 0.1 + 0.1) = 103k token-equivalents, about $0.31 at $3/M."
+reading:
+  - title: "Anthropic: Claude Code best practices"
+    url: "https://www.anthropic.com/engineering/claude-code-best-practices"
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## Step 1: the job is "change this repo safely"
+
+A developer types: "Invoices round tax per line instead of per invoice. Fix it and make the tests pass." The agent has to find the code, read it, change it, run the tests and report what it did. That is the job.
+
+The failure cost has two very different halves. A wrong edit is cheap: the tests catch it, and `git diff` shows it. A wrong shell command is not: `git clean -fdx` deletes uncommitted work, and `git push --force` overwrites other people's commits. So the design has to let the agent edit freely and run commands carefully.
+
+This lesson walks the [6-step method](/c/method/) using public documentation of tools like Claude Code. It describes a design *like* Claude Code, based on public documentation; it is not how Claude Code works internally.
+
+## Step 2: twenty turns, and every turn resends everything
+
+Say 50 developers each hand the agent 10 tasks a day: 500 tasks. A typical task takes 20 turns. The context starts at 8k tokens (system prompt, tool schemas, the project's memory file) and grows about 2k per turn (file contents, diffs, test output).
+
+<Callout type="math" label="Let us check the math">
+Context on turn n: 8k + 2k × (n − 1). Over 20 turns: 20 × 8k + 2k × (0 + 1 + … + 19) = 160k + 380k = **540k input tokens**.<br />
+Output: 20 × 400 = 8k tokens.<br />
+Medium tier ($3/$15 per million, sim prices): 540,000 × $3/M + 8,000 × $15/M = $1.62 + $0.12 = **$1.74 per task**, $870 a day.<br />
+With prompt caching, say 90% of input is a cache hit billed at 10%: 540k × (0.9 × 0.1 + 0.1) ≈ 103k token-equivalents = $0.31. Plus $0.12 output = **$0.43 per task**, $215 a day.<br />
+Context on turn 20: 8k + 38k = **46k tokens**. A 40-file rename that reads every file at 2.5k each needs 100k on its own.
+</Callout>
+
+Two design facts fall out. Caching is not optional for a coding agent: the transcript prefix is reused on every turn ([Prompt Caching](/c/caching/)). And big tasks will outgrow the window, so step 4 needs a plan for that.
+
+## Step 3: few tools, and a rule for each
+
+Public docs for Claude Code list tools for reading, editing and writing files, searching (grep and glob), and running shell commands. A minimal version looks like this:
+
+| Tool | Why | Permission |
+|---|---|---|
+| `grep`, `glob` | find code before reading it | allow |
+| `read_file` | see exact lines | allow |
+| `edit_file` | replace an exact, unique string | allow (git can undo it) |
+| `bash` | run tests, linters, builds | ask, with an allowlist like `pytest`, `npm test` |
+
+`edit_file` takes an exact string to replace instead of a whole new file, so a 3-line fix costs 3 lines of output, not 300. `bash` runs in the project directory, ideally in a sandbox or container, and asks before anything not on the allowlist ([Permissions and Sandboxing](/c/permissions/)). Claude Code's docs describe exactly this pattern: an allowlist you tune over time, so routine commands stop prompting.
+
+## Step 4: one loop, compaction, and subagents for exploring
+
+<Flow steps={["Developer", { label: "Main loop", sub: "plans, edits, tests", kind: "hl" }, { label: "Permissions", sub: "allow / ask / deny" }, "Tools"]} loop loopLabel="tool results go back into the main context" caption="The main loop of a coding agent. Exploration can go to a subagent with its own context, and only its summary comes back." />
+
+The core is the [agent loop](/c/agent_loop/) you already know. Three pieces keep it working on long tasks:
+
+- **Project memory.** A file like `CLAUDE.md` or `AGENTS.md` in the repo carries the test command, the code style and the gotchas. The harness loads it into the system prompt, so the agent does not rediscover them every session ([Assembling the Context](/c/prompt_assembly/)).
+- **Compaction.** When the context passes about 70% of the window, summarize the history and keep going ([Context Management](/c/context_mgmt/)). Claude Code documents both a manual `/compact` command and automatic compaction.
+- **Subagents.** "Find every use of `UserRecord`" can return 8k tokens of grep output. Hand it to a [subagent](/c/subagents/) with a fresh context, and only a 1k summary comes back.
+
+Cap the loop too: a turn limit and a cost limit per task ([Stop Conditions](/c/stop_conditions/)).
+
+## Step 5: the test suite is the eval, and hooks are the guardrail
+
+Coding agents have an unusual gift: the repo's tests tell you whether the change works. Your eval set is a list of real bugs with failing tests; you score pass rate, turns and cost per task, the way benchmarks like SWE-bench do ([Why Evals Come First](/c/evals/)). Add [trajectory checks](/c/trajectory_evals/) too: did it run the tests before saying "done"?
+
+Guardrails live in the harness, not the prompt. Permission rules block or ask, and [hooks](/c/hooks/) run your own code before or after a tool call, for example refusing any `bash` command that contains `--force`.
+
+## Step 6: the tradeoff is speed against oversight
+
+Every permission prompt is a developer pulled out of their work. Too many, and they start approving without reading, or switch the checks off. Too few, and one bad command costs a day. Three ways to balance it:
+
+- **Tune the allowlist from traces.** If `pytest` was approved 40 times last week, allow it ([Tracing](/c/tracing/)).
+- **Sandbox instead of asking.** A container with no network and no credentials can run more commands without a prompt.
+- **Keep edits reversible.** Work on a branch or a git worktree so any edit is one `git checkout` away from undone.
+
+In the lab, the draft runs every command it writes and floods its own context on the big rename. Add the permission rule, the compactor and the subagent, and keep the cost under budget. Then build the real thing, about 800 lines of Python, in [nanoharness](/p/nanoharness/).

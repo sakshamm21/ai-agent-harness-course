@@ -1,0 +1,76 @@
+{
+  "id": "stop_conditions",
+  "title": "Stop Conditions and Budgets",
+  "brief": "Five overnight tasks. Three are ordinary bug fixes. Two get stuck: one polls a CI job that is hung, one keeps re-reading a 5,000-token log looking for an error that is not there. The loop has no turn cap and no budget, so the stuck runs go until the platform kills them. Stop them gracefully: zero runaways, $0.20 or less per task on average, and the three real fixes still get done.",
+  "palette": ["user", "model", "loop", "tool"],
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 60, "maxCost": 0 }, "position": { "x": 520, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text. Use this before editing a file." }, "position": { "x": 800, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the file." }, "position": { "x": 800, "y": 100 } },
+      { "id": "t3", "type": "tool", "data": { "name": "run_tests", "description": "Runs the test suite and lists failures. Use this before saying you are done." }, "position": { "x": 800, "y": 200 } },
+      { "id": "t4", "type": "tool", "data": { "name": "check_ci", "description": "Gets the status of a CI pipeline run by id. Use this to see if a build passed." }, "position": { "x": 800, "y": 300 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }, { "source": "l", "target": "t4" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium" }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 15, "maxCost": 0.25 }, "position": { "x": 520, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "read_file", "description": "Reads one file from the repo and returns its text. Use this before editing a file." }, "position": { "x": 800, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "edit_file", "description": "Replaces an exact string in a file with new text. Use only after reading the file." }, "position": { "x": 800, "y": 100 } },
+      { "id": "t3", "type": "tool", "data": { "name": "run_tests", "description": "Runs the test suite and lists failures. Use this before saying you are done." }, "position": { "x": 800, "y": 200 } },
+      { "id": "t4", "type": "tool", "data": { "name": "check_ci", "description": "Gets the status of a CI pipeline run by id. Use this to see if a build passed." }, "position": { "x": 800, "y": 300 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }, { "source": "l", "target": "t4" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Off-by-one in pagination", "prompt": "Page 2 of /orders repeats the last item of page 1. Fix it.", "needs": ["read_file", "edit_file", "run_tests"] },
+    { "id": "t2", "label": "Null email crash", "prompt": "Signup crashes when the email field is empty. Fix it.", "needs": ["read_file", "edit_file", "run_tests"] },
+    { "id": "t3", "label": "Hung CI job", "prompt": "Wait for CI run 4812 to go green, then tell me it is safe to merge.", "needs": ["check_ci"], "tags": ["poll"] },
+    { "id": "t4", "label": "Wrong timezone in report", "prompt": "The daily report shows yesterday's date after 7pm. Fix it.", "needs": ["read_file", "edit_file", "run_tests"] },
+    { "id": "t5", "label": "Error that is not in the log", "prompt": "Find the line in logs/ci-full.log that explains last night's failed deploy.", "needs": ["read_file"], "tags": ["log"] }
+  ],
+  "actions": {
+    "read": { "kind": "tool", "tool": "read_file", "text": "read_file(\"src/api/orders.py\")", "tokens": 1200 },
+    "edit": { "kind": "tool", "tool": "edit_file", "text": "edit_file(\"src/api/orders.py\", old=\"offset = page * size + 1\", new=\"offset = (page - 1) * size\")", "tokens": 300 },
+    "test": { "kind": "tool", "tool": "run_tests", "text": "run_tests()", "tokens": 800 },
+    "done": { "kind": "answer", "correct": true, "text": "Fixed. I changed the offset calculation and all 48 tests pass." },
+    "ci": { "kind": "tool", "tool": "check_ci", "text": "check_ci(\"4812\")  → status: running (step 3 of 7)", "tokens": 60, "outputTokens": 40 },
+    "poll": { "kind": "repeat", "text": "check_ci(\"4812\") again → status: running (step 3 of 7). Still waiting.", "tokens": 60, "outputTokens": 40 },
+    "readlog": { "kind": "tool", "tool": "read_file", "text": "read_file(\"logs/ci-full.log\")  # 5,000 lines", "tokens": 5000 },
+    "reread": { "kind": "repeat", "text": "read_file(\"logs/ci-full.log\") again. Maybe I missed it. Searching from the top.", "tokens": 5000 },
+    "giveup": { "kind": "answer", "correct": true, "text": "I could not find the cause in this log. Here is what I checked, and what to look at next." }
+  },
+  "policy": {
+    "base": { "read": 3, "edit": 0, "test": 0, "done": 0, "ci": 0, "poll": 0, "readlog": 0, "reread": 0, "giveup": 0 },
+    "modifiers": [
+      { "when": { "called": "read_file" }, "shift": { "edit": 3 } },
+      { "when": { "called": "edit_file" }, "shift": { "test": 3 } },
+      { "when": { "state": "ready" }, "set": { "done": 8 } },
+      { "when": { "tag": "poll" }, "set": { "read": 0, "edit": 0, "test": 0, "done": 0, "ci": 3, "poll": 6 }, "note": "The CI job is hung. Every poll says running, and the model keeps waiting." },
+      { "when": { "tag": "log" }, "set": { "read": 0, "edit": 0, "test": 0, "done": 0, "readlog": 3, "reread": 8, "giveup": 0.08 }, "note": "The error is not in the log, so re-reading never finds it." }
+    ]
+  },
+  "goals": [
+    { "id": "safe", "label": "Zero runaway incidents", "metric": "incidents", "op": "<=", "value": 0 },
+    { "id": "cost", "label": "$0.20 or less per task on average", "metric": "avg_cost", "op": "<=", "value": 0.2 },
+    { "id": "turns", "label": "9 turns or fewer per task on average", "metric": "avg_turns", "op": "<=", "value": 9 },
+    { "id": "work", "label": "The three real fixes still get done (success at least 55%)", "metric": "success_rate", "op": ">=", "value": 0.55 }
+  ],
+  "hints": [
+    "Open the Hung CI job and the log tasks. How many turns does each run before something stops it, and who stops it?",
+    "A loop needs two caps: a turn cap for cheap loops like polling, and a dollar cap for loops where every turn re-reads something big. Keep both loose enough that a normal fix (about 5 turns, about $0.05) never hits them.",
+    "Loop: Max turns 15, Max $ per task 0.25."
+  ],
+  "explain": "A turn cap stops the cheap poll loop; a budget stops the log loop whose context grows by 5,000 tokens a turn. Both end as a graceful stop with a report, not a 60-turn runaway."
+}

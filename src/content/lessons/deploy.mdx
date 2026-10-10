@@ -1,0 +1,93 @@
+---
+title: "Deploying an Agent"
+section: "operate"
+order: 49
+tagline: "Queues, workers, secrets, versioned prompts."
+realWorld: "Running agents as background jobs"
+build:
+  type: "lab"
+  scenario: "deploy"
+terms:
+  - term: "job queue"
+    def: "A durable list of work items that producers add to and workers take from, so a request can be accepted now and processed later."
+  - term: "worker"
+    def: "A process that takes jobs off the queue, runs them (here, one agent run per job) and writes the result somewhere the caller can find it."
+  - term: "secret"
+    def: "A credential such as an API key, kept out of code and logs and handed to the process at runtime by a secrets manager or the platform."
+  - term: "Little's law"
+    def: "The average number of jobs in progress equals the arrival rate times the average time each job takes."
+usedIn: []
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "A report agent takes about 90 seconds per job. Why not run it inside the web request?"
+    options: ["Web requests cannot call models", "Load balancers and clients commonly time out around 30 to 60 seconds, and a dropped connection loses or repeats the work", "It would cost more tokens"]
+    answer: 1
+    why: "Agent runs are long and variable. A queue accepts the job instantly, a worker runs it for as long as it needs, and the client fetches the result later."
+  - q: "During a 2-hour peak, 25 jobs arrive per minute and each takes 90 seconds. How many run at once on average?"
+    options: ["About 4", "About 38", "About 2,250"]
+    answer: 1
+    why: "Little's law: 25/60 jobs per second × 90 seconds ≈ 37.5 jobs in progress. Fewer workers than that means a growing queue."
+  - q: "The worker's shell tool can read environment variables, where the API key lives. What is the right fix?"
+    options: ["Tell the model in the prompt not to print secrets", "Deny the shell tool (or remove it) and keep credentials where no tool can read them", "Rotate the key every month"]
+    answer: 1
+    why: "A prompt is a request, not a control. Remove the path from the model to the secret; rotation only limits the damage after a leak."
+reading:
+  - title: "Claude Code docs: GitHub Actions"
+    url: "https://docs.anthropic.com/en/docs/claude-code/github-actions"
+  - title: "The Twelve-Factor App: Config"
+    url: "https://12factor.net/config"
+---
+
+## Your agent works on your laptop. In production, 1 job in 5 vanishes.
+
+Your report agent reads a day of support tickets and writes a summary. On your laptop it takes 90 seconds and works every time. You put it behind an API endpoint, and the first week goes badly. About 1 request in 5 hits the load balancer's 60-second timeout, so the browser shows an error while the agent keeps running and finishes a report nobody receives. Users click retry, so the same report runs twice. One job hangs on a slow upstream API for 40 minutes. And a job log contains your provider API key, because the agent ran `env` to debug a 401.
+
+## A web request is the wrong shape for an agent run
+
+A web request is meant to be short and to have one owner who is waiting. An agent run is long, variable in length, calls flaky services, and can loop. Putting one inside the other causes the failures above:
+
+- **Timeouts** cut the connection, not the work.
+- **Retries** from impatient users and clients repeat side effects.
+- **No budget** means a stuck job runs until something kills it.
+- **The model can reach whatever the process can reach**, including its own credentials.
+
+## Accept the job, then run it in a worker
+
+Split the system so each part has one job:
+
+<Flow steps={["API", { label: "Queue", sub: "durable, retries" }, { label: "Agent worker", sub: "budget, fallback, no secrets in reach", kind: "hl" }, { label: "Results store", sub: "keyed by job id" }]} caption="The API returns a job id at once. The client polls or gets a webhook when the result is ready." />
+
+- **API:** validates the request, writes a job with an id, returns `202 Accepted` and the id in milliseconds.
+- **Queue:** holds jobs durably. If a worker dies, the job is delivered again. That means a job can run twice, so tools with side effects need [idempotency keys](/c/idempotency/).
+- **Worker:** runs one agent loop per job with hard limits: max turns, max cost, a wall-clock timeout ([Stop Conditions](/c/stop_conditions/)). It retries provider errors and fails over to a second model ([Timeouts and Fallbacks](/c/timeouts/)).
+- **Secrets:** the worker gets its API key from the platform at startup. No tool the model can call can read it: deny shell access or run tools in a sandbox without those variables ([Permissions](/c/permissions/)).
+- **Versioned prompts:** the system prompt, tool set and model id are a pinned version recorded on every job and trace, so you can roll back and know which version wrote which report.
+
+## Let us check the math
+
+Say 3,000 report jobs a day, with half of them arriving in a 2-hour morning peak. Each job takes 90 seconds of wall time, most of it waiting on the model. Little's law: jobs in progress = arrival rate × time per job.
+
+<Callout type="math" label="Let us check the math">
+**Peak:** 1,500 jobs / 120 min = 12.5 jobs per minute = 0.21 per second.<br />
+In progress = 0.21 × 90 s ≈ **19 jobs at once**. With 20 worker slots the queue stays short.<br /><br />
+**Off-peak:** 1,500 jobs over the other 22 hours = 0.019 per second × 90 s ≈ **1.7 jobs at once**.<br /><br />
+**Or let the queue absorb the peak.** 10 slots finish 10 / 90 s × 3,600 ≈ 400 jobs per hour. The peak brings 750 per hour, so the backlog grows by 350 per hour, reaching 700 after 2 hours and clearing about 2 hours later.<br /><br />
+**Budget per job:** 8 turns averaging 4,000 input tokens is 32,000 × $3/M ≈ $0.10, plus 1,200 output × $15/M ≈ $0.02. A $0.30 cap is about 2.6 times a normal $0.11 job: it stops a runaway without cutting off a slow but healthy one (sim prices, illustrative).
+</Callout>
+
+The queue turns a capacity problem into a waiting-time choice: pay for 20 slots and finish every report within minutes, or run 10 and accept that some morning reports arrive two hours late.
+
+## The tradeoff: more moving parts, slower answers
+
+The worker design is sturdier, and it costs you:
+
+- **Latency and UX.** The user no longer gets an answer in the same request. You need a job status page, polling or webhooks, and [streaming](/c/streaming/) progress if they watch.
+- **At-least-once delivery.** Queues redeliver. Every side effect must be safe to repeat, or the retry double-charges ([Retries and Idempotent Tools](/c/idempotency/)).
+- **Operations.** Workers, a queue, a store and a secrets manager are four things to monitor. Trace every job ([Tracing and Observability](/c/tracing/)) and alert on cost per job, not just errors.
+
+## In the real world
+
+Claude Code's GitHub Actions integration runs an agent as exactly this kind of background job. A comment that mentions `@claude` on an issue or pull request triggers a workflow; a GitHub-hosted runner (the worker) starts Claude Code, which works on the repo and posts its result back as a comment or a pull request. The API key is stored as a repository secret and injected into the runner by the platform, and the workflow file pins what the agent is allowed to do.
+
+The lab canvas shows only the worker: one job at a time, with the queue, API, store and secrets manager outside the picture. You set what that worker needs to survive production: a fallback model, a turn and cost budget, and no path from the model to the key.

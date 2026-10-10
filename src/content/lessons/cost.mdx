@@ -1,0 +1,96 @@
+---
+title: "Cost and Latency Math"
+section: "foundations"
+order: 5
+tagline: "Price per million tokens times tokens per task times tasks per day."
+realWorld: "A $40/day prototype that becomes $40k/month in production"
+build:
+  type: "lab"
+terms:
+  - term: "price per million tokens"
+    def: "How model APIs charge: one rate per million input tokens and a higher rate per million output tokens."
+  - term: "cost per task"
+    def: "The sum, over every model call a task makes, of input tokens times the input price plus output tokens times the output price."
+  - term: "latency"
+    def: "How long the user waits: roughly the number of sequential model calls times the time per call, plus tool time."
+usedIn: ["nanoharness/10"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "A ticket makes two calls with 2,700 and 3,300 input tokens and 150 output tokens each. At $3/$15 per million, what does it cost?"
+    options: ["About $0.0045", "About $0.0225", "About $0.18"]
+    answer: 1
+    why: "6,000 × $3/M = $0.018 for input, 300 × $15/M = $0.0045 for output, total $0.0225."
+  - q: "Your budget is $500 a month for 12,000 tasks. What is the most each task can cost on average?"
+    options: ["About $0.042", "About $0.42", "About $2.40"]
+    answer: 0
+    why: "$500 / 12,000 = $0.0417 per task. Work backwards from the budget before you pick a model."
+  - q: "For a typical agent task, where does most of the cost come from?"
+    options: ["Output tokens, because they cost 5 times more", "Input tokens, because every call resends the whole growing context", "The tool calls themselves"]
+    answer: 1
+    why: "Output is pricier per token, but each call resends thousands of input tokens, so input usually dominates the bill."
+reading:
+  - title: "Anthropic: Pricing"
+    url: "https://docs.anthropic.com/en/docs/about-claude/pricing"
+  - title: "Anthropic docs: Prompt caching"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching"
+---
+
+## $39 a day in testing. $39,000 a month in production.
+
+Your support agent prototype handles 300 test tickets a day and the bill is about $39 a day. Everyone is happy. Then it launches to all customers: 10,000 tickets a day.
+
+Nothing about the agent changed. The bill is now about $1,300 a day, or $39,000 a month. Nobody did the multiplication before launch, so nobody saw that the large model, chosen because it was the most accurate in testing, costs about $0.13 a ticket.
+
+## Cost is a product of three numbers
+
+Model APIs charge per token, with one price for **input** (everything you send) and a higher price for **output** (what the model writes). The cost of a task is every call it makes, added up:
+
+`cost per task = Σ over calls (input tokens × input price + output tokens × output price)`
+
+Then:
+
+`cost per month = cost per task × tasks per day × 30`
+
+Three things make the first number bigger than you expect. Agents make several calls per task. Every call resends the whole context: the system prompt, tool definitions and every earlier result (see [Tokens and the Context Window](/c/tokens/)). And bigger models cost more per token, often 3 to 5 times more per tier.
+
+**Latency** follows the same shape. Calls in a loop happen one after another, so the wait is roughly the number of calls times the time per call, plus the time your tools take.
+
+## Work backwards from the budget
+
+Do the math before you choose a model, not after the invoice. Start from what you can spend and what users will wait for, and turn both into a per-task limit.
+
+<Flow steps={["Monthly budget", { label: "÷ tasks per month", sub: "= $ per task" }, { label: "Measure one task", sub: "calls × tokens", kind: "hl" }, { label: "Pick the cheapest tier", sub: "that meets the quality bar", kind: "good" }]} caption="Budget first, then measure, then choose." />
+
+In the lab, your agent handles 12,000 tickets a month on a $500 budget, and customers expect an answer in 8 seconds or less. The prototype uses the large model. Run it, read the Metrics tab, and try each tier: the right answer is the cheapest model that still gets 90% of tickets right, not the cheapest model.
+
+## Let us check the math
+
+The lab uses illustrative sim prices per million input/output tokens: small $1/$5, medium $3/$15, large $15/$75. Take the simplest ticket, "Where is my order?": one lookup, then an answer.
+
+<Callout type="math" label="Let us check the math">
+**Tokens.** Call 1 sends the 2,500-token system prompt and tools plus a 200-token question: 2,700 input. The lookup adds 600, so call 2 sends 3,300. Total input 6,000. Output 2 × 150 = 300.
+
+**Medium:** 6,000 × $3/M + 300 × $15/M = $0.018 + $0.0045 = **$0.0225**<br />
+**Large:** 6,000 × $15/M + 300 × $75/M = $0.090 + $0.0225 = **$0.1125**, five times as much.
+
+**Per month.** Averaged over the lab's three tickets, the large model costs about $0.176 a ticket: 12,000 × $0.176 ≈ **$2,110**, four times the budget. Medium averages about $0.035: 12,000 × $0.035 = **$420**. The limit is $500 / 12,000 ≈ $0.042 a ticket.
+
+**Latency.** Sim calls take 1.6 s on medium and 3.2 s on large, and the lookup takes 0.3 s. Medium: 2 × 1.6 + 0.3 = **3.5 s**. Large: 2 × 3.2 + 0.3 = **6.7 s** for the easiest ticket; harder tickets push its average past 8 s.
+</Callout>
+
+Small is cheaper again, about $0.012 a ticket, but on the "charged twice" ticket it refunds the wrong one of two near-identical charges, and success falls to about 72%. Cheap and wrong is the most expensive option of all.
+
+## The tradeoff: the cheapest model that passes is a moving target
+
+Picking one tier for everything is a compromise. Medium pays for capability the easy tickets do not need, and is the floor only because of the hard ones. Traffic, prompts and models all change, so the tier that fit last month may not fit next month.
+
+Ways to do better than one tier:
+
+- **Route by difficulty.** Send easy tickets to the small model and hard ones to a bigger one. [Routing](/c/routing/) shows how.
+- **Stop paying for the same prefix.** The system prompt and tools are identical on every call. Caching them cuts the biggest part of the input bill. See [Prompt Caching and Cost Control](/c/caching/).
+- **Cap the bad days.** A per-task budget stops one runaway task from costing as much as a thousand normal ones ([Stop Conditions and Budgets](/c/stop_conditions/)).
+
+## In the real world
+
+Anthropic's pricing page lists every Claude model with separate input and output prices per million tokens, and two discounts that change the math: prompt cache reads are billed at a fraction of the base input price, and the Message Batches API charges about half price for work that can wait. Every response also returns `usage` with exact token counts, so you can measure cost per task instead of estimating it. In part 10 of the nanoharness project your eval run reports tokens and cost per task for exactly this reason.

@@ -1,0 +1,494 @@
+{
+  "id": "when_not",
+  "title": "When Not to Build an Agent",
+  "brief": "Five jobs go through one agent with five tools and a large model. Four of them are one-shot jobs: pull an order number out of an email, tag a ticket's sentiment, translate a reply, check an ID format. Only one, a failing nightly export, needs the model to explore. The agent gets them right but wanders on the easy ones and costs too much. Decide which jobs need an agent, and send the rest to a single call. Keep 90% success at $0.03 or less and about two turns per job.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "router"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "large"
+        },
+        "position": {
+          "x": 260,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 520,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "search_docs",
+          "description": "Searches the internal wiki and returns matching pages."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_logs",
+          "description": "Reads the last 500 lines of a job's log."
+        },
+        "position": {
+          "x": 780,
+          "y": 100
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "run_sql",
+          "description": "Runs a read-only SQL query on the warehouse."
+        },
+        "position": {
+          "x": 780,
+          "y": 200
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo."
+        },
+        "position": {
+          "x": 780,
+          "y": 300
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "r",
+        "type": "router",
+        "data": {
+          "routes": "single_call, agent"
+        },
+        "position": {
+          "x": 130,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 300,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 520,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "search_docs",
+          "description": "Searches the internal wiki and returns matching pages."
+        },
+        "position": {
+          "x": 780,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_logs",
+          "description": "Reads the last 500 lines of a job's log."
+        },
+        "position": {
+          "x": 780,
+          "y": 100
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "run_sql",
+          "description": "Runs a read-only SQL query on the warehouse."
+        },
+        "position": {
+          "x": 780,
+          "y": 200
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo."
+        },
+        "position": {
+          "x": 780,
+          "y": 300
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "r"
+      },
+      {
+        "source": "r",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Extract an order number",
+      "prompt": "Pull the order number out of this email: \"Hi, my order ORD-20931877 never arrived...\"",
+      "tags": [
+        "single"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Tag sentiment",
+      "prompt": "Tag this ticket positive, neutral or negative: \"Third time asking. Still broken.\"",
+      "tags": [
+        "single"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Translate a reply",
+      "prompt": "Translate this reply to Spanish: \"Your refund was issued today.\"",
+      "tags": [
+        "single"
+      ]
+    },
+    {
+      "id": "t4",
+      "label": "Check an ID format",
+      "prompt": "Is \"ORD-2093187\" a valid order ID (ORD- plus 8 digits)?",
+      "tags": [
+        "single"
+      ]
+    },
+    {
+      "id": "t5",
+      "label": "Debug the nightly export",
+      "prompt": "The nightly export to the finance warehouse failed. Find out why and tell me the fix.",
+      "needs": [
+        "read_logs",
+        "read_file",
+        "run_sql"
+      ],
+      "tags": [
+        "agent"
+      ]
+    }
+  ],
+  "actions": {
+    "one_shot": {
+      "kind": "answer",
+      "correct": true,
+      "text": "ORD-20931877 / negative / \"Su reembolso se emitió hoy.\" / No: it has 7 digits, not 8."
+    },
+    "wander_docs": {
+      "kind": "tool",
+      "tool": "search_docs",
+      "text": "search_docs(\"order number format conventions\")",
+      "tokens": 1200
+    },
+    "wander_sql": {
+      "kind": "tool",
+      "tool": "run_sql",
+      "text": "run_sql(\"SELECT * FROM orders WHERE id LIKE 'ORD-2093%'\")",
+      "tokens": 1500
+    },
+    "ponder": {
+      "kind": "think",
+      "text": "Before answering, let me gather more context about how this team usually handles these.",
+      "tokens": 300
+    },
+    "overdo": {
+      "kind": "answer",
+      "correct": false,
+      "text": "I looked up related orders and found several similar IDs, so I've answered for ORD-20931870 instead."
+    },
+    "logs": {
+      "kind": "tool",
+      "tool": "read_logs",
+      "text": "read_logs(\"nightly_export\")",
+      "tokens": 1500
+    },
+    "file": {
+      "kind": "tool",
+      "tool": "read_file",
+      "text": "read_file(\"jobs/export.py\")",
+      "tokens": 1200
+    },
+    "sql": {
+      "kind": "tool",
+      "tool": "run_sql",
+      "text": "run_sql(\"SELECT column_name FROM information_schema.columns WHERE table_name = 'invoices'\")",
+      "tokens": 600
+    },
+    "fixed": {
+      "kind": "answer",
+      "correct": true,
+      "text": "The export fails because the invoices table renamed amount to amount_cents on Monday. Change line 41 of jobs/export.py to select amount_cents / 100."
+    },
+    "guess": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Nightly exports usually fail on timeouts. Try increasing the job's timeout."
+    }
+  },
+  "policy": {
+    "base": {
+      "one_shot": 0,
+      "wander_docs": 0,
+      "wander_sql": 0,
+      "ponder": 0,
+      "overdo": 0,
+      "logs": 0,
+      "file": 0,
+      "sql": 0,
+      "fixed": 0,
+      "guess": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "tag": "single"
+        },
+        "set": {
+          "one_shot": 3,
+          "wander_docs": 2,
+          "wander_sql": 1.5,
+          "ponder": 1,
+          "overdo": 0.15
+        },
+        "note": "Given tools and a loop, the model explores even when the job needs none of it."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "single"
+            },
+            {
+              "has": "router"
+            }
+          ]
+        },
+        "set": {
+          "one_shot": 20,
+          "wander_docs": 0,
+          "wander_sql": 0,
+          "ponder": 0,
+          "overdo": 0.2
+        },
+        "note": "Routed to a single call: no tools, one answer."
+      },
+      {
+        "when": {
+          "tag": "agent"
+        },
+        "set": {
+          "logs": 5,
+          "guess": 0.3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "agent"
+            },
+            {
+              "called": "read_logs"
+            }
+          ]
+        },
+        "shift": {
+          "file": 5
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "agent"
+            },
+            {
+              "called": "read_file"
+            }
+          ]
+        },
+        "shift": {
+          "sql": 5
+        }
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "fixed": 10,
+          "guess": 0.1
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "agent"
+            },
+            {
+              "not": {
+                "has": "loop"
+              }
+            }
+          ]
+        },
+        "set": {
+          "guess": 1,
+          "fixed": 0.02
+        },
+        "note": "Without a loop the debugging job gets one call and guesses."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 90% of jobs done right",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.9
+    },
+    {
+      "id": "cost",
+      "label": "Average cost per job $0.03 or less",
+      "metric": "avg_cost",
+      "op": "<=",
+      "value": 0.03
+    },
+    {
+      "id": "turns",
+      "label": "2.2 turns or fewer per job on average (the export job alone needs 4)",
+      "metric": "avg_turns",
+      "op": "<=",
+      "value": 2.2
+    }
+  ],
+  "hints": [
+    "Read the transcript for the order-number job. How many tool calls did a one-line extraction take? Then try deleting the loop: what breaks?",
+    "Four jobs want one well-made call; one wants an agent. You need both paths in one graph, and something in front that picks between them.",
+    "Add a Router between the User and the Model (routes: single_call, agent). Then try a cheaper model tier: the one-shot jobs don't need the large one."
+  ],
+  "explain": "An agent is the most expensive way to call a model. Most jobs have a known path and want one well-made call, or no model at all. Keep the loop for the job that has to explore, and route everything else around it."
+}

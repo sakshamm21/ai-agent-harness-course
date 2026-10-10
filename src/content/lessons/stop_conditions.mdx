@@ -1,0 +1,91 @@
+---
+title: "Stop Conditions and Budgets"
+section: "harness"
+order: 18
+tagline: "Max turns, max tokens, max dollars, done signals."
+realWorld: "Runaway agent loops burning a weekend of credits"
+build:
+  type: "lab"
+  scenario: "stop_conditions"
+terms:
+  - term: "stop condition"
+    def: "A rule the harness checks after every turn that ends the run: the model says it is done, a turn cap, a token or dollar budget, a timeout, or a detected loop."
+  - term: "runaway"
+    def: "An agent run that keeps going with no useful progress until something outside the harness, such as a platform limit or an empty account, kills it."
+  - term: "graceful stop"
+    def: "Ending a run on purpose, with a report of what was done, what was not, and why, instead of being killed mid-step."
+usedIn: ["nanoharness/1", "deepresearch/3"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "An agent polls a hung CI job. Each poll adds 60 tokens. Which cap stops it soonest?"
+    options: ["A $0.25 cost cap", "A 15-turn cap", "Both stop it at the same turn"]
+    answer: 1
+    why: "Polls are cheap, so the cost cap takes about 33 turns to trip. A 15-turn cap stops it at turn 15 for about $0.09."
+  - q: "An agent re-reads a 5,000-token log every turn. Why is a turn cap alone not enough?"
+    options: ["Turn caps do not apply to reads", "Every turn resends a growing context, so 15 turns still cost about $1.67", "The model ignores turn caps"]
+    answer: 1
+    why: "The context grows by 5,000 tokens a turn, so cost grows with the square of turns. A dollar cap stops it at turn 6 for about $0.26."
+  - q: "What should the agent return when a cap stops it?"
+    options: ["Nothing; the run just ends", "A claim that the task is done", "A report of what it did, what is left, and why it stopped"]
+    answer: 2
+    why: "A graceful stop turns a wasted run into useful information for the next attempt or for the human picking it up."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "OpenAI Agents SDK: Running agents"
+    url: "https://openai.github.io/openai-agents-python/running_agents/"
+---
+
+## Five tasks overnight, $4 a task
+
+You queue five tasks before leaving on Friday. Three are ordinary bug fixes that take about 5 turns and $0.05 each. On Monday the bill averages more than $4 a task, and two runs ended the same way: "killed by the platform after 60 turns".
+
+One was asked to wait for CI run 4812 to go green. The job was hung, so it polled `check_ci` 60 times. The other was asked to find an error in a 5,000-line log. The error was not in the log, so it read the file again, and again, from the top.
+
+## The loop only stops when the model says so
+
+The loop from [The Agent Loop](/c/agent_loop/) has exactly one exit: the model answers without calling a tool. That is a fine done signal when the task can be finished. When it cannot, the model rarely gives up. A hung job always looks like it might finish on the next poll. A missing error always might be on the next read.
+
+So "the model will decide when to stop" is a hope, not a stop condition. And the two loops fail differently. The poll loop is cheap: 60 tokens a turn. The log loop is expensive: 5,000 tokens a turn, and every turn resends everything before it.
+
+## Give the loop more than one way out
+
+The harness checks a list of stop conditions after every turn, and stops on the first one that fires:
+
+- **Done signal**: the model answered with no tool call.
+- **Turn cap**: at most N turns. Catches cheap loops like polling.
+- **Budget cap**: at most $X (or N tokens) per task. Catches expensive loops whose context explodes.
+- **Repeat detector**: the same tool call with the same arguments three times in a row.
+- **Wall-clock timeout**: at most M minutes, for slow tools ([Timeouts](/c/timeouts/)).
+
+<Flow steps={["Model turn", "Run tools", { label: "Done?", sub: "no tool call" }, { label: "Turns ≥ 15?", kind: "hl" }, { label: "Cost ≥ $0.25?", kind: "hl" }, { label: "Graceful stop", sub: "report progress", kind: "good" }]} loop loopLabel="no cap hit: next turn" caption="Stop checks run after every turn. Hitting a cap is a planned exit, not a crash." />
+
+When a cap fires, stop *gracefully*: tell the model it is out of budget, give it one last turn with no tools to write what it did, what is left and what it would try next, and save the state so a person or a later run can resume ([Sessions](/c/sessions/)).
+
+## Let us check the math
+
+Prefix and task: 1,400 tokens. Sim prices, medium tier: $3 per million input and $15 per million output tokens (illustrative). The model's window is 200,000 tokens.
+
+<Callout type="math" label="Let us check the math">
+**Log loop, no caps.** Turn k sends 1,400 + 5,000 × (k − 1) tokens until it hits 200,000 around turn 40.<br />
+Turns 1 to 40: 40 × 1,400 + 5,000 × 780 = 3.96M tokens. Turns 41 to 60: 20 × 200,000 = 4M.<br />
+About 7.96M input tokens ≈ **$24 for one run** that found nothing.<br />
+**With a $0.25 cap:** each turn costs $0.015 more than the last: about $0.007, $0.022, $0.037, $0.052, $0.067, $0.082. The running total passes $0.25 on **turn 6 (≈ $0.26)**.<br />
+**With only a 15-turn cap:** 15 × 1,400 + 5,000 × 105 = 546k input tokens, plus output, ≈ **$1.67**. Better, but still more than 30 bug fixes' worth.<br />
+**Poll loop:** 60 tokens a turn. A 15-turn cap stops it for about **$0.09**. The $0.25 cap alone would let it run about 33 turns.
+</Callout>
+
+Each cap catches the loop the other one misses. The turn cap catches cheap loops early; the budget cap catches expensive loops early. Set both loose enough that a normal 5-turn, $0.05 fix never comes close. In the lab, 15 turns and $0.25 take the average from over $4 to about $0.11 per task, with zero runaways and the three fixes still done.
+
+## The tradeoff: caps also stop good runs
+
+A cap cannot tell a stuck agent from a slow one.
+
+- **Legitimate long tasks hit the cap.** A 200-turn migration ([Context Management](/c/context_mgmt/)) would die at turn 15. Set caps per task type, or let the agent ask for more budget with a reason a human can approve ([Human in the Loop](/c/hitl/)).
+- **A stopped run is still a failed task.** The CI job is still hung. The win is that you lose $0.09 and get a report instead of losing $24 and getting nothing. Make the report good enough to act on.
+- **Repeat detectors need care.** Polling the same endpoint three times can be correct while you wait for a deploy. Compare arguments *and* results, or back off between polls instead of stopping.
+
+## In the real world
+
+Agent frameworks make the turn cap a first-class setting. The OpenAI Agents SDK takes a `max_turns` argument when you run an agent and raises a `MaxTurnsExceeded` error when the run passes it. Claude Code's non-interactive mode has both caps from this lesson: `--max-turns` limits agentic turns, and `--max-budget-usd` stops the run once estimated spend reaches a dollar amount. Its docs note that spend can pass the cap, so leave headroom. The lab behaves the same way: the check runs after each turn, so the $0.25 cap stops at about $0.26. OpenHands includes a stuck detector that, like the lab's repeat check, looks for the agent repeating the same action and observation.

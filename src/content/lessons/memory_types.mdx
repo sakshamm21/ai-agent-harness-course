@@ -1,0 +1,96 @@
+---
+title: "Kinds of Memory"
+section: "memory"
+order: 24
+tagline: "Working, episodic, semantic, procedural."
+realWorld: "Assistants that remember your preferences across chats"
+build:
+  type: "lab"
+  scenario: "memory_types"
+terms:
+  - term: "working memory"
+    def: "What the agent holds right now: the context window of the current session, which is gone when the session ends."
+  - term: "episodic memory"
+    def: "Records of past events, such as old transcripts or tool runs, that the agent can search later."
+  - term: "semantic memory"
+    def: "Stable facts the agent keeps, such as a user profile or a knowledge base, independent of when it learned them."
+  - term: "procedural memory"
+    def: "Knowledge of how to do things, stored as instructions: the system prompt, a repo instructions file, or a skill."
+usedIn: []
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "A user told your assistant last week that they are allergic to peanuts. Where should that fact live?"
+    options: ["In working memory, the current context window", "In semantic memory, a small profile loaded into every session", "In procedural memory, the system prompt shared by all users"]
+    answer: 1
+    why: "It is a stable fact about one user. A short profile loaded at the start of each session keeps it available without searching old chats."
+  - q: "Which of these is procedural memory for a coding agent?"
+    options: ["A CLAUDE.md file that says how to run the tests", "Yesterday's transcript", "The user's name and time zone"]
+    answer: 0
+    why: "Procedural memory is how to do things. Instructions files and skills tell the agent how to work in this repo."
+  - q: "Why not just paste every past transcript into each new session?"
+    options: ["Models cannot read old transcripts", "It is the most accurate option, just slow", "The prompt grows with every session, so cost climbs and the useful facts get buried in noise"]
+    answer: 2
+    why: "After 30 sessions of 3,000 tokens you resend 87,000 tokens per session, most of it irrelevant to the question."
+reading:
+  - title: "Cognitive Architectures for Language Agents (CoALA)"
+    url: "https://arxiv.org/abs/2309.02427"
+  - title: "Claude Code docs: Manage Claude's memory"
+    url: "https://docs.anthropic.com/en/docs/claude-code/memory"
+---
+
+## She told it she was vegetarian. A week later it suggested chicken.
+
+Priya uses a meal-planning assistant. In session 1 she says she is vegetarian, allergic to peanuts, and cooks for two. The plan is great. A week later she opens a new chat and asks for five dinners. The plan includes chicken stir-fry and satay noodles with peanut sauce.
+
+In the lab, an agent with no long-term memory gets only 72% of Priya's sessions right, and in the rest she either gets a plan that could hurt her or has to type her restrictions again. The model did not forget anything. It never had it.
+
+## The context window is the only memory a model has
+
+A model has no state between calls. Everything it knows about you in a given turn is in the context window: the system prompt, the conversation so far, and any tool results. That is **working memory**. It is fast and exact, and it is thrown away when the session ends.
+
+So "the agent remembers" always means "the harness saved something and put it back into a later prompt". The design question is what to save and how to bring it back. Research on agent design (the CoALA paper) borrows four kinds of memory from cognitive science, and they map cleanly onto things you build:
+
+- **Working memory**: the current context. You manage it with [compaction](/c/context_mgmt/).
+- **Episodic memory**: what happened. Old transcripts, past tool runs, "last Tuesday we tried X and it failed". Usually stored whole and searched later.
+- **Semantic memory**: what is true. "Priya is vegetarian." "Our refund window is 14 days." Stable facts, stored small.
+- **Procedural memory**: how to do things. The system prompt, a repo's `CLAUDE.md` or `AGENTS.md`, a skill file that says how to file an expense report.
+
+## Store each kind where it belongs
+
+Each kind gets a different store and a different way back into the prompt.
+
+<Stack blocks={[{ label: "Procedural: system prompt + CLAUDE.md", tokens: 2000 }, { label: "Semantic: user profile", tokens: 150, kind: "good" }, { label: "Episodic: searched on demand", tokens: 800, kind: "hl" }, { label: "Working: this session", tokens: 3000 }]} caption="What a session's prompt is built from. Only the profile is per user and always loaded." />
+
+- **Procedural** memory is loaded at the start of every session for everyone. It changes rarely, so it is also the part you [cache](/c/caching/).
+- **Semantic** memory about a user is a short profile, a few lines of key facts, loaded into every session for that user. Priya's profile is three facts: vegetarian, peanut allergy, cooks for two.
+- **Episodic** memory is too big to load. The agent searches it when a question needs it, using the [embedding search](/c/embeddings/) from the next lesson.
+- **Working** memory is what the session builds up as it goes.
+
+In the lab, switching the memory node from `window` to `profile` takes Priya's sessions from 72% to 97% right, in one turn instead of asking again. Switching to `vector` (episodic search over old chats) does worse than the profile: it costs an extra search turn, and it pulls in "my sister eats fish" and "peanut sauce recipe for a party", which leak into the plan.
+
+## Let us check the math
+
+Say Priya uses the assistant 30 times a month and each session is about 3,000 tokens. Compare three ways of remembering her, at the sim price of $3 per million input tokens (illustrative).
+
+<Callout type="math" label="Let us check the math">
+**Paste every old transcript in.** Session n carries 3,000 × (n − 1) old tokens. Over 30 sessions: 3,000 × (0 + 1 + ... + 29) = 3,000 × 435 = **1,305,000 tokens**, about **$3.92** a month, and session 30 alone resends 87,000 tokens.<br />
+**Search old transcripts each session.** About 2,400 tokens of snippets × 30 = **72,000 tokens**, about **$0.22**, plus an extra turn each time.<br />
+**Load a profile.** 150 tokens × 30 = **4,500 tokens**, about **$0.01**.
+</Callout>
+
+The profile is about 300 times cheaper than pasting history, and more accurate, because it holds only the facts that matter. Episodic search still has a job. It answers "what did we decide about the venue last month?", which no profile holds.
+
+## The tradeoff: memory you keep is memory you must maintain
+
+Every saved fact is a claim the agent will trust later, with no one checking it.
+
+- **Facts go stale.** Priya moves, or stops being vegetarian. A profile needs updates that replace old facts instead of piling up contradictions. That is [Writing Memory Safely](/c/memory_write/).
+- **Facts can be wrong or planted.** If the agent saves whatever it reads, one bad web page becomes a permanent belief. The same lesson covers write policies that check where a fact came from.
+- **Episodic search can miss or mislead.** It returns what is similar, not what is relevant. [Embeddings](/c/embeddings/) and [RAG](/c/rag/) cover how to make retrieval good enough to trust.
+
+Keep the always-loaded part small, and let the user see and delete what is saved.
+
+## In the real world
+
+ChatGPT's memory feature keeps saved memories (short facts like "prefers metric units") that you can view and delete in settings, and it can also reference past chats. That is semantic and episodic memory side by side. Claude Code's `CLAUDE.md` files are procedural memory: instructions for a project or a user, loaded at the start of every session, and editable by you or by the agent when you ask it to remember something.

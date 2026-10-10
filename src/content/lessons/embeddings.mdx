@@ -1,0 +1,101 @@
+---
+title: "Embeddings and Similarity"
+section: "memory"
+order: 25
+tagline: "Text to vectors; nearby means related."
+realWorld: "Semantic search over support tickets"
+build:
+  type: "code"
+  scenario: "embeddings"
+terms:
+  - term: "embedding"
+    def: "A list of numbers (a vector) that an embedding model produces for a piece of text, placed so that texts with similar meaning get nearby vectors."
+  - term: "cosine similarity"
+    def: "A score from -1 to 1 for how closely two vectors point the same way: their dot product divided by the product of their lengths."
+  - term: "vector index"
+    def: "A store of embeddings that returns the k vectors closest to a query vector, often approximately, so search stays fast at millions of items."
+  - term: "hybrid search"
+    def: "Combining keyword search (exact words) with embedding search (meaning) and merging the two ranked lists."
+usedIn: ["supportbot/1"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Two embeddings are [0.6, 0.8] and [0.8, 0.6]. Both have length 1. What is their cosine similarity?"
+    options: ["0.96", "0.48", "1.4"]
+    answer: 0
+    why: "Dot product 0.6 × 0.8 + 0.8 × 0.6 = 0.96, divided by lengths 1 × 1, is 0.96: they point almost the same way."
+  - q: "A customer searches for error code E-4012. Which search is most likely to find the right ticket?"
+    options: ["Embedding search, because it understands meaning", "Keyword search, because the exact code matters more than meaning", "Neither can find codes"]
+    answer: 1
+    why: "Embeddings blur exact strings into nearby meanings. For identifiers, SKUs and error codes, exact matching wins, which is why many systems use hybrid search."
+  - q: "You switch to a new embedding model. What must you do with the index?"
+    options: ["Nothing, vectors are model independent", "Re-embed only new documents", "Re-embed every document, because vectors from different models are not comparable"]
+    answer: 2
+    why: "Each model defines its own space. A query embedded with model B cannot be compared with documents embedded by model A."
+reading:
+  - title: "Anthropic docs: Embeddings"
+    url: "https://docs.anthropic.com/en/docs/build-with-claude/embeddings"
+  - title: "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks"
+    url: "https://arxiv.org/abs/1908.10084"
+---
+
+## The customer typed "terminate membership". Search found nothing.
+
+A shop has 50 FAQs. The support search counts the words a query shares with each FAQ. A customer types "terminate membership". The FAQ that answers it says "How do I cancel my subscription?" They share zero words, so it never shows up.
+
+In the code lab's test set of 8 real customer phrasings, keyword search finds the right FAQ in its top 3 only **2 times out of 8**, a 25% hit rate. Customers describe their problem in their own words, and their words are rarely yours.
+
+## Words are not meaning
+
+Keyword search compares strings. "Cancel" and "terminate" are different strings. "Refund" and "money back" are different strings. "Arrived faulty" and "arrives broken" share one word out of four. The search has no idea that these pairs mean the same thing, so it ranks by accidental overlap.
+
+You need a representation where *meaning* is what gets compared.
+
+## Turn text into points, then measure the angle
+
+An **embedding model** reads a piece of text and outputs a vector: a fixed-length list of numbers, often 256 to 3,072 of them. It is trained on huge amounts of text so that sentences with similar meaning land near each other. "Cancel my subscription" and "terminate membership" end up pointing in nearly the same direction, and "store hours" points somewhere else.
+
+To compare two vectors you use **cosine similarity**: the dot product divided by the product of the lengths. It is 1 when they point the same way, 0 when unrelated, and -1 when opposite. Most embedding models return unit-length vectors, so cosine is just the dot product.
+
+Search is then three steps: embed every document once and store the vectors, embed the query, and return the k documents with the highest cosine.
+
+```python
+from agentkit_mini import embed, cosine
+
+index = [(fid, embed(q + " " + a)) for fid, q, a in FAQS]   # once, offline
+
+def search(query, k=3):
+    qv = embed(query)                                      # once per query
+    ranked = sorted(index, key=lambda item: -cosine(qv, item[1]))
+    return [fid for fid, _ in ranked[:k]]
+```
+
+<Flow steps={["50 FAQs", { label: "Embed once", sub: "store vectors" }, { label: "Embed the query", kind: "hl" }, { label: "Cosine vs every vector", sub: "keep top k" }, "Ranked FAQs"]} caption="Indexing happens once. Each query costs one embedding and a scan." />
+
+In the code lab, the same 8 queries go from 25% to **88%** with this change.
+
+## Let us check the math
+
+Take three toy vectors of length 1: "refund" = [0.6, 0.8, 0], "money back" = [0.8, 0.6, 0], "store hours" = [0, 0.6, 0.8].
+
+<Callout type="math" label="Let us check the math">
+**refund · money back** = 0.6 × 0.8 + 0.8 × 0.6 + 0 × 0 = 0.48 + 0.48 = **0.96** (nearly the same direction).<br />
+**refund · store hours** = 0 + 0.8 × 0.6 + 0 = **0.48** (loosely related).<br />
+**Scale.** The lab scans 50 vectors × 256 numbers = 12,800 multiply-adds per query, which is instant. One million documents at 1,024 dimensions is 1,024,000,000 multiply-adds per query, and the vectors take 1,000,000 × 1,024 × 4 bytes ≈ **4.1 GB** as 32-bit floats.
+</Callout>
+
+That last line is why vector databases exist. They build approximate nearest-neighbour indexes (HNSW is a common one) that check a small fraction of the vectors and return almost the same top k, in milliseconds.
+
+## The tradeoff: similar is not the same as right
+
+Embeddings find related text. Related is not always what you asked for.
+
+- **Exact strings blur.** Error code `E-4012`, a SKU, or a function name matter character by character, and embeddings treat them loosely. Run keyword search (often BM25, a standard word-matching score) alongside embeddings and merge the results: **hybrid search**. Coding agents often skip embeddings entirely and use grep, covered in [Agentic Search vs RAG](/c/agentic_search/).
+- **Opposites can look alike.** "Can I return sale items?" and "Sale items cannot be returned" are close in meaning-space, and the second one is the answer you want. Similarity finds candidates; the model still has to read them. That is [RAG](/c/rag/).
+- **What you embed matters.** A whole 40-page manual becomes one vector that means "everything", so nothing matches it well. Splitting documents into the right pieces is [Chunking and Indexing](/c/chunking/).
+
+Also budget for re-embedding everything when you change embedding models: vectors from different models live in different spaces.
+
+## In the real world
+
+Anthropic does not ship its own embedding model. Its docs point to Voyage AI's models and show the same pattern you build here: embed documents once, embed the query, rank by dot product. The bundled `embed()` in the lab is a tiny hashed-features model with a small synonym table, not a neural network, but the search code you write is exactly what you would run against a real one.

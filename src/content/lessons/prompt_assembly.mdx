@@ -1,0 +1,94 @@
+---
+title: "Assembling the Context"
+section: "harness"
+order: 16
+tagline: "System prompt + tool schemas + memory + history + the new message."
+realWorld: "How coding agents inject repo instruction files (CLAUDE.md, AGENTS.md)"
+build:
+  type: "lab"
+  scenario: "prompt_assembly"
+terms:
+  - term: "context stack"
+    def: "The ordered blocks the harness concatenates into every model call: system prompt, tool schemas, project instructions, memory, conversation history and the new message."
+  - term: "instruction file"
+    def: "A file in the repo, such as CLAUDE.md or AGENTS.md, that the harness reads and places in the prompt so the agent follows project conventions."
+  - term: "prompt caching"
+    def: "Reusing the provider's processed copy of an unchanged prompt prefix, so repeated calls bill those tokens at a fraction of the normal input price."
+usedIn: ["nanoharness/6"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Your repo uses pnpm, but the agent keeps running npm install. What is the most likely cause?"
+    options: ["The model is too small to know pnpm", "Nothing in the assembled context says the repo uses pnpm", "The temperature is too high"]
+    answer: 1
+    why: "The model only knows what is in its context. With no instruction, it falls back to the most common choice it saw in training, which is npm."
+  - q: "You add the current time to the very top of the system prompt. What happens to prompt caching?"
+    options: ["Nothing; caching ignores the system prompt", "Every call misses the cache, because the prefix changes on every call", "Only the time is billed at full price"]
+    answer: 1
+    why: "A cache hit needs an exact match of the prefix. A changing value at the top makes every prefix new. Put changing content after the stable blocks."
+  - q: "A 6,000-token prefix is sent on 10 calls at $3 per million input tokens. Cached reads cost 10%. About how much does caching save per task?"
+    options: ["About $0.02", "About $0.15", "About $1.50"]
+    answer: 1
+    why: "Uncached: 60,000 tokens = $0.18. Cached: 6,000 + 9 × 600 = 11,400 tokens = $0.034. The difference is about $0.15."
+reading:
+  - title: "AGENTS.md: a simple, open format for guiding coding agents"
+    url: "https://agents.md"
+  - title: "Anthropic: Effective context engineering for AI agents"
+    url: "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents"
+  - title: "Claude Code overview"
+    url: "https://docs.anthropic.com/en/docs/claude-code/overview"
+---
+
+## Four changes, four broken house rules
+
+Your team's repo has three rules: use pnpm, run `pnpm test` before finishing, and never edit files under `generated/` because codegen overwrites them. You give the coding agent four small tasks. In about 19 runs out of 20, it runs `npm install` and edits `generated/order.ts` by hand.
+
+Meanwhile every call sends a 6,000-token prefix (a 2,000-token base prompt and 14 tool schemas) into a 16,000-token window, and the last turns of each task scrape the ceiling.
+
+## The model only knows what you put in front of it
+
+The rules live in a wiki page and in people's heads. They are not in the context, so for the model they do not exist. When it has to pick a package manager it picks the one it saw most often in training. That is npm. When it sees a file with the type it needs to change, it edits that file.
+
+This is the core fact of this lesson: **on every call, the harness builds the context from scratch.** The model has no memory of the last call except what the harness puts back in. So "the agent knows the house rules" really means "the harness put the house rules in the prompt, every time, somewhere the model pays attention to".
+
+## Build the stack on purpose
+
+A context is a stack of blocks, assembled in a fixed order:
+
+1. **System prompt**: who the agent is and how it should work.
+2. **Tool schemas**: name, description and JSON input schema for every tool. Fourteen tools at about 285 tokens each is 4,000 tokens.
+3. **Project instructions**: the contents of `CLAUDE.md` or `AGENTS.md`. Short: a few hundred tokens of rules the model cannot guess.
+4. **Memory**: a running summary of earlier turns, or facts from past sessions ([Kinds of Memory](/c/memory_types/)).
+5. **History**: recent messages and tool results, verbatim.
+6. **The new message**: the task or the latest tool result.
+
+<Stack blocks={[{ label: "System prompt", tokens: 2000 }, { label: "Tool schemas (14)", tokens: 4000 }, { label: "AGENTS.md rules", tokens: 300, kind: "good" }, { label: "Summary memory", tokens: 1200, kind: "hl" }, { label: "Recent history", tokens: 5500 }, { label: "New message", tokens: 400 }]} budget={16000} caption="The stable blocks go first and get cached. The parts that change every turn go last." />
+
+The order is not cosmetic. The first three blocks are the same on every call, so they form a **stable prefix**. Providers can cache a prefix that matches exactly and bill it at a fraction of the price. Anything that changes per call (a timestamp, the user's name, the latest file) must come *after* the stable blocks, or it breaks the match for everything behind it.
+
+In the lab you add three things: the rules in the system prompt, a summary memory so the history stops growing without bound, and the cache flag on the stable prefix.
+
+## Let us check the math
+
+A task takes about 10 calls. The prefix is 6,000 tokens. Sim prices: medium tier at $3 per million input tokens (illustrative). A cached read is billed at 10% of that.
+
+<Callout type="math" label="Let us check the math">
+**Without caching:** 10 calls × 6,000 = 60,000 prefix tokens × $3/M = **$0.18 per task**, just for the prefix.<br />
+**With caching:** first call full price, then 10%: 6,000 + 9 × 600 = 11,400 tokens × $3/M = **$0.034**.<br />
+Saved: about **$0.15 per task**. At 2,000 tasks a month that is about $290.<br />
+**Window:** prefix 6,200 (with the task) + history growing 1,000 to 2,400 tokens a turn reaches 16,000 by turn 7 or 8. A summary memory that kicks in at 90% (14,400) keeps the peak under the window.
+</Callout>
+
+The rules themselves cost almost nothing: 300 tokens is 5% of the prefix, and once cached it is billed at a tenth of that. The cheapest fix in this lesson is also the one that matters most: with summary memory and caching but no rules, only about 1 change in 6 follows the house rules.
+
+## The tradeoff: every block competes for the same window
+
+The context is a budget, and every block you add takes room from the work.
+
+- **Instruction files grow.** Every incident adds a line, and a 300-token file becomes 4,000 tokens of rules the model half-follows. Keep it to what the model cannot infer, and split long guides into files the agent reads only when it needs them.
+- **Tool schemas are a fixed tax.** Fourteen tools cost 4,000 tokens on every call, even when the task needs three. Load tool sets per task, or route first ([Designing Good Tools](/c/tool_design/), [Routing](/c/routing/)).
+- **Summaries lose detail.** A summary keeps the gist and drops exact lines. Decide when to summarize, truncate or offload in [Context Management](/c/context_mgmt/), and use caching deliberately in [Prompt Caching](/c/caching/).
+
+## In the real world
+
+Claude Code reads `CLAUDE.md` files at the start of a session (one in your home directory for personal preferences, one in the project root for the team) and places them in the context, which is why teams commit theirs to the repo. Codex CLI, Cursor and several other agents read `AGENTS.md`, an open format: a plain Markdown file of build commands, test commands and conventions. The format suggests putting one in each package of a monorepo, with the nearest file to the code taking precedence. In every case the mechanism is the same as in the lab: the harness reads a file and pastes it into the stack.

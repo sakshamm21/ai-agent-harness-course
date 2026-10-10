@@ -1,0 +1,110 @@
+---
+title: "Designing Good Tools"
+section: "tools"
+order: 11
+tagline: "Names, descriptions and errors are prompts too."
+realWorld: "Ambiguous search vs search_docs causing wrong picks"
+build:
+  type: "lab"
+  scenario: "tool_design"
+terms:
+  - term: "tool description"
+    def: "The text sent with a tool's definition that tells the model what the tool does, what it returns and when to use it; it is the only documentation the model reads."
+  - term: "tool-choice accuracy"
+    def: "The share of tool calls where the model picked the tool the task actually needed."
+  - term: "namespacing"
+    def: "Prefixing related tool names with the service or resource they act on, such as docs_search and tickets_search, so look-alike tools are easy to tell apart."
+usedIn: ["nanoharness/2"]
+readingMinutes: 6
+updated: 2026-10-10
+quiz:
+  - q: "Your agent has search and search_docs, described as \"Search for things\" and \"Search the docs\". A user asks how to export a report. Why does the model often pick search?"
+    options: ["It prefers shorter tool names", "Both descriptions say almost the same thing, so it has nothing to choose by except a guess", "search_docs is broken"]
+    answer: 1
+    why: "The model sees only names and descriptions. When they overlap, the choice is close to a coin flip between look-alikes."
+  - q: "Which description does the most to stop wrong picks?"
+    options: ["\"Search docs.\"", "\"A powerful, flexible search tool for all your needs.\"", "\"Finds help center articles by keyword. Use this for how-to questions about features or settings. Do not use for customer cases.\""]
+    answer: 2
+    why: "It starts with a verb, says what it returns, says when to use it and when not to, and uses words the other tools don't."
+  - q: "Longer descriptions add about 105 tokens per call. At 2 calls per question and $3 per million input tokens, what do they cost per 1,000 questions?"
+    options: ["About $0.06", "About $0.63", "About $6.30"]
+    answer: 1
+    why: "105 × 2 × 1,000 = 210,000 tokens, and 210,000 × $3/M = $0.63."
+reading:
+  - title: "Anthropic: Writing effective tools for agents"
+    url: "https://www.anthropic.com/engineering/writing-tools-for-agents"
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## Three search tools, and it picks the wrong one 6 times in 10
+
+Your support agent has three tools: `search`, `search_docs` and `search_tickets`. A user asks "How do I export a report to CSV?" and the agent calls `search`, which queries the public web and returns ten blog posts about other products. Across a day of traffic, about 6 in 10 of its tool calls hit the wrong tool.
+
+Nothing is broken. Every tool works. The model just keeps choosing the wrong one, and about a third of the time it then answers from the wrong results: "I couldn't find export steps. Maybe try right-clicking?"
+
+## The model only sees the label on the box
+
+Here is everything the model knows about those tools:
+
+```text
+search          "Search for things."
+search_docs     "Search the docs."
+search_tickets  "Search tickets."
+```
+
+It never sees your code, your database or the help center. It sees a name and one short line, and the three lines say almost the same thing. "Search for things" covers export questions. So does "Search the docs". With no reason to prefer one, the model leans on word overlap with the question, and that is close to a guess.
+
+A tool definition is part of the prompt. You would never give a new support hire three buttons labelled "Search", "Search 2" and "Search 3" and expect them to pick correctly on day one. The model is that new hire, on every single call.
+
+## Write each tool like a note to a new hire
+
+A good description answers four questions, in this order:
+
+1. **What does it do, and to what?** Start with a verb: "Finds help center articles by keyword and returns titles with short excerpts."
+2. **When should I use it?** "Use this for how-to questions about features, settings or billing."
+3. **When should I not?** "Do not use for questions about a specific customer."
+4. **How is it different from its neighbours?** Use words the other tools don't. If two descriptions share most of their vocabulary, the model can't separate them.
+
+```json
+{ "name": "search_docs",
+  "description": "Finds help center articles by keyword and returns titles with short excerpts. Use this for how-to questions about features, settings, billing or exports. Do not use for customer cases.",
+  "input_schema": { "type": "object",
+    "properties": { "query": { "type": "string", "description": "2 to 6 keywords, e.g. 'export report csv'" } },
+    "required": ["query"] } }
+```
+
+<Flow steps={["Question", { label: "Model reads", sub: "names, descriptions, schemas", kind: "hl" }, { label: "Picks a tool", sub: "by matching intent to text" }, { label: "Right result", kind: "good" }]} caption="The model chooses from text alone. Distinct descriptions give it something to choose by." />
+
+The same care goes into the rest of the definition:
+
+- **Names.** Group related tools with a shared prefix (`docs_search`, `tickets_search`) so they read as different things, not variants of one thing.
+- **Parameters.** Give each one a description and an example. `customer_id` beats `id`. An `enum` beats a free string.
+- **Outputs.** Return what the model needs for the next step, in plain words. A customer's name is more useful than an internal UUID.
+- **Errors.** An error message is read the same way. That is [Tool Errors and Recovery](/c/tool_errors/).
+
+## Let us check the math
+
+Take 1,000 questions a day. Each wrong pick costs one extra turn of about 3,000 input tokens before the model tries again, and a third of wrong picks end in a wrong answer.
+
+<Callout type="math" label="Let us check the math">
+**Vague descriptions**, 60% wrong first picks: 1,000 × 0.6 = **600 wrong picks**.<br />
+Extra input: 600 × 3,000 = 1.8M tokens. At medium sim prices ($3 per million input, illustrative): **$5.40 a day**.<br />
+Wrong answers: 600 ÷ 3 = **200 a day**, or 20% of users.<br />
+**Clear descriptions** grow each tool from about 5 tokens to about 40: +35 × 3 tools = 105 tokens per call. At 2 calls per question: 105 × 2 × 1,000 = 210k tokens = **$0.63 a day**.<br />
+If wrong picks drop to 5%: 50 extra turns ($0.45) and about 17 wrong answers. You spend $0.63 to save $4.95 and about 183 wrong answers.
+</Callout>
+
+The tokens are cheap. The wrong answers are what you are really paying for.
+
+## The tradeoff: every word rides on every call
+
+Good descriptions cost a little each, and the bill grows with the size of your toolbox:
+
+- **Tokens per call.** 50 tools at 150 tokens each is 7,500 tokens on every turn. Cache the stable prefix ([Prompt Caching](/c/caching/)) and send only the tools a task needs ([Routing](/c/routing/)).
+- **More tools, more overlap.** Each new tool is another look-alike to confuse. Merge small steps into one tool that does a whole job: one `schedule_meeting` instead of `list_users`, `list_events` and `create_event`.
+- **You can't eyeball accuracy.** A description that reads well can still lose. Measure which tool was called on a fixed set of questions ([Trajectory and Tool-Use Evals](/c/trajectory_evals/)).
+
+## In the real world
+
+When Anthropic built its agent for SWE-bench, a benchmark of real GitHub issues, it reported spending more time on the tools than on the overall prompt. One fix: the model made mistakes with relative file paths after changing directory, so the tool was changed to require absolute paths, and the mistakes stopped. Its later guide on writing tools for agents recommends the same habits as this lesson: clear names with namespaces, descriptions written like docs for a new teammate, and checking accuracy with evals rather than by feel.

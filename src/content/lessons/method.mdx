@@ -1,0 +1,92 @@
+---
+title: "How to Design an Agent (6-step method)"
+section: "cases"
+order: 50
+tagline: "Scope, napkin math, tools, loop, evals, tradeoffs. In that order, before any code."
+realWorld: "Turning 'we want an AI agent for issues' into a design that fits $40 a day"
+build:
+  type: "lab"
+  scenario: "method"
+terms:
+  - term: "failure cost"
+    def: "What one wrong action by the agent costs you in money, trust or cleanup time; it decides how much autonomy the agent gets."
+  - term: "napkin math"
+    def: "A rough estimate of tasks per day, turns per task, tokens per turn and dollars, done before building to see whether a design can fit the budget at all."
+  - term: "design method"
+    def: "A fixed sequence of questions you answer for every new agent so that no part of the design (budget, permissions, stopping, evals) gets skipped."
+usedIn: []
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Why does the method put napkin math before choosing tools?"
+    options: ["Tools are cheap, so they never matter for cost", "The budget per task limits the model tier and the number of turns, which shapes everything after it", "Napkin math is only needed for the final report"]
+    answer: 1
+    why: "If the budget allows $0.10 per task, a large model at $0.40 per task is out before you design a single tool. The math rules out designs early."
+  - q: "An issue-triage agent could close issues, but a wrongly closed real bug angers a user in public. What does step 3 suggest?"
+    options: ["Keep close_issue and add a longer system prompt", "Deny close_issue; labels are cheap to undo, closures are not", "Switch to a larger model so it closes the right ones"]
+    answer: 1
+    why: "Step 1 sets the failure cost, and step 3 turns it into permissions. The agent only gets the actions whose mistakes you can afford."
+  - q: "400 tasks a day at 24.5k input and 750 output tokens each, on the medium tier ($3/$15 per million). Roughly what is the daily bill?"
+    options: ["About $3.40", "About $34", "About $340"]
+    answer: 1
+    why: "Per task: 24,500 × $3/M + 750 × $15/M ≈ $0.074 + $0.011 = $0.085. Times 400 is about $34 a day."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+  - title: "Anthropic: Claude Code best practices"
+    url: "https://www.anthropic.com/engineering/claude-code-best-practices"
+---
+
+## Your team asked for an agent. You opened the editor first.
+
+Your team gets 400 new GitHub issues a day and wants an agent to triage them: find duplicates, read the issue, add a label. You wire up the largest model, give it every tool the GitHub API has, and run it on a sample. The labels look good. Then you read the bill: $0.42 per issue, $170 a day, against a budget of $40. And on issue #4815 it closed a real bug as a duplicate.
+
+Nothing in that design was wrong in isolation. You just skipped the questions that would have ruled it out before you wrote any code.
+
+## Agents fail where nobody asked the question
+
+Most agent failures are not model failures. They are design questions nobody answered: how much can one task cost, what is the agent never allowed to do, when does it stop, how do you know it works. Each unanswered question becomes a default, and the defaults are bad: the biggest model, every tool, no cap, no evals.
+
+So answer them in a fixed order. Each step uses the answers from the one before.
+
+<Flow steps={[{ label: "1. Scope", sub: "job + failure cost", kind: "hl" }, { label: "2. Napkin math", sub: "tasks, turns, tokens, $" }, { label: "3. Tools", sub: "and permissions" }, { label: "4. Loop", sub: "and context" }, { label: "5. Evals", sub: "and guardrails" }, { label: "6. Tradeoffs", sub: "then build", kind: "good" }]} caption="The 6-step agent design method. Every case study in this section walks through it." />
+
+## The six steps
+
+**1. Scope the job and the failure cost.** Write the job in one sentence, then ask what one wrong action costs. A wrong label costs a maintainer ten seconds. A wrongly closed bug costs a user's trust. If a plain script or a single prompt does the job, stop here ([When Not to Build an Agent](/c/when_not/)).
+
+**2. Napkin math.** Tasks per day × turns per task × tokens per turn × price. This gives you dollars per task, and it picks the model tier for you ([Cost and Latency Math](/c/cost/)).
+
+**3. Tools and permissions.** List the smallest set of tools that does the job. Mark each one allow, ask or deny, based on the failure cost from step 1 ([Permissions and Sandboxing](/c/permissions/)).
+
+**4. Loop and context strategy.** How many turns is normal, what is the cap, and what happens when the context fills ([Stop Conditions and Budgets](/c/stop_conditions/), [Context Management](/c/context_mgmt/)).
+
+**5. Evals and guardrails.** Write 20 to 50 test tasks with known answers before you tune anything, and decide which outputs get checked ([Why Evals Come First](/c/evals/), [Guardrails](/c/guardrails/)).
+
+**6. Tradeoffs, then build.** Write down what you gave up and why. Then build the smallest version and run the evals.
+
+## Let us check the math
+
+Back to the triage agent. A typical issue takes 5 turns: read, search, maybe read a duplicate, label, answer. The context starts at 2.5k tokens (system prompt, tool schemas, the issue number) and each turn adds about 1.2k (issue text, search results).
+
+<Callout type="math" label="Let us check the math">
+Input per turn: 2.5k, 3.7k, 4.9k, 6.1k, 7.3k. Total: **24.5k input tokens**. Output: 5 × 150 = 750 tokens.<br />
+**Large** ($15/$75 per million): 24,500 × $15/M + 750 × $75/M ≈ $0.37 + $0.06 = **$0.42 per issue**, $170 a day.<br />
+**Medium** ($3/$15): $0.074 + $0.011 = **$0.085 per issue**, $34 a day.<br />
+**Small** ($1/$5): $0.025 + $0.004 = **$0.03 per issue**, $11 a day, but it mislabels more.<br />
+Budget: $40 / 400 = **$0.10 per issue**. Medium fits with 15% headroom. Large is out before you write a line of code.
+</Callout>
+
+Prices are this course's illustrative sim prices. The shape is what matters: the budget per task decides the tier, and the tier decides how much reasoning you can buy per turn.
+
+Now the other steps fall out. Step 1 said a wrong closure is expensive and a wrong label is cheap, so step 3 denies `close_issue` and allows `add_label`. Step 4 notices that vague issues ("how do i do the thing") tempt the model into re-running the same search, so it caps the loop at 12 turns. Step 5 builds 40 past issues with the labels your maintainers actually chose.
+
+## The tradeoff: the method costs you a day up front
+
+Writing six answers before building feels slow, and some answers will be wrong. Three ways to keep it cheap:
+
+- **Timebox it.** One page, one hour. The goal is to rule out bad designs, not to predict everything.
+- **Let evals correct the math.** Your turn and token estimates are guesses. Run 20 eval tasks, read the real numbers from your traces ([Tracing and Observability](/c/tracing/)), and redo step 2.
+- **Start with less autonomy.** When you are unsure about a failure cost, choose ask over allow. You can loosen a permission after a week of clean traces; you cannot undo a closed issue.
+
+In the lab you get the draft triage agent from the problem above. Apply steps 2, 3 and 4 to it. Then the next four lessons walk the same method through a coding agent, a support agent, a research agent and a browser agent.

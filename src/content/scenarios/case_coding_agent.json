@@ -1,0 +1,567 @@
+{
+  "id": "case_coding_agent",
+  "title": "Design a Coding Agent",
+  "brief": "A mini Claude Code. Three tasks: a one-line fix, a bug that spans a few files, and a rename across a 40-file module. The draft harness has the right tools and a loop, but it runs every bash command it writes, its context fills up on the big task, and exploring the repo is expensive. Get 85% of tasks done with zero incidents, at $0.34 or less per task, and no more than 3 permission prompts per task.",
+  "window": 32000,
+  "systemTokens": 4000,
+  "palette": [
+    "model",
+    "loop",
+    "tool",
+    "permissions",
+    "compactor",
+    "subagent"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 180
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "cachePrefix": true
+        },
+        "position": {
+          "x": 240,
+          "y": 180
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 40
+        },
+        "position": {
+          "x": 480,
+          "y": 180
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "grep",
+          "description": "Searches file contents with a regex and returns matching lines with paths. Use this to find code before reading it."
+        },
+        "position": {
+          "x": 760,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text with line numbers."
+        },
+        "position": {
+          "x": 760,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text. Fails if the string is not unique."
+        },
+        "position": {
+          "x": 760,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "bash",
+          "description": "Runs a shell command in the project directory and returns stdout, stderr and the exit code.",
+          "errorRate": 0.2,
+          "errorMode": "actionable"
+        },
+        "position": {
+          "x": 760,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 180
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium",
+          "cachePrefix": true
+        },
+        "position": {
+          "x": 240,
+          "y": 180
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 40
+        },
+        "position": {
+          "x": 480,
+          "y": 180
+        }
+      },
+      {
+        "id": "p",
+        "type": "permissions",
+        "data": {
+          "allow": "grep, read_file, edit_file",
+          "ask": "bash"
+        },
+        "position": {
+          "x": 480,
+          "y": 360
+        }
+      },
+      {
+        "id": "c",
+        "type": "compactor",
+        "data": {
+          "trigger": 0.7,
+          "strategy": "summarize"
+        },
+        "position": {
+          "x": 240,
+          "y": 360
+        }
+      },
+      {
+        "id": "s",
+        "type": "subagent",
+        "data": {
+          "tier": "small"
+        },
+        "position": {
+          "x": 480,
+          "y": 0
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "grep",
+          "description": "Searches file contents with a regex and returns matching lines with paths. Use this to find code before reading it."
+        },
+        "position": {
+          "x": 760,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "read_file",
+          "description": "Reads a file from the repo and returns its text with line numbers."
+        },
+        "position": {
+          "x": 760,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "edit_file",
+          "description": "Replaces an exact string in a file with new text. Fails if the string is not unique."
+        },
+        "position": {
+          "x": 760,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "bash",
+          "description": "Runs a shell command in the project directory and returns stdout, stderr and the exit code.",
+          "errorRate": 0.2,
+          "errorMode": "actionable"
+        },
+        "position": {
+          "x": 760,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "p"
+      },
+      {
+        "source": "m",
+        "target": "c"
+      },
+      {
+        "source": "l",
+        "target": "s"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "One-line fix",
+      "prompt": "The /health endpoint returns 500 when the cache is empty. Fix it and run the tests.",
+      "needs": [
+        "grep",
+        "read_file",
+        "edit_file",
+        "bash"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Multi-file bug",
+      "prompt": "Invoices round tax per line instead of per invoice. Fix it and make the tests pass.",
+      "needs": [
+        "grep",
+        "read_file",
+        "edit_file",
+        "bash"
+      ],
+      "tags": [
+        "medium"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Module-wide rename",
+      "prompt": "Rename UserRecord to Account across the billing module (40 files) and keep the tests green.",
+      "needs": [
+        "grep",
+        "read_file",
+        "edit_file",
+        "bash"
+      ],
+      "tags": [
+        "big"
+      ]
+    }
+  ],
+  "actions": {
+    "explore": {
+      "kind": "tool",
+      "tool": "grep",
+      "text": "grep -rn \"UserRecord\" src/billing/",
+      "tokens": 8000,
+      "offloadable": true
+    },
+    "read": {
+      "kind": "tool",
+      "tool": "read_file",
+      "text": "read_file(\"src/billing/invoice.py\")",
+      "tokens": 2500
+    },
+    "edit": {
+      "kind": "tool",
+      "tool": "edit_file",
+      "text": "edit_file(\"src/billing/invoice.py\", old, new)",
+      "tokens": 300
+    },
+    "test": {
+      "kind": "tool",
+      "tool": "bash",
+      "text": "bash(\"pytest -x tests/billing\")",
+      "tokens": 1500,
+      "legit": true
+    },
+    "plan": {
+      "kind": "think",
+      "text": "Plan: 1) find every use, 2) read the core file, 3) edit, 4) run the tests. Updating the todo list.",
+      "tokens": 200
+    },
+    "nuke": {
+      "kind": "dangerous",
+      "tool": "bash",
+      "text": "bash(\"git checkout -- . && git clean -fdx && git push --force\")",
+      "incident": "Wiped the user's uncommitted work and force-pushed over main."
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Done. Changed 3 files, the 212 billing tests pass. Summary of the diff is above."
+    },
+    "wrong": {
+      "kind": "answer",
+      "correct": false,
+      "text": "Done. I renamed the class in models.py. (It never edited the other 39 files and did not run the tests.)"
+    }
+  },
+  "policy": {
+    "base": {
+      "explore": 4,
+      "read": 1,
+      "edit": 0,
+      "test": 0,
+      "plan": 0.6,
+      "nuke": 0.12,
+      "done": 0,
+      "wrong": 0.05
+    },
+    "modifiers": [
+      {
+        "when": {
+          "called": "grep"
+        },
+        "shift": {
+          "read": 4
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "read_file"
+            },
+            {
+              "called": "grep"
+            }
+          ]
+        },
+        "shift": {
+          "edit": 4
+        }
+      },
+      {
+        "when": {
+          "called": "edit_file"
+        },
+        "shift": {
+          "test": 4
+        }
+      },
+      {
+        "when": {
+          "tag": "medium"
+        },
+        "shift": {
+          "explore": 2,
+          "read": 3
+        },
+        "note": "A multi-file bug needs more looking around."
+      },
+      {
+        "when": {
+          "tag": "big"
+        },
+        "shift": {
+          "explore": 5,
+          "read": 5,
+          "edit": 2
+        },
+        "note": "A 40-file rename means many greps, reads and edits."
+      },
+      {
+        "when": {
+          "state": "tool_error"
+        },
+        "shift": {
+          "nuke": 0.4
+        },
+        "note": "After a failed command, a model with shell access sometimes 'cleans up' too hard."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "shift": {
+          "done": 6
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "state": "ready"
+            },
+            {
+              "not": {
+                "tag": "big"
+              }
+            }
+          ]
+        },
+        "set": {
+          "explore": 0.3,
+          "read": 0.3,
+          "edit": 0.3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "tag": "big"
+            },
+            {
+              "turn": "<",
+              "value": 18
+            }
+          ]
+        },
+        "set": {
+          "done": 0,
+          "wrong": 0.01
+        },
+        "note": "The big task is not finished until most files are edited."
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "setting": "model.tier",
+              "op": "==",
+              "value": "small"
+            },
+            {
+              "any": [
+                {
+                  "tag": "big"
+                },
+                {
+                  "tag": "medium"
+                }
+              ]
+            }
+          ]
+        },
+        "shift": {
+          "wrong": 1.5
+        },
+        "note": "The small model loses track on multi-file work."
+      },
+      {
+        "when": {
+          "state": "lost_instructions"
+        },
+        "set": {
+          "wrong": 12,
+          "done": 0.5
+        },
+        "note": "Once the task falls out of the window, it 'finishes' something else."
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "success",
+      "label": "At least 85% of tasks done",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.85
+    },
+    {
+      "id": "incidents",
+      "label": "Zero incidents",
+      "metric": "incidents",
+      "op": "==",
+      "value": 0
+    },
+    {
+      "id": "cost",
+      "label": "$0.34 or less per task",
+      "metric": "avg_cost",
+      "op": "<=",
+      "value": 0.34
+    },
+    {
+      "id": "prompts",
+      "label": "3 or fewer permission prompts per task",
+      "metric": "approvals_per_task",
+      "op": "<=",
+      "value": 3
+    }
+  ],
+  "hints": [
+    "Read a transcript of the rename task: grep output piles up until the task falls out of the window. And look at what bash was allowed to run.",
+    "Three harness pieces: something that decides which tools run without asking, something that shrinks the context before it fills, and a fresh context for exploring.",
+    "Add Permissions (ask: bash), a Compactor (summarize at 0.7) wired to the model, and a Subagent wired to the loop so grep results come back as summaries."
+  ],
+  "explain": "Claude Code-style harnesses lean on the same three pieces: permission rules so shell commands ask first, compaction so long sessions keep the task in view, and subagents so exploration does not flood the main context."
+}

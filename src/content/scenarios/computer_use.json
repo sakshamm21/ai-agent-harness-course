@@ -1,0 +1,443 @@
+{
+  "id": "computer_use",
+  "title": "Browser and Computer-Use Agents",
+  "brief": "Your browser agent works a fake booking site by looking at screenshots and clicking. Three errands, 20 runs each: book a table, request a return, renew a parking permit. The screens shift as pages load, and about 3 runs in 10 the agent clicks Confirm on the wrong date, guest count or permit. Get wrong submissions to zero, keep 90% of errands finished, and ask the human no more than 1.6 times per errand.",
+  "palette": [
+    "user",
+    "model",
+    "loop",
+    "tool",
+    "approval"
+  ],
+  "starter": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "screenshot",
+          "description": "Captures the current browser screen as an image. Use this before every click and after every page change.",
+          "latencyMs": 900
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "click",
+          "description": "Clicks at an x, y position on the screen. Use the latest screenshot to pick coordinates.",
+          "latencyMs": 600
+        },
+        "position": {
+          "x": 740,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "type_text",
+          "description": "Types text into the focused field. Use it after clicking the field.",
+          "latencyMs": 600
+        },
+        "position": {
+          "x": 740,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "submit_form",
+          "description": "Clicks the page's final Confirm or Submit button. This books, orders or pays and cannot be undone.",
+          "latencyMs": 1500
+        },
+        "position": {
+          "x": 740,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "t4"
+      }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      {
+        "id": "u",
+        "type": "user",
+        "data": {},
+        "position": {
+          "x": 0,
+          "y": 160
+        }
+      },
+      {
+        "id": "m",
+        "type": "model",
+        "data": {
+          "tier": "medium"
+        },
+        "position": {
+          "x": 240,
+          "y": 160
+        }
+      },
+      {
+        "id": "l",
+        "type": "loop",
+        "data": {
+          "maxTurns": 20
+        },
+        "position": {
+          "x": 480,
+          "y": 160
+        }
+      },
+      {
+        "id": "a",
+        "type": "approval",
+        "data": {
+          "rule": "irreversible"
+        },
+        "position": {
+          "x": 480,
+          "y": 340
+        }
+      },
+      {
+        "id": "t1",
+        "type": "tool",
+        "data": {
+          "name": "screenshot",
+          "description": "Captures the current browser screen as an image. Use this before every click and after every page change.",
+          "latencyMs": 900
+        },
+        "position": {
+          "x": 740,
+          "y": 0
+        }
+      },
+      {
+        "id": "t2",
+        "type": "tool",
+        "data": {
+          "name": "click",
+          "description": "Clicks at an x, y position on the screen. Use the latest screenshot to pick coordinates.",
+          "latencyMs": 600
+        },
+        "position": {
+          "x": 740,
+          "y": 110
+        }
+      },
+      {
+        "id": "t3",
+        "type": "tool",
+        "data": {
+          "name": "type_text",
+          "description": "Types text into the focused field. Use it after clicking the field.",
+          "latencyMs": 600
+        },
+        "position": {
+          "x": 740,
+          "y": 220
+        }
+      },
+      {
+        "id": "t4",
+        "type": "tool",
+        "data": {
+          "name": "submit_form",
+          "description": "Clicks the page's final Confirm or Submit button. This books, orders or pays and cannot be undone.",
+          "latencyMs": 1500
+        },
+        "position": {
+          "x": 740,
+          "y": 330
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "u",
+        "target": "m"
+      },
+      {
+        "source": "m",
+        "target": "l"
+      },
+      {
+        "source": "l",
+        "target": "t1"
+      },
+      {
+        "source": "l",
+        "target": "t2"
+      },
+      {
+        "source": "l",
+        "target": "t3"
+      },
+      {
+        "source": "l",
+        "target": "a"
+      },
+      {
+        "source": "a",
+        "target": "t4"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "t1",
+      "label": "Book a table",
+      "prompt": "On tablebook.example, book Luigi's for 2 people this Friday at 7pm under my name.",
+      "needs": [
+        "screenshot",
+        "click",
+        "type_text",
+        "submit_form"
+      ]
+    },
+    {
+      "id": "t2",
+      "label": "Request a return",
+      "prompt": "On shop.example, start a return for the blue jacket from order #8812. Reason: wrong size.",
+      "needs": [
+        "screenshot",
+        "click",
+        "type_text",
+        "submit_form"
+      ]
+    },
+    {
+      "id": "t3",
+      "label": "Renew a permit",
+      "prompt": "Renew my residential parking permit for plate KX21 ABC on the city portal, zone C, 12 months.",
+      "needs": [
+        "screenshot",
+        "click",
+        "type_text",
+        "submit_form"
+      ]
+    }
+  ],
+  "actions": {
+    "shot": {
+      "kind": "tool",
+      "tool": "screenshot",
+      "text": "screenshot()  → 1280×800 image: tablebook.example/luigis, date picker open on October",
+      "tokens": 1600
+    },
+    "click": {
+      "kind": "tool",
+      "tool": "click",
+      "text": "left_click(x=642, y=318)  on 'Fri 17 Oct', then 'Time: 7:00 pm'",
+      "tokens": 200
+    },
+    "type": {
+      "kind": "tool",
+      "tool": "type_text",
+      "text": "left_click(x=520, y=410) on Guests; type_text(\"2\"); left_click(x=520, y=470) on Name; type_text(\"Alex Kim\")",
+      "tokens": 200
+    },
+    "misclick": {
+      "kind": "think",
+      "text": "left_click(x=642, y=338)  The page reflowed as an ad loaded; that landed on 'Sat 18 Oct'. I need a fresh screenshot.",
+      "tokens": 1600
+    },
+    "submit_ok": {
+      "kind": "tool",
+      "tool": "submit_form",
+      "irreversible": true,
+      "legit": true,
+      "text": "left_click(x=980, y=702) on 'Confirm booking'  (summary: Fri 17 Oct, 7:00 pm, 2 guests, Alex Kim)",
+      "tokens": 300
+    },
+    "submit_wrong": {
+      "kind": "dangerous",
+      "tool": "submit_form",
+      "irreversible": true,
+      "legit": false,
+      "text": "left_click(x=980, y=702) on 'Confirm booking'  (summary: Sat 18 Oct, 9:00 pm, 4 guests: the picker had scrolled one row)",
+      "incident": "Wrong submission: booked Saturday 9pm for 4 instead of Friday 7pm for 2, and the site charged a $40 no-refund deposit."
+    },
+    "done": {
+      "kind": "answer",
+      "correct": true,
+      "text": "Booked: Luigi's, Friday 17 Oct at 7:00 pm for 2, under Alex Kim. Confirmation TB-48213 is in your email."
+    }
+  },
+  "policy": {
+    "base": {
+      "shot": 4,
+      "click": 0,
+      "type": 0,
+      "misclick": 0,
+      "submit_ok": 0,
+      "submit_wrong": 0,
+      "done": 0
+    },
+    "modifiers": [
+      {
+        "when": {
+          "called": "screenshot"
+        },
+        "shift": {
+          "click": 3,
+          "misclick": 0.6
+        },
+        "note": "Coordinates come from a picture of the page. When the layout moves, the click lands somewhere else."
+      },
+      {
+        "when": {
+          "called": "click"
+        },
+        "shift": {
+          "type": 3
+        }
+      },
+      {
+        "when": {
+          "all": [
+            {
+              "called": "click"
+            },
+            {
+              "called": "type_text"
+            },
+            {
+              "not": {
+                "called": "submit_form"
+              }
+            }
+          ]
+        },
+        "set": {
+          "click": 0.3,
+          "type": 0.3,
+          "shot": 0.6,
+          "misclick": 0.2
+        },
+        "shift": {
+          "submit_ok": 4,
+          "submit_wrong": 1.3
+        },
+        "note": "From a screenshot, Sat 18 and Fri 17 are a few pixels apart. The model is confident either way."
+      },
+      {
+        "when": {
+          "state": "ready"
+        },
+        "set": {
+          "done": 8,
+          "submit_ok": 0,
+          "submit_wrong": 0,
+          "misclick": 0
+        }
+      },
+      {
+        "when": {
+          "not": {
+            "tool": "submit_form"
+          }
+        },
+        "set": {
+          "submit_wrong": 0
+        }
+      }
+    ]
+  },
+  "goals": [
+    {
+      "id": "wrong",
+      "label": "Zero wrong submissions in 60 errands",
+      "metric": "incidents",
+      "op": "==",
+      "value": 0
+    },
+    {
+      "id": "success",
+      "label": "Finish at least 90% of errands",
+      "metric": "success_rate",
+      "op": ">=",
+      "value": 0.9
+    },
+    {
+      "id": "asks",
+      "label": "At most 1.6 human confirmations per errand",
+      "metric": "approvals_per_task",
+      "op": "<=",
+      "value": 1.6
+    }
+  ],
+  "hints": [
+    "Open a failed run. Every click before the last one can be fixed with another screenshot. Which click cannot be taken back?",
+    "Asking a person before every action would catch it too, but count the confirmations: an errand has a dozen clicks. Only one of them commits.",
+    "Add a Human approval node with \"Ask when: irreversible\" and put it between the loop and submit_form. The person sees the summary screen and says yes or no."
+  ],
+  "explain": "Screens are slow, ambiguous tools, so most mistakes are cheap: take another screenshot and click again. The one step you cannot retry is the submit, so that is where a human confirms what is on the screen."
+}

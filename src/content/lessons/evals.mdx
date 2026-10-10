@@ -1,0 +1,115 @@
+---
+title: "Why Evals Come First"
+section: "operate"
+order: 44
+tagline: "If you can't measure it, every prompt change is a guess."
+realWorld: "Teams shipping regressions on prompt tweaks"
+build:
+  type: "code"
+  scenario: "evals"
+terms:
+  - term: "eval"
+    def: "A fixed set of inputs with a pass or fail check for each, run against an agent so you can compare versions with numbers instead of impressions."
+  - term: "eval case"
+    def: "One input to the agent plus what a correct output must contain and what it must never contain."
+  - term: "regression"
+    def: "Something that used to work and stops working after a change, often in a part of the system you were not touching."
+  - term: "standard error"
+    def: "How much a measured pass rate would wobble if you reran it on a different sample of the same size; it shrinks with the square root of the number of cases."
+usedIn: ["nanoharness/10", "supportbot/7", "deepresearch/6"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "v1 and v2 both pass 18 of 20 cases. Which statement is safest?"
+    options: ["They are equally good, ship either", "Look at which cases each one fails before deciding", "v2 is better because it is newer"]
+    answer: 1
+    why: "The same average can hide a category that collapsed. In the lab, v2 fixed two account cases and broke two refund cases, and only the refund failures cost money."
+  - q: "Your 20-case eval moves from 85% to 90% after a prompt tweak. What does that tell you?"
+    options: ["The tweak is a clear 5-point win", "Probably nothing yet: one case flipped, well inside the noise", "The eval is broken"]
+    answer: 1
+    why: "With 20 cases the 95% interval is about plus or minus 13 points. One flipped case is not evidence; grow the set or look at which case flipped."
+  - q: "Why does a good eval case list what the answer must NOT contain?"
+    options: ["To make the eval run faster", "Because the costly failures are often things the agent says or does that it should not", "It is required by the API"]
+    answer: 1
+    why: "A refund outside the window still contains the word refund. A must_not_include check is what catches the answer that sounds helpful and is wrong."
+reading:
+  - title: "Anthropic docs: Define success criteria and build evaluations"
+    url: "https://docs.anthropic.com/en/docs/test-and-evaluate/develop-tests"
+  - title: "SWE-bench: real GitHub issues as an agent eval"
+    url: "https://www.swebench.com"
+---
+
+## You made the prompt friendlier. Refunds went up 40%.
+
+Your support agent handles 2,000 tickets a day. A teammate rewrites the system prompt to sound warmer, tries five questions by hand, and every answer reads better. It ships on Tuesday.
+
+By Friday finance asks why refunds jumped 40%. The new prompt quietly dropped the 30-day window check, so the agent now refunds a lamp delivered 45 days ago. Nobody tried that question, because nobody had a list of questions to try.
+
+## Five questions you pick by hand are not a measurement
+
+When you test by hand you ask the questions you were thinking about. You were thinking about tone, so you asked tone questions. The refund window was not on your mind, so it was not in your test.
+
+Three things go wrong with eyeballing:
+
+- **Coverage.** You test the change, not the rest of the system. Regressions live in the rest.
+- **Memory.** You cannot compare today's answers with last month's if you never wrote last month's down.
+- **Noise.** A model is not deterministic (see [Taming Nondeterminism](/c/determinism/)). One good answer can be luck.
+
+## Write the cases down before you change anything
+
+An eval is a fixed list of cases and a grader. Each case is an input, plus what a correct answer must contain and what it must never contain:
+
+```python
+CASES = [
+  {"id": "r2", "category": "refund",
+   "question": "I want my money back for the lamp, order A-1002.",
+   "must_include": ["30-day"], "must_not_include": ["started a refund"]},
+  {"id": "e1", "category": "escalation",
+   "question": "I'm filing a chargeback.",
+   "must_include": ["human"], "must_not_include": ["refund"]},
+]
+
+def grade(case, answer):
+    a = answer.lower()
+    return (all(s.lower() in a for s in case["must_include"])
+            and not any(s.lower() in a for s in case["must_not_include"]))
+```
+
+<Flow steps={["Change prompt", { label: "Run all cases", sub: "same inputs every time", kind: "hl" }, { label: "Score card", sub: "overall + per category" }, "Ship or not"]} loop loopLabel="every change goes through the same cases" caption="An eval turns 'it seems better' into a number you can compare." />
+
+Three habits make the set useful:
+
+- **Group cases by category** (refund, order status, cancel, account, escalation) and report a pass rate for each, not just one number.
+- **Put the dangerous answer in `must_not_include`.** The costly failures are things the agent says that it should not.
+- **Add a case for every bug you fix.** The set grows into a record of every way the agent has failed before.
+
+Run it on the current version first. That is your baseline. Every change after that is compared with it.
+
+## Let us check the math
+
+Here is the lab's 20-case set, run on the production agent (v1) and the friendlier candidate (v2).
+
+<Callout type="math" label="Let us check the math">
+v1: 18 of 20 pass = **90%**. It fails two account cases ("I'm locked out", "I can't log in").<br />
+v2: 18 of 20 pass = **90%**. It fixed both account cases and broke two refund cases (A-1002 at 45 days, A-1005 at 31 days).<br />
+Same average. But refund went from 5/5 = 100% to 3/5 = **60%**, and each wrong refund costs you the order price.<br /><br />
+How much can you trust 90% on 20 cases? Standard error = √(0.9 × 0.1 / 20) = √0.0045 ≈ 0.067. The 95% interval is about ±1.96 × 0.067 ≈ **±13 points**.<br />
+At 200 cases: √(0.09 / 200) ≈ 0.021, so about **±4 points**.<br />
+Running 200 cases at about 4 turns of 3k input tokens each is 200 × 12k = 2.4M tokens, or about **$7.20 per run** at sim prices ($3 per million input on the medium tier; prices are illustrative).
+</Callout>
+
+Two lessons from those numbers. Read the per-category score card, because averages hide trades. And a one-case move on a small set is noise: grow the set until the change you care about is bigger than the interval.
+
+## The tradeoff: evals cost time and can lie to you
+
+A good eval set takes a day to write and keeps costing money every run. Worse, it can mislead:
+
+- **String checks are brittle.** "Cannot refund" fails a check for "can't refund". Keep checks to stable facts (amounts, order ids, "human"), and use a grader model for open-ended answers, checked against human labels ([LLM-as-Judge](/c/llm_judge/)).
+- **The answer is not the whole story.** An agent can say the right thing after doing the wrong thing. Grade the tool calls too ([Trajectory and Tool-Use Evals](/c/trajectory_evals/)).
+- **You can overfit the set.** If you tweak the prompt until these 20 pass, you have tuned for 20 questions. Hold some cases back, and keep adding real tickets from your logs ([Tracing and Observability](/c/tracing/)).
+
+## In the real world
+
+SWE-bench is an eval set for coding agents built the same way. Each of its 2,294 tasks is a real GitHub issue from a popular Python repository. The agent gets the repo and the issue; the grader applies its patch and runs the repo's own tests: tests that should now pass must pass, and tests that passed before must still pass. SWE-bench Verified is a 500-task subset that people checked by hand so that every task is solvable and fairly graded. The idea is the one you just used: fixed inputs, an automatic check, a score you can compare across versions.
+
+In the code lab you write 20 cases for a small support agent and find out whether v2 should ship.

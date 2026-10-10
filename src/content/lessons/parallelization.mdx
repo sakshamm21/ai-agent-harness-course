@@ -1,0 +1,97 @@
+---
+title: "Parallelization and Voting"
+section: "patterns"
+order: 32
+tagline: "Run in parallel, then combine or vote."
+realWorld: "Code review by several reviewers; content moderation votes"
+build:
+  type: "lab"
+  scenario: "parallelization"
+terms:
+  - term: "sectioning"
+    def: "Splitting a task into independent parts that run as separate model calls at the same time, then combining the results."
+  - term: "voting"
+    def: "Running the same task several times, independently, and taking the majority (or another threshold) of the answers."
+  - term: "correlated errors"
+    def: "Mistakes that several calls make together because they share a model, prompt or blind spot; they make voting less effective than the independent-voter math says."
+usedIn: ["deepresearch/3"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Each voter is right 85% of the time, independently. How often is a majority of 3 right?"
+    options: ["85%", "About 94%", "About 99%"]
+    answer: 1
+    why: "The majority is right if all 3 are right (0.85³ ≈ 0.614) or exactly 2 are (3 × 0.85² × 0.15 ≈ 0.325). Together about 0.939."
+  - q: "Why does running the three votes in parallel matter?"
+    options: ["It makes each vote more accurate", "The wait is about one call instead of three", "Parallel calls are free"]
+    answer: 1
+    why: "The votes do not depend on each other, so they can run at once. You still pay for three calls, but you only wait for the slowest one."
+  - q: "Your three voters are the same model with the same prompt. What should you expect?"
+    options: ["Exactly the 94% the formula predicts", "Less than 94%, because their mistakes are correlated", "More than 94%"]
+    answer: 1
+    why: "The formula assumes independent mistakes. Copies of one model tend to fail on the same hard posts, so vary the prompt or model to get closer to independence."
+reading:
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## One moderator call is wrong 15 times in 100
+
+Your forum gets thousands of reported posts a day. A model call reads each one and decides ALLOW or REMOVE. On a set of 100 borderline posts that your policy team has already judged, it agrees 85 times.
+
+The other 15 hurt. "Great ref tonight. Someone should really visit him after the game." gets allowed as sarcasm. A harm-reduction post about testing festival pills gets removed as drug promotion. You switch to the large model: 88 out of 100, at five times the price.
+
+## One sample is one opinion
+
+A model call is a sample. Run the same borderline post through the same prompt three times at a normal temperature and you can get REMOVE, REMOVE, ALLOW. Each answer on its own is a coin weighted 85 to 15. When you take one sample, you live with its luck.
+
+People handle this the same way. A hard moderation case goes to more than one reviewer. A risky pull request gets two approvals. You are not hoping each reviewer is perfect. You are betting that they will not all be wrong on the same post.
+
+## Run calls side by side, then combine
+
+[Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) describes **parallelization** in two forms:
+
+- **Sectioning:** split the task into independent parts and run each as its own call. One call answers the user while another screens the message for policy problems. A code review where one call checks security, one checks performance and one checks tests.
+- **Voting:** run the *same* task several times and combine the answers. Three moderation votes and a majority. Several prompts that each look for a vulnerability, with the code flagged if any of them finds one.
+
+<Flow steps={["Reported post", { label: "Voter 1", sub: "ALLOW / REMOVE" }, { label: "Voter 2", sub: "ALLOW / REMOVE" }, { label: "Voter 3", sub: "ALLOW / REMOVE" }, { label: "Majority", sub: "code, not a model", kind: "hl" }]} caption="Three independent calls run at the same time. Plain code counts the votes." />
+
+```python
+import asyncio
+async def moderate(post):
+    votes = await asyncio.gather(*[classify(post, prompt=p) for p in PROMPTS[:3]])
+    removes = sum(v == "REMOVE" for v in votes)
+    if 0 < removes < 3:
+        log_split(post, votes)          # split votes are your best review queue
+    return "REMOVE" if removes >= 2 else "ALLOW"
+```
+
+The combine step is code. Counting votes does not need a model, and code cannot be talked out of the count.
+
+## Let us check the math
+
+Assume each voter is right 85% of the time and the voters' mistakes are independent. Sim prices are illustrative: one medium-tier call on a post costs about $0.0065 and takes about 1.6 seconds.
+
+<Callout type="math" label="Let us check the math">
+**1 voter:** right 85%, wrong **15%**. $0.0065, 1.6 s.<br /><br />
+**3 voters, majority:** all 3 right: 0.85³ = 0.614. Exactly 2 right: 3 × 0.85² × 0.15 = 0.325.<br />
+Right **93.9%**, wrong **6.1%**. Cost 3 × $0.0065 = $0.0195. Parallel wait ≈ 1.6 s; one after another ≈ 4.8 s.<br /><br />
+**5 voters, majority:** 0.85⁵ + 5 × 0.85⁴ × 0.15 + 10 × 0.85³ × 0.15² = 0.444 + 0.392 + 0.138.<br />
+Right **97.3%**, wrong **2.7%**. Cost $0.0325.
+</Callout>
+
+Read it as a curve. Going from 1 to 3 voters cuts errors by 8.9 points for $0.013 more. Going from 3 to 5 cuts them by another 3.4 points for the same extra $0.013. Each pair of voters buys less than the last. The large model alone (88% at about $0.032) loses to 3 medium voters on both accuracy and price.
+
+## The tradeoff: you pay for every vote, and votes are not really independent
+
+Voting multiplies your cost by the number of voters, and the math above is a best case:
+
+- **Correlated errors.** Three copies of one model with one prompt tend to fail on the *same* sarcastic post. Real gains are smaller than 94%. Vary the prompts, mix model tiers, or use a different temperature per voter ([Taming Nondeterminism](/c/determinism/)).
+- **Cost scales linearly.** Vote only where a mistake is expensive. Let one cheap call clear the obvious posts and send only borderline ones to the panel.
+- **Thresholds are a policy choice.** Majority is one rule. For threats, you might remove if *any* voter says so and send splits to a person ([Human in the Loop](/c/hitl/)).
+
+Sectioning has its own catch: the parts must really be independent. If part 2 needs part 1's answer, you have a chain, not a fan-out. And parallel calls need a harness that can run them at once ([Parallel Tool Calls](/c/parallel_tools/)).
+
+## In the real world
+
+Self-consistency, sampling several reasoning paths and taking the majority answer, is a well-known way to lift accuracy on math and logic questions. Deep research agents use sectioning: they search several subtopics at once and merge the results, which you will build in part 3 of the deepresearch project.

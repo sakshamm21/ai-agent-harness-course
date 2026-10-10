@@ -1,0 +1,70 @@
+{
+  "id": "cost",
+  "title": "Cost and Latency Math",
+  "brief": "Your support agent handles 12,000 tickets a month and the budget is $500 a month, so each ticket can cost about $0.042. Customers expect an answer in under 8 seconds on average. The prototype runs on the large model: accurate, but do the math on the Metrics tab. Find the setup that keeps 90% of tickets right and fits both budgets.",
+  "palette": ["user", "model", "loop", "tool"],
+  "systemTokens": 2500,
+  "starter": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "large", "temperature": 0.3 }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 10 }, "position": { "x": 520, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "lookup_order", "description": "Gets an order's status, items, address and payments by order number. Use it first for any order question.", "latencyMs": 300 }, "position": { "x": 780, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "update_address", "description": "Changes the shipping address on an order that has not shipped yet.", "latencyMs": 300 }, "position": { "x": 780, "y": 120 } },
+      { "id": "t3", "type": "tool", "data": { "name": "list_payments", "description": "Lists every card charge and refund on a customer's account for the last 90 days.", "latencyMs": 300 }, "position": { "x": 780, "y": 240 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }
+    ]
+  },
+  "solution": {
+    "nodes": [
+      { "id": "u", "type": "user", "data": {}, "position": { "x": 0, "y": 120 } },
+      { "id": "m", "type": "model", "data": { "tier": "medium", "temperature": 0.3 }, "position": { "x": 260, "y": 120 } },
+      { "id": "l", "type": "loop", "data": { "maxTurns": 10 }, "position": { "x": 520, "y": 120 } },
+      { "id": "t1", "type": "tool", "data": { "name": "lookup_order", "description": "Gets an order's status, items, address and payments by order number. Use it first for any order question.", "latencyMs": 300 }, "position": { "x": 780, "y": 0 } },
+      { "id": "t2", "type": "tool", "data": { "name": "update_address", "description": "Changes the shipping address on an order that has not shipped yet.", "latencyMs": 300 }, "position": { "x": 780, "y": 120 } },
+      { "id": "t3", "type": "tool", "data": { "name": "list_payments", "description": "Lists every card charge and refund on a customer's account for the last 90 days.", "latencyMs": 300 }, "position": { "x": 780, "y": 240 } }
+    ],
+    "edges": [
+      { "source": "u", "target": "m" }, { "source": "m", "target": "l" },
+      { "source": "l", "target": "t1" }, { "source": "l", "target": "t2" }, { "source": "l", "target": "t3" }
+    ]
+  },
+  "tasks": [
+    { "id": "t1", "label": "Where is my order?", "prompt": "Order #48213 was due Tuesday. Where is it?", "needs": ["lookup_order"] },
+    { "id": "t2", "label": "Change the address", "prompt": "I moved. Please ship order #48977 to 12 Elm St instead.", "needs": ["lookup_order", "update_address"] },
+    { "id": "t3", "label": "Charged twice", "prompt": "I was charged $89 twice for order #47120. Which charge gets refunded?", "needs": ["lookup_order", "list_payments"], "tags": ["hard"] }
+  ],
+  "actions": {
+    "lookup": { "kind": "tool", "tool": "lookup_order", "text": "lookup_order(\"#48213\")", "tokens": 600 },
+    "update": { "kind": "tool", "tool": "update_address", "text": "update_address(\"#48977\", \"12 Elm St\")", "tokens": 200 },
+    "payments": { "kind": "tool", "tool": "list_payments", "text": "list_payments(customer=\"c_7781\")", "tokens": 900 },
+    "think": { "kind": "think", "text": "Two charges of $89: ch_91 on the 3rd and ch_94 on the 3rd, 40 seconds apart. ch_94 is the duplicate; ch_91 matches the order.", "tokens": 250, "outputTokens": 400 },
+    "right": { "kind": "answer", "correct": true, "text": "Done. Here is what I found and changed; let me know if anything looks off." },
+    "misread": { "kind": "answer", "correct": false, "text": "I've refunded charge ch_91. (That was the real order charge; the duplicate ch_94 is still there.)" },
+    "guess": { "kind": "answer", "correct": false, "text": "It should arrive soon. Sorry for the wait!" }
+  },
+  "policy": {
+    "base": { "lookup": 5, "update": 0, "payments": 0, "think": 0, "right": 0, "misread": 0, "guess": 0.1 },
+    "modifiers": [
+      { "when": { "all": [{ "called": "lookup_order" }, { "task": "t2" }] }, "shift": { "update": 5 } },
+      { "when": { "all": [{ "called": "lookup_order" }, { "tag": "hard" }] }, "shift": { "payments": 5 } },
+      { "when": { "state": "ready" }, "set": { "right": 8, "guess": 0, "lookup": 0.1 } },
+      { "when": { "all": [{ "state": "ready" }, { "tag": "hard" }, { "setting": "model.tier", "op": "==", "value": "small" }] }, "set": { "right": 2, "misread": 6 }, "note": "The small model often picks the wrong one of two near-identical charges." },
+      { "when": { "all": [{ "state": "ready" }, { "tag": "hard" }, { "setting": "model.tier", "op": "==", "value": "small" }, { "setting": "model.reasoning", "op": "==", "value": true }] }, "set": { "right": 5, "misread": 4, "think": 3 }, "note": "Reasoning helps the small model a little, not enough." }
+    ]
+  },
+  "goals": [
+    { "id": "success", "label": "At least 90% of tickets resolved correctly", "metric": "success_rate", "op": ">=", "value": 0.9 },
+    { "id": "cost", "label": "Average cost per ticket at most $0.042 ($500 / 12,000)", "metric": "avg_cost", "op": "<=", "value": 0.042 },
+    { "id": "latency", "label": "Average time per ticket 8 s or less", "metric": "avg_latency", "op": "<=", "value": 8 }
+  ],
+  "hints": [
+    "Run it and read the Metrics tab: cost per ticket times 12,000 tickets. How far over $500 is the large model?",
+    "Each tier is roughly 3 to 5 times the price of the one below it. Try every tier and compare success, cost and latency side by side.",
+    "Switch the Model tier to medium. The small model is cheaper still, but it refunds the wrong charge on the hard ticket."
+  ],
+  "explain": "Cost per task times tasks per month is the number that matters. The large model is about 5 times the price of medium for almost no gain on these tickets, while small saves money but breaks the hard case. Pick the cheapest tier that still meets the quality bar."
+}

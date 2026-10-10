@@ -1,0 +1,89 @@
+---
+title: "Design a Deep Research Agent"
+section: "cases"
+order: 53
+tagline: "A lead that plans, workers that search in parallel, a citation check, and a hard cost cap."
+realWorld: "Deep research modes in assistants, like Claude's Research feature"
+build:
+  type: "lab"
+  scenario: "case_research_agent"
+terms:
+  - term: "deep research agent"
+    def: "An agent that answers an open question by planning sub-questions, running many searches and page reads, and writing a cited report."
+  - term: "citation check"
+    def: "A pass after drafting that reads each claim next to the source it cites and flags or fixes claims the source does not support."
+  - term: "effort scaling"
+    def: "Rules in the lead's prompt that match the number of workers and tool calls to how hard the question is, so a simple fact does not get a ten-worker search."
+usedIn: ["deepresearch/1"]
+readingMinutes: 8
+updated: 2026-10-10
+quiz:
+  - q: "Why do workers get their own context instead of sharing the lead's?"
+    options: ["Each worker can read 100k tokens of pages and hand back a short summary, so the lead's context stays small and focused", "Separate contexts make each model call free", "The lead model cannot call tools"]
+    answer: 0
+    why: "Workers absorb the raw search results and page text. The lead only sees summaries, so it can plan and write without wading through every fetched page."
+  - q: "A report says a battery reaches 6,000 cycles and cites a page that says 4,000. Which step catches this?"
+    options: ["The web_search tool", "A citation check that reads each claim against its source", "A larger turn cap"]
+    answer: 1
+    why: "Search found the right page; the writer misquoted it. Only a pass that compares claim and source catches a citation that does not support its claim."
+  - q: "One question costs about $2.41 with orchestrator and workers. With a $4 per-question cap and 200 questions a day, what is the worst-case daily bill?"
+    options: ["$482", "$800", "Unbounded"]
+    answer: 1
+    why: "The cap bounds every question at $4, so 200 × $4 = $800 is the most a day can cost, even if a broad question would otherwise search forever."
+reading:
+  - title: "Anthropic: How we built our multi-agent research system"
+    url: "https://www.anthropic.com/engineering/multi-agent-research-system"
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## Step 1: open questions, many sources, and claims that must hold up
+
+A user asks: "Compare LFP and sodium-ion batteries for grid storage: cost per kWh, cycle life and supply risk. Cite every number." No single search answers that. The agent needs 4 or 5 sub-questions, a few searches each, a dozen pages read, and a report where every number links to a page that actually says it.
+
+The failure cost is quiet but real. A report with a wrong number and a confident citation is worse than no report, because the user trusts the citation and stops checking. Cost is the other risk: a broad question ("survey the vector database landscape") has no natural end, and an agent that keeps searching keeps billing.
+
+This lesson uses Anthropic's public write-up of its multi-agent research system. It describes a design *like* that one, based on public documentation; it is not how any product works internally.
+
+## Step 2: 32 tool calls, and where they land
+
+Say a typical question needs 4 sub-questions with 8 tool calls each (searches and page fetches): 32 calls. Each call adds about 3k tokens of results. Compare one agent doing all of it against a lead with 4 workers.
+
+<Callout type="math" label="Let us check the math">
+**One large agent, one context** (sim prices: large $15/$75 per million). Context starts at 2k and grows 3k per call: 32 × 2k + 3k × (0 + 1 + … + 31) = 64k + 1,488k ≈ **1.55M input tokens ≈ $23**. By the end its context is 95k tokens, mostly stale search results.<br />
+**Lead (large) + 4 workers (medium, $3/$15).** Each worker: 8 × 2k + 3k × (0 + … + 7) = 16k + 84k = 100k input. Four workers: 400k × $3/M = $1.20, plus 9.6k output × $15/M = $0.14.<br />
+Lead: 6 turns at about 6k = 36k × $15/M = $0.54, plus a 5k-token report × $75/M = $0.38.<br />
+Citation check (medium): 40k in, 2k out = $0.12 + $0.03.<br />
+Total: **about $2.41 per question**. At 200 questions a day, $482.<br />
+Latency at 2s per tool call and 1.6s per worker turn: sequential, 32 × 3.6s = **115s**. Four workers in parallel: 8 × 3.6s = 29s, plus about 20s of lead turns = **about 50s**.
+</Callout>
+
+Splitting the work makes it about ten times cheaper and twice as fast, because no single context carries every page. Anthropic's post reports the flip side: their multi-agent system used about 15 times more tokens than a chat, and they say it pays off only for questions valuable enough to justify that.
+
+## Step 3: two tools, read-only, and one rule
+
+Workers need `web_search` (titles, URLs, snippets) and `fetch_page` (the readable text of one URL). Both are read-only, so they can be allowed without prompts. The risk is the content: every fetched page is untrusted input that may contain instructions ([Prompt Injection](/c/prompt_injection/)). Workers return summaries with URLs, never raw instructions, and none of them gets a tool that sends data anywhere.
+
+## Step 4: orchestrator, parallel workers, and caps
+
+<Flow steps={["Question", { label: "Lead", sub: "plans sub-questions", kind: "hl" }, { label: "4 workers", sub: "search in parallel" }, { label: "Citation check", sub: "claim vs source" }, { label: "Report", kind: "good" }]} caption="Orchestrator-workers for research. Workers return summaries; the lead writes; a checker verifies citations." />
+
+This is the [orchestrator-workers](/c/orchestrator/) pattern. The lead plans the sub-questions and saves the plan, so it survives if its own context is compacted. Each worker is a [subagent](/c/subagents/) with a fresh context and one bounded job. Workers run [in parallel](/c/parallel_tools/), and each can issue several searches at once. Anthropic's post says running 3 to 5 subagents at once, each using several tools at once, cut research time by up to 90% for complex queries.
+
+Effort scaling goes in the lead's prompt: a simple fact gets one worker and a few calls, a comparison gets 2 to 4 workers, a broad survey gets more. Then the hard limits: a turn cap and a cost cap per question ([Stop Conditions and Budgets](/c/stop_conditions/)). When the cap hits, the agent stops and reports what it has, with a note that it is partial.
+
+## Step 5: check citations, and grade the end state
+
+Citation errors come from writing, not searching: the right page is found and then misquoted. So add a separate pass that reads each claim next to its source, the [evaluator-optimizer](/c/evaluator_optimizer/) pattern. Anthropic's system ends with a dedicated citation agent that matches each claim in the report to a specific location in the source documents.
+
+For evals, research has no single right path, so grade the final report against a rubric: factual accuracy, citation accuracy, completeness, source quality and tool efficiency, with an [LLM judge](/c/llm_judge/). Anthropic's post says they started with about 20 queries, and that small set was enough to see large effects from prompt changes.
+
+## Step 6: the tradeoff is thoroughness against cost and time
+
+More workers and more calls find more, but tokens grow faster than answer quality. Three ways to keep it in check:
+
+- **Scale effort to the question.** Most questions are not surveys. The lead's rules should spend little on simple ones.
+- **Cap and degrade gracefully.** A partial report at $4 beats a complete one at $40. Make the cap visible to the user.
+- **Use the big model only where it plans.** Separate contexts did most of the saving above. Running the workers on the medium tier instead of large saves another $5 or so per question ([Cost and Latency Math](/c/cost/)).
+
+In the lab, one large model does everything in sequence, misquotes sources and can search the broad question until its context overflows. Add workers, parallel calls, a citation judge and a budget. Then build it for real in [deepresearch](/p/deepresearch/).

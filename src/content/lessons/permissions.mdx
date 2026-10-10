@@ -1,0 +1,111 @@
+---
+title: "Permissions and Sandboxing"
+section: "harness"
+order: 19
+tagline: "Decide what runs without asking, what asks, and what never runs."
+realWorld: "Allow-lists for shell commands; containerized execution"
+build:
+  type: "lab"
+  scenario: "permissions"
+terms:
+  - term: "permission rule"
+    def: "A harness rule that matches a tool call (by tool name and often by arguments) and decides whether it runs: allow, ask a human first, or deny."
+  - term: "sandbox"
+    def: "An isolated environment, such as a container or an OS-level restriction, that limits which files, processes and network hosts a command can reach even when it is allowed to run."
+  - term: "approval fatigue"
+    def: "What happens when people are asked to approve too often: they stop reading the requests and approve everything, so the check stops protecting anything."
+usedIn: ["nanoharness/3", "nanoharness/4"]
+readingMinutes: 7
+updated: 2026-10-10
+quiz:
+  - q: "Your harness asks before every tool call, about 5 per task. What is the main risk?"
+    options: ["The model gets slower at choosing tools", "People start approving without reading, so the dangerous request gets approved too", "Ask rules cost extra tokens"]
+    answer: 1
+    why: "That is approval fatigue. A check that fires constantly gets rubber-stamped. Ask rarely, for the few calls that matter, and allow or deny the rest."
+  - q: "A task needs to push a branch, and the model sometimes tries git push --force to main. Which rule fits git_push?"
+    options: ["Allow", "Ask", "Deny"]
+    answer: 1
+    why: "Deny would break the tasks that need to ship. Allow lets the force push through. Ask lets a human approve the normal push and refuse the force push."
+  - q: "You allow Bash(npm test *) and deny Bash(rm *). Why add a sandbox as well?"
+    options: ["Sandboxes make commands faster", "Pattern rules can be sidestepped (find -delete, a script that deletes), so the sandbox bounds the damage when a rule misses", "Permission rules do not work without a sandbox"]
+    answer: 1
+    why: "A rule list decides what may be requested. A sandbox limits what an allowed command can actually reach. You want both layers."
+reading:
+  - title: "Claude Code overview"
+    url: "https://docs.anthropic.com/en/docs/claude-code/overview"
+  - title: "Claude Code docs: Configure permissions"
+    url: "https://code.claude.com/docs/en/permissions"
+  - title: "Anthropic: Building effective agents"
+    url: "https://www.anthropic.com/engineering/building-effective-agents"
+---
+
+## The build was broken, so it deleted the repo
+
+Your coding agent runs with every tool allowed, including a raw shell. On 120 runs of six ordinary tasks, 20 end in an incident. One is a fix for a stale build that ends with `rm -rf ./ build`: a stray space, and the command deletes the whole working tree instead of the build folder. Another is a hotfix whose push was rejected, so the agent force-pushed over `main` and erased three of your teammates' commits.
+
+The model was trying to help. In both cases it took the shortest path to "done".
+
+## The model picks actions. Only the harness can refuse them.
+
+A system prompt that says "never run destructive commands" is a request. The model follows it most of the time, and most of the time is not enough. Suppose a destructive command slips through on 1 shell call in 500, and your agents make 50 shell calls a day. Over a month that is 1,500 calls, and the chance of at least one disaster is 1 − (499/500)^1,500 ≈ **95%**.
+
+The model also cannot see consequences. `rm -rf ./ build` and `rm -rf ./build` differ by one character. Only code that inspects the call before it runs can catch it, and that code lives in the harness, between the model's request and the tool runtime ([What Is an Agent Harness](/c/harness/)).
+
+## Sort every call into allow, ask or deny
+
+A permission layer checks each tool call against rules and gives one of three answers:
+
+- **Allow**: cheap, reversible, and needed often. Reads, searches, running tests.
+- **Ask**: needed, but shared or hard to undo. A person approves this call or refuses it.
+- **Deny**: never needed for this job, or never acceptable. The call is blocked and the model is told why.
+
+Here are 12 calls from a coding agent, sorted:
+
+| Allow | Ask | Deny |
+|---|---|---|
+| `read_file src/...` | `npm install <pkg>` | `rm -rf` anything |
+| `grep` | `git push` (branch) | `git push --force` to main |
+| `run_tests` | `curl` to an outside host | read `~/.aws/credentials` |
+| `git status`, `git diff` | | |
+| `edit_file` in the repo | | |
+
+Real harnesses match on arguments, not only tool names. In Claude Code the rules live in `settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm run test *)", "Bash(git diff *)"],
+    "ask":   ["Bash(git push *)"],
+    "deny":  ["Bash(rm *)", "Read(./.env)"]
+  }
+}
+```
+
+<Flow steps={[{ label: "Model", sub: "requests a call" }, { label: "Rules", sub: "deny > ask > allow", kind: "hl" }, { label: "Human", sub: "only for ask" }, { label: "Sandbox", sub: "limits what it reaches", kind: "good" }, "Tool runs"]} caption="Two layers: rules decide whether a call runs; the sandbox limits what an allowed call can touch." />
+
+Rules have a gap. `find . -delete` is not `rm`, a command wrapped in `sh -c` may not match the pattern, and a script the agent wrote can delete files that no pattern ever sees. So the second layer is a **sandbox**: run commands in a container or under OS restrictions, with write access to the project folder only and no network by default. Rules decide what may run. The sandbox decides how much damage an allowed command can do.
+
+## Let us check the math
+
+The lab has six tasks with about 5 tool calls each, run 20 times: 120 task runs.
+
+<Callout type="math" label="Let us check the math">
+**Allow everything:** 20 incidents in 120 runs, a **17%** incident rate. Zero approvals.<br />
+**Ask for everything:** zero incidents, but about 5.1 approvals per task. At 30 seconds per approval, that is 2.5 minutes of a person's attention per task, on calls that were almost all `read_file` and `run_tests`.<br />
+**Allow reads, edits and tests; ask for git_push; deny bash:** zero incidents and about **0.46 approvals per task**. The only questions a person sees are about pushes, where the force push gets refused and the normal one goes through.<br />
+That is 11 times fewer interruptions than asking for everything, with the same safety.
+</Callout>
+
+Fewer asks is not only about saving time. When 1 request in 10 matters, people read them. When 1 in 50 matters, they click yes.
+
+## The tradeoff: tight rules block real work
+
+Every deny rule is a task the agent can no longer do on its own.
+
+- **Denials cause workarounds.** Deny `bash` and the agent cannot run the harmless `ls` either, or it tries to reach the same goal through another tool. Return a clear "blocked by policy, here is why" result so it can choose a better path ([Tool Errors](/c/tool_errors/)).
+- **Asks need a real human, quickly.** An agent waiting on approval at 2 a.m. is a stopped agent. Route only irreversible actions to a person, and make the request specific ([Human in the Loop](/c/hitl/)).
+- **Rules drift from reality.** New tools arrive unlisted. Default unknown tools to ask, and add a [pre-tool hook](/c/hooks/) for checks that need code, like "no writes to `.env`" or [guardrails](/c/guardrails/) for content.
+
+## In the real world
+
+Claude Code has permission modes (a default mode that asks on first use of each tool, one that accepts file edits automatically, a plan mode that only explores, an auto mode where a classifier reviews risky actions, and a mode that skips prompts) plus allow, ask and deny rules, evaluated deny first, then ask, then allow. Its own docs warn that a Bash deny rule does not match a program called inside `sh -c`, and point to the sandbox for limits that must hold. It can also run shell commands in a sandbox that limits file and network access. Codex CLI sandboxes commands with OS features (Seatbelt on macOS, Landlock and seccomp on Linux) and turns network access off by default. OpenHands runs every action inside a Docker container. All three apply the same two layers you build in the lab.
