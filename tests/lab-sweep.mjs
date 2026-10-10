@@ -14,14 +14,14 @@ for (const s of slugs) {
   let note = '';
   if (await page.locator('.lab-grid').count()) {
     await page.getByRole('button', { name: /Run/ }).first().click();
-    await page.waitForTimeout(300);
+    await page.waitForSelector('.lab[data-state="done"]', { timeout: 10000 });
     const fail = await page.locator('.goals li.fail').count();
     await page.getByRole('button', { name: /Hint/ }).click();
     await page.getByRole('button', { name: /Hint/ }).click();
     await page.getByRole('button', { name: 'Show solution' }).click();
     await page.waitForTimeout(150);
     await page.getByRole('button', { name: /Run/ }).first().click();
-    await page.waitForTimeout(400);
+    await page.waitForSelector('.lab[data-state="done"]', { timeout: 10000 });
     const passed = await page.locator('.passed').isVisible();
     note = `lab starterFails=${fail > 0} solutionPasses=${passed}`;
     if (!(fail > 0 && passed)) bad++;

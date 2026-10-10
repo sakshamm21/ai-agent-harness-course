@@ -1,0 +1,29 @@
+---
+/**
+ * Horizontal bars for numbers you want to compare: cost, latency, success rate, tokens.
+ * <Bars caption="..." unit="s" bars={[
+ *   { label: "One at a time", value: 9.2, kind: "bad" },
+ *   { label: "In parallel", value: 3.1, kind: "good", note: "3× faster" },
+ * ]} />
+ * `unit` is appended to each value ("$" and "£" are put in front). `max` fixes the scale (default: the largest value).
+ * `note` replaces the printed value. kind: "hl" | "good" | "bad".
+ */
+interface Bar { label: string; value: number; kind?: 'hl' | 'good' | 'bad'; note?: string }
+interface Props { bars: Bar[]; caption?: string; unit?: string; max?: number; vertical?: boolean }
+const { bars, caption, unit = '', max } = Astro.props;
+const top = max ?? Math.max(...bars.map((b) => b.value), 1e-9);
+const fmtNum = (v: number) => (Math.abs(v) >= 1000 ? v.toLocaleString('en-US') : String(Math.round(v * 1000) / 1000));
+const fmt = (v: number) => (unit === '$' || unit === '£' ? `${unit}${fmtNum(v)}` : unit === '%' ? `${fmtNum(v)}%` : `${fmtNum(v)}${unit ? ` ${unit}` : ''}`);
+---
+<figure class="diagram bars">
+  <div class="bar-list" role="img" aria-label={caption ?? bars.map((b) => `${b.label} ${fmt(b.value)}`).join(', ')}>
+    {bars.map((b, i) => (
+      <div class={`bar-row ${b.kind ?? ''}`} style={`--i:${i}`}>
+        <span class="bar-label">{b.label}</span>
+        <span class="bar-track"><span class="bar-fill" style={`--w:${Math.max(0.5, (b.value / top) * 100).toFixed(2)}%`}></span></span>
+        <span class="bar-val">{b.note ?? fmt(b.value)}</span>
+      </div>
+    ))}
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

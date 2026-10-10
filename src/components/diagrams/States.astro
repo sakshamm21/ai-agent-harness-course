@@ -1,0 +1,130 @@
+---
+/**
+ * A state machine: the states an agent run (or a tool call, a session, an approval) moves through.
+ * States sit in a row; forward transitions arc above, backward ones (retries, loops) arc below.
+ * When it plays, a token walks `path` state by state and each state lights up while the token is there.
+ * <States caption="..." states={[
+ *   { id: "run", label: "Running" }, { id: "wait", label: "Awaiting approval", kind: "hl" },
+ *   { id: "done", label: "Done", kind: "good" }, { id: "deny", label: "Denied", kind: "bad" },
+ * ]} edges={[
+ *   { from: "run", to: "wait", label: "risky tool" }, { from: "wait", to: "run", label: "approved" },
+ *   { from: "wait", to: "deny", label: "rejected" }, { from: "run", to: "done", label: "end_turn" },
+ * ]} path={["run", "wait", "run", "done"]} />
+ */
+import { routePath, sample, windowsToKeys, wrap, uid, type Pt, type Seg } from './geom';
+interface S { id: string; label: string; sub?: string; kind?: 'hl' | 'good' | 'bad' }
+interface E { from: string; to: string; label?: string }
+interface Props { states: S[]; edges: E[]; path?: string[]; caption?: string; vertical?: boolean }
+const { states, edges, caption, vertical = false } = Astro.props;
+const path = Astro.props.path ?? [];
+const n = states.length;
+// Geometry is worked out in "row space": u runs along the row of states, v across it. A horizontal
+// figure maps (u, v) to (x, y); the vertical one (used on the lesson stage) maps it to (v, u), so states
+// stack top to bottom, forward transitions arc on the right and backward ones on the left.
+const A = vertical ? 50 : n <= 3 ? 136 : n === 4 ? 116 : 100; // box size along the row
+const B = vertical ? 180 : 50;                                 // box size across the row
+const GAP = vertical ? 62 : n <= 4 ? 58 : 46, PAD = 6;
+const idx = new Map(states.map((s, i) => [s.id, i]));
+const spans = edges.map((e) => Math.abs((idx.get(e.to) ?? 0) - (idx.get(e.from) ?? 0)));
+const maxLift = 26 + 22 * Math.max(1, ...spans);
+const LEN = PAD * 2 + n * A + (n - 1) * GAP;
+const CROSS = vertical ? B + 2 * (maxLift + 96) : B + 2 * (maxLift + 22);
+const CV = CROSS / 2;
+const width = vertical ? CROSS : LEN, height = vertical ? LEN : CROSS;
+const P = (u: number, v: number): Pt => (vertical ? { x: v, y: u } : { x: u, y: v });
+const cu = (i: number) => PAD + i * (A + GAP) + A / 2;
+const box = (i: number) => (vertical ? { x: CV - B / 2, y: cu(i) - A / 2, w: B, h: A } : { x: cu(i) - A / 2, y: CV - B / 2, w: A, h: B });
+const centre = (i: number) => P(cu(i), CV);
+const has = (a: string, b: string) => edges.some((e) => e.from === a && e.to === b);
+
+interface Geo { start: Pt; c: Pt; end: Pt; mid: Pt; straight: boolean; side: -1 | 0 | 1 }
+function geo(e: E): Geo {
+  const a = idx.get(e.from)!, b = idx.get(e.to)!;
+  const out = vertical ? 1 : -1; // which side forward arcs bulge to
+  if (a === b) { // self loop on the forward side of the box
+    const v = CV + out * (B / 2);
+    return { start: P(cu(a) - 12, v), c: P(cu(a), v + out * 56), end: P(cu(a) + 12, v), mid: P(cu(a), v + out * 30), straight: false, side: out as 1 | -1 };
+  }
+  const fwd = b > a, span = Math.abs(b - a);
+  if (span === 1 && !has(e.to, e.from)) { // neighbours with no way back: a straight arrow
+    const s0 = cu(a) + (fwd ? A / 2 : -A / 2), s1 = cu(b) + (fwd ? -A / 2 : A / 2);
+    return { start: P(s0, CV), c: P((s0 + s1) / 2, CV), end: P(s1, CV), mid: P((s0 + s1) / 2, CV), straight: true, side: 0 };
+  }
+  const side = (fwd ? out : -out) as 1 | -1;
+  const v = CV + side * (B / 2);
+  const lift = side * (26 + 22 * span);
+  const s0 = cu(a) + (fwd ? 10 : -10), s1 = cu(b) + (fwd ? -10 : 10);
+  const c = P((s0 + s1) / 2, v + lift);
+  const start = P(s0, v), end = P(s1, v);
+  return { start, c, end, mid: { x: 0.25 * start.x + 0.5 * c.x + 0.25 * end.x, y: 0.25 * start.y + 0.5 * c.y + 0.25 * end.y }, straight: false, side };
+}
+/** Where an edge label goes, and how it is anchored. */
+function labelAt(g: Geo): { x: number; y: number; anchor: string } {
+  if (vertical) return g.side === 0 ? { x: g.mid.x + 10, y: g.mid.y + 4, anchor: 'start' } : { x: g.mid.x + g.side * 6, y: g.mid.y + 4, anchor: g.side > 0 ? 'start' : 'end' };
+  return g.side === 0 ? { x: g.mid.x, y: g.mid.y - 8, anchor: 'middle' } : { x: g.mid.x, y: g.mid.y + (g.side < 0 ? -4 : 13), anchor: 'middle' };
+}
+const id = uid('st', [states, edges]);
+
+// The token's route: from the first state's centre, along each hop's edge, into the next state's centre.
+const segs: Seg[] = [];
+const arrive: number[] = []; // segment index at which each path state is reached
+for (let k = 1; k < path.length; k++) {
+  const e = edges.find((x) => x.from === path[k - 1] && x.to === path[k]) ?? { from: path[k - 1], to: path[k] };
+  const g = geo(e);
+  segs.push({ kind: 'L', to: g.start }, g.straight ? { kind: 'L', to: g.end } : { kind: 'Q', c: g.c, to: g.end }, { kind: 'L', to: centre(idx.get(path[k])!) });
+  arrive.push(segs.length);
+}
+const start = path.length ? centre(idx.get(path[0])!) : { x: 0, y: 0 };
+const pts = path.length > 1 ? sample(start, segs) : [];
+const lenAt = (segCount: number) => (segCount === 0 ? 0 : pts.filter((p) => p.seg < segCount).at(-1)?.d ?? 0);
+const total = pts.at(-1)?.d || 1;
+// Timing: dwell at each state, then move; moves take time in proportion to their length.
+const DWELL = 0.55, SPEED = 260; // seconds per state, px per second
+const hops = path.length - 1;
+const moveT = (k: number) => (lenAt(arrive[k]) - lenAt(k ? arrive[k - 1] : 0)) / SPEED;
+const T = hops > 0 ? DWELL * (hops + 1) + Array.from({ length: hops }, (_, k) => moveT(k)).reduce((a, b) => a + b, 0) : 1;
+const keyTimes: number[] = [0], keyPoints: number[] = [0];
+const dwellWindows: [number, number, string][] = [];
+let tt = 0;
+for (let k = 0; k <= hops; k++) {
+  dwellWindows.push([tt / T, (tt + DWELL) / T, path[k]]);
+  tt += DWELL; keyTimes.push(tt / T); keyPoints.push(k ? lenAt(arrive[k - 1]) / total : 0);
+  if (k < hops) { tt += moveT(k); keyTimes.push(tt / T); keyPoints.push(lenAt(arrive[k]) / total); }
+}
+const fix = (a: number[]) => a.map((v) => Math.min(1, Math.max(0, v)).toFixed(4)).join(';');
+const glow = (sid: string) => windowsToKeys((t) => dwellWindows.some(([a, b, s]) => s === sid && t >= a && t < b));
+---
+<figure class={`diagram states${vertical ? ' vertical' : ''}`}>
+  <svg viewBox={`0 0 ${width} ${height}`} width={width} role="img" aria-label={caption ?? `States: ${states.map((s) => s.label).join(', ')}`}>
+    <defs><marker id={id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrow" /></marker></defs>
+    {edges.map((e, i) => {
+      const g = geo(e);
+      return (
+        <g class="dg-node" style={`--i:${n + i * 0.5}`}>
+          <path class="dg-line dg-edge" pathLength="1" d={g.straight ? `M ${g.start.x} ${g.start.y} L ${g.end.x} ${g.end.y}` : `M ${g.start.x} ${g.start.y} Q ${g.c.x} ${g.c.y} ${g.end.x} ${g.end.y}`} marker-end={`url(#${id})`} />
+          {e.label && (() => { const l = labelAt(g); return <text class="dg-sub dg-halo" x={l.x} y={l.y} text-anchor={l.anchor}>{e.label}</text>; })()}
+        </g>
+      );
+    })}
+    {hops > 0 && (
+      <circle class="dg-packet" r="6" cx="0" cy="0">
+        <animateMotion dur={`${T.toFixed(2)}s`} repeatCount="indefinite" path={routePath(start, segs)} calcMode="linear" keyTimes={fix(keyTimes)} keyPoints={fix(keyPoints)} />
+      </circle>
+    )}
+    {states.map((s, i) => {
+      const b = box(i);
+      const ls = wrap(s.label, Math.floor(b.w / 8));
+      const m = centre(i);
+      const y0 = m.y - (s.sub ? 7 : 0) - ((ls.length - 1) * 15) / 2 + 5;
+      return (
+        <g class="dg-node" style={`--i:${i}`}>
+          <rect class={`dg-box ${s.kind ?? ''}`} x={b.x} y={b.y} width={b.w} height={b.h} rx={Math.min(b.w, b.h) / 2} />
+          {hops > 0 && path.includes(s.id) && <rect class="dg-glow" x={b.x} y={b.y} width={b.w} height={b.h} rx={Math.min(b.w, b.h) / 2} opacity="0"><animate attributeName="opacity" dur={`${T.toFixed(2)}s`} repeatCount="indefinite" calcMode="discrete" {...glow(s.id)} /></rect>}
+          {ls.map((l, k) => <text class="dg-text" x={m.x} y={y0 + k * 15} text-anchor="middle">{l}</text>)}
+          {s.sub && <text class="dg-sub" x={m.x} y={m.y + 16} text-anchor="middle">{s.sub}</text>}
+        </g>
+      );
+    })}
+  </svg>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

@@ -11,7 +11,8 @@ function repoUrl() {
 export const SITE = {
   name: 'Free Agent Harness',
   tagline: 'Learn AI agents by building them.',
-  author: 'Sak',
+  author: 'Saksham Malhotra',
+  authorUrl: 'https://github.com/sakshamm21',
   // Follows the repo automatically on Vercel and GitHub Actions builds, so a rename needs no code change.
   repo: repoUrl(),
 };

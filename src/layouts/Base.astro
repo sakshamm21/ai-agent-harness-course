@@ -1,8 +1,10 @@
 ---
 import '../styles/global.css';
+import '../styles/lesson.css';
 import { SITE, href } from '../lib/site';
-interface Props { title: string; description?: string; wide?: boolean; noindex?: boolean }
-const { title, description = 'A free, hands-on course for learning AI agents and agent harnesses, from the first API call to shipped projects.', wide = false, noindex = false } = Astro.props;
+interface Props { title: string; description?: string; wide?: boolean; lesson?: boolean; noindex?: boolean }
+const { title, description = 'A free, hands-on course for learning AI agents and agent harnesses, from the first API call to shipped projects.', wide = false, lesson = false, noindex = false } = Astro.props;
+const wrap = lesson ? 'wrap-lesson' : wide ? 'wrap-wide' : 'wrap';
 const fullTitle = title === SITE.name ? `${SITE.name}: ${SITE.tagline}` : `${title} · ${SITE.name}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 ---
@@ -30,7 +32,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   <body>
     <a class="sr-only" href="#main">Skip to content</a>
     <header class="site-header">
-      <div class={`${wide ? 'wrap-wide' : 'wrap'} bar`}>
+      <div class={`${wrap} bar`}>
         <a class="brand" href={href('/')}>
           <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#lg)"/><path d="M8 8.5h8M8 12h5M8 15.5h8" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round"/></svg>
           {SITE.name}
@@ -44,12 +46,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
         </nav>
       </div>
     </header>
-    <main id="main" class={wide ? 'wrap-wide' : 'wrap'}>
+    <main id="main" class={wrap}>
       <slot />
     </main>
     <footer class="site-footer">
-      <div class={`${wide ? 'wrap-wide' : 'wrap'} cols`}>
-        <div>{SITE.name}. Free, no login, no tracking cookies.<br />Content CC BY-NC-SA 4.0 · Code MIT</div>
+      <div class={`${wrap} cols`}>
+        <div>{SITE.name}. Free, no login, no tracking cookies.<br />Content CC BY-NC-SA 4.0 · Code MIT<br /><span class="credit">Created by <a href={SITE.authorUrl}>{SITE.author}</a></span></div>
         <nav aria-label="Footer">
           <a href={href('/about/')}>About</a>
           <a href={href('/progress/')}>Your progress</a>

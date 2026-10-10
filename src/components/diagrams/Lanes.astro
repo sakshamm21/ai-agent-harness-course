@@ -1,0 +1,51 @@
+---
+/**
+ * A timeline (Gantt) of work over time: sequential vs parallel calls, streaming, retries, timeouts.
+ * When it plays, a playhead sweeps left to right and each bar fills in as the playhead reaches it.
+ * <Lanes caption="..." unit="s" total={9} lanes={[
+ *   { heading: "One at a time" },
+ *   { label: "weather", start: 0, end: 3 },
+ *   { label: "flights", start: 3, end: 6 },
+ *   { heading: "In parallel" },
+ *   { label: "weather", start: 0, end: 3, kind: "good" },
+ *   { label: "flights", start: 0, end: 3, kind: "good", note: "done at 3 s" },
+ * ]} marks={[{ at: 3, label: "parallel done" }]} />
+ * kind: "hl" | "good" | "bad". `note` prints after the bar. `marks` draws labelled vertical lines.
+ */
+interface Lane { label?: string; heading?: string; start?: number; end?: number; kind?: 'hl' | 'good' | 'bad'; note?: string }
+interface Mark { at: number; label: string }
+interface Props { lanes: Lane[]; total?: number; unit?: string; caption?: string; marks?: Mark[]; vertical?: boolean }
+const { lanes, unit = 's', caption, marks = [] } = Astro.props;
+const total = Astro.props.total ?? Math.max(...lanes.map((l) => l.end ?? 0), 1);
+const pct = (v: number) => `${((v / total) * 100).toFixed(2)}%`;
+const SWEEP = 2.6; // seconds for the playhead to cross the whole timeline
+const t = (v: number) => `${((v / total) * SWEEP).toFixed(3)}s`;
+const ticks = [0, total / 2, total];
+const fmt = (v: number) => `${Math.round(v * 10) / 10}${unit === '%' ? '%' : ` ${unit}`}`;
+---
+<figure class="diagram lanes" style={`--sweep:${SWEEP}s`}>
+  <div class="ln-grid" role="img" aria-label={caption ?? 'Timeline'}>
+    {lanes.map((l) => l.heading ? (
+      <div class="ln-heading">{l.heading}</div>
+    ) : (
+      <div class={`ln-row ${l.kind ?? ''}`}>
+        <span class="ln-label">{l.label}</span>
+        <span class="ln-track">
+          <span class="ln-bar" style={`left:${pct(l.start ?? 0)};width:${pct((l.end ?? 0) - (l.start ?? 0))};--d:${t(l.start ?? 0)};--len:${t((l.end ?? 0) - (l.start ?? 0))}`}></span>
+          {l.note && <span class="ln-note" style={`left:calc(${pct(l.end ?? 0)} + 6px);--d:${t(l.end ?? 0)}`}>{l.note}</span>}
+        </span>
+      </div>
+    ))}
+    <div class="ln-axis">
+      <span class="ln-label"></span>
+      <span class="ln-track">
+        {ticks.map((v) => <span class="ln-tick" style={`left:${pct(v)}`}>{fmt(v)}</span>)}
+      </span>
+    </div>
+    <div class="ln-overlay" aria-hidden="true">
+      {marks.map((m) => <span class="ln-mark" style={`left:${pct(m.at)};--d:${t(m.at)}`}><b>{m.label}</b></span>)}
+      <span class="ln-head"></span>
+    </div>
+  </div>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

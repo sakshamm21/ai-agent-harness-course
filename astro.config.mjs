@@ -2,6 +2,7 @@ import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import react from '@astrojs/react';
 import sitemap from '@astrojs/sitemap';
+import rehypeScrolly from './src/lib/rehype-scrolly.mjs';
 
 // SITE_URL: the public URL (Vercel's production URL is picked up automatically; set it for a custom domain).
 // BASE_PATH: only if the site is ever served under a sub-path.
@@ -27,5 +28,5 @@ export default defineConfig({
   base,
   trailingSlash: 'always',
   integrations: [mdx(), react(), sitemap()],
-  markdown: { rehypePlugins: [rehypeBaseLinks], shikiConfig: { theme: 'github-dark-dimmed' } },
+  markdown: { rehypePlugins: [rehypeBaseLinks, rehypeScrolly], shikiConfig: { themes: { light: 'github-light', dark: 'github-dark-dimmed' }, defaultColor: false } },
 });

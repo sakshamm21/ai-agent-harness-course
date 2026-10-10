@@ -1,0 +1,39 @@
+---
+/**
+ * A message / trace timeline: what actually flows through the agent, one event at a time.
+ * <Trace caption="..." steps={[
+ *   { role: "user", text: "Fix page 2 of /orders" },
+ *   { role: "model", text: 'read_file("app/orders.py")', tag: "tool_use", meta: "3k tok" },
+ *   { role: "tool", text: "def page(n): ...", meta: "+2.1k tok" },
+ *   { role: "error", text: "FileNotFoundError", bad: true },
+ * ]} />
+ * role: user | model | tool | result | system | error | human | note.
+ * `tag` is a small label (stop reason, tool name); `meta` sits on the right (tokens, ms, $); `bad` / `good` tint the event.
+ */
+type Role = 'user' | 'model' | 'tool' | 'result' | 'system' | 'error' | 'human' | 'note';
+interface Step { role: Role; text: string; tag?: string; meta?: string; bad?: boolean; good?: boolean }
+interface Props { steps: Step[]; caption?: string; vertical?: boolean }
+const { steps, caption } = Astro.props;
+const WHO: Record<Role, [string, string]> = {
+  user: ['U', 'User'], model: ['M', 'Model'], tool: ['⚙', 'Tool'], result: ['✓', 'Result'],
+  system: ['S', 'System'], error: ['!', 'Error'], human: ['H', 'Human'], note: ['·', 'Harness'],
+};
+---
+<figure class="diagram trace">
+  <ol class="tr-list" aria-label={caption ?? 'Trace'}>
+    {steps.map((s, i) => (
+      <li class={`tr-item r-${s.role}${s.bad ? ' bad' : ''}${s.good ? ' good' : ''}`} style={`--i:${i}`}>
+        <span class="tr-av" aria-hidden="true">{WHO[s.role][0]}</span>
+        <div class="tr-body">
+          <div class="tr-head">
+            <span class="tr-who">{WHO[s.role][1]}</span>
+            {s.tag && <span class="tr-tag">{s.tag}</span>}
+            {s.meta && <span class="tr-meta">{s.meta}</span>}
+          </div>
+          <div class="tr-text">{s.text}</div>
+        </div>
+      </li>
+    ))}
+  </ol>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

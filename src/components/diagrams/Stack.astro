@@ -2,33 +2,67 @@
 /**
  * A stacked bar of context blocks, sized by tokens, with an optional window budget line.
  * <Stack blocks={[{label: "System", tokens: 2000}, {label: "History", tokens: 9000, kind: "bad"}]} budget={8000} caption="..." />
+ * `vertical` draws the window as a column that fills from the bottom up (used by the lesson stage).
  */
 interface Block { label: string; tokens: number; kind?: 'hl' | 'bad' | 'good' }
-interface Props { blocks: Block[]; budget?: number; caption?: string; unit?: string }
-const { blocks, budget, caption, unit = 'tokens' } = Astro.props;
+interface Props { blocks: Block[]; budget?: number; caption?: string; unit?: string; vertical?: boolean }
+const { blocks, budget, caption, unit = 'tokens', vertical = false } = Astro.props;
 const total = blocks.reduce((s, b) => s + b.tokens, 0);
 const scaleMax = Math.max(total, budget ?? 0) * 1.05;
 const W = 640, BAR = 44;
 const fmt = (n: number) => n.toLocaleString('en-US');
 let acc = 0;
 const segs = blocks.map((b) => { const s = { ...b, x: (acc / scaleMax) * W, w: (b.tokens / scaleMax) * W }; acc += b.tokens; return s; });
+
+// Vertical geometry: a column COL wide and HT tall; labels sit to its right.
+const COL = 120, HT = 400, TOP = 14, VW = 400;
+const vy = (tokens: number) => TOP + HT - (tokens / scaleMax) * HT;
+let vacc = 0;
+const vsegs = blocks.map((b) => { const y1 = vy(vacc); vacc += b.tokens; const y0 = vy(vacc); return { ...b, y: y0, h: y1 - y0, ly: y0 + (y1 - y0) / 2 }; });
+// Keep labels at least 32px apart: walk top to bottom (last block is on top), then pull back up if they overflow.
+for (let k = vsegs.length - 2; k >= 0; k--) vsegs[k].ly = Math.max(vsegs[k].ly, vsegs[k + 1].ly + 32);
+for (let k = 0; k < vsegs.length; k++) vsegs[k].ly = Math.min(vsegs[k].ly, TOP + HT - 8 - k * 32);
 ---
-<figure class="diagram">
-  <svg viewBox={`0 0 ${W + 8} 112`} width={W + 8} role="img" aria-label={caption ?? `Context: ${blocks.map((b) => `${b.label} ${b.tokens}`).join(', ')}`}>
-    {segs.map((s) => (
-      <g>
-        <rect class={`dg-box ${s.kind ?? ''}`} x={4 + s.x} y={14} width={Math.max(2, s.w - 2)} height={BAR} rx={6} />
-        {s.w > 54 && <text class="dg-text" x={4 + s.x + s.w / 2} y={34} text-anchor="middle" style="font-size:12px">{s.label}</text>}
-        {s.w > 54 && <text class="dg-sub" x={4 + s.x + s.w / 2} y={50} text-anchor="middle">{fmt(s.tokens)}</text>}
-      </g>
-    ))}
-    {budget && (
-      <g>
-        <line x1={4 + (budget / scaleMax) * W} x2={4 + (budget / scaleMax) * W} y1={4} y2={70} stroke="var(--bad)" stroke-width="2" stroke-dasharray="4 3" />
-        <text class="dg-sub" x={Math.min(W - 60, 4 + (budget / scaleMax) * W)} y={86} text-anchor="middle" style="fill:var(--bad)">window {fmt(budget)}</text>
-      </g>
-    )}
-    <text class="dg-sub" x={4} y={104}>Total {fmt(total)} {unit}</text>
-  </svg>
-  {caption && <figcaption>{caption}</figcaption>}
-</figure>
+{vertical ? (
+  <figure class="diagram vertical">
+    <svg viewBox={`0 0 ${VW} ${TOP + HT + 34}`} width={VW} role="img" aria-label={caption ?? `Context: ${blocks.map((b) => `${b.label} ${b.tokens}`).join(', ')}`}>
+      <rect class="dg-well" x={40} y={TOP} width={COL} height={HT} rx={10} />
+      {vsegs.map((s, i) => (
+        <g class="dg-seg dg-seg-v" style={`--i:${i}`}>
+          <rect class={`dg-box ${s.kind ?? ''}`} x={42} y={s.y + 1} width={COL - 4} height={Math.max(2, s.h - 2)} rx={6} />
+          <path class="dg-line" d={`M ${40 + COL + 4} ${s.y + s.h / 2} H ${40 + COL + 12} L ${40 + COL + 22} ${s.ly - 4}`} />
+          <text class="dg-text" x={40 + COL + 28} y={s.ly - 1} style="font-size:13px">{s.label}</text>
+          <text class="dg-sub" x={40 + COL + 28} y={s.ly + 13}>{`${fmt(s.tokens)} ${unit}`}</text>
+        </g>
+      ))}
+      {budget && (
+        <g class="dg-budget" style={`--i:${vsegs.length}`}>
+          <line x1={30} x2={VW - 8} y1={vy(budget)} y2={vy(budget)} stroke="var(--bad)" stroke-width="2" stroke-dasharray="5 4" />
+          <text class="dg-sub" x={VW - 8} y={vy(budget) - 7} text-anchor="end" style="fill:var(--bad)">window {fmt(budget)}</text>
+        </g>
+      )}
+      <text class="dg-sub" x={40 + COL / 2} y={TOP + HT + 22} text-anchor="middle">Total {fmt(total)}</text>
+    </svg>
+    {caption && <figcaption>{caption}</figcaption>}
+  </figure>
+) : (
+  <figure class="diagram">
+    <svg viewBox={`0 0 ${W + 8} 112`} width={W + 8} role="img" aria-label={caption ?? `Context: ${blocks.map((b) => `${b.label} ${b.tokens}`).join(', ')}`}>
+      {segs.map((s, i) => (
+        <g class="dg-seg" style={`--i:${i}`}>
+          <rect class={`dg-box ${s.kind ?? ''}`} x={4 + s.x} y={14} width={Math.max(2, s.w - 2)} height={BAR} rx={6} />
+          {s.w > 54 && <text class="dg-text" x={4 + s.x + s.w / 2} y={34} text-anchor="middle" style="font-size:12px">{s.label}</text>}
+          {s.w > 54 && <text class="dg-sub" x={4 + s.x + s.w / 2} y={50} text-anchor="middle">{fmt(s.tokens)}</text>}
+        </g>
+      ))}
+      {budget && (
+        <g class="dg-budget" style={`--i:${segs.length}`}>
+          <line x1={4 + (budget / scaleMax) * W} x2={4 + (budget / scaleMax) * W} y1={4} y2={70} stroke="var(--bad)" stroke-width="2" stroke-dasharray="4 3" />
+          <text class="dg-sub" x={Math.min(W - 60, 4 + (budget / scaleMax) * W)} y={86} text-anchor="middle" style="fill:var(--bad)">window {fmt(budget)}</text>
+        </g>
+      )}
+      <text class="dg-sub" x={4} y={104}>Total {fmt(total)} {unit}</text>
+    </svg>
+    {caption && <figcaption>{caption}</figcaption>}
+  </figure>
+)}

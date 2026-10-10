@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import '../lab/lab.css';
 import './codelab.css';
 import type { CodeLabDef } from '../../lib/codelabs';
-import { AGENTKIT } from '../../lib/codelabs';
+import { AGENTKIT } from '../../lib/agentkit';
 
-interface Props { lab: CodeLabDef; lessonSlug: string; lessonTitle: string; nextUrl?: string; nextTitle?: string; base: string }
+interface Props { lab: CodeLabDef; lessonSlug: string; lessonTitle: string; nextUrl?: string; nextTitle?: string; base: string; children?: React.ReactNode }
 
 const PYODIDE_VERSION = '0.27.2';
 // Pyodide is served from this site (scripts/copy-pyodide.mjs copies it into public/pyodide/ on npm install),
@@ -87,7 +87,7 @@ function store(kind: 'local' | 'session', key: string, value?: string | null) {
   return null;
 }
 
-export default function CodeLab({ lab, lessonSlug, lessonTitle, nextUrl, nextTitle, base }: Props) {
+export default function CodeLab({ lab, lessonSlug, lessonTitle, nextUrl, nextTitle, base, children }: Props) {
   const codeKey = `fah-code-${lab.id}`;
   const [code, setCode] = useState<string>(() => store('local', codeKey) ?? lab.starter);
   const [status, setStatus] = useState<'idle' | 'loading' | 'running'>('idle');
@@ -99,6 +99,13 @@ export default function CodeLab({ lab, lessonSlug, lessonTitle, nextUrl, nextTit
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { store('local', codeKey, code); }, [code, codeKey]);
+  // Figures in the instructions play their entrance animation when they scroll into view.
+  useEffect(() => {
+    if (!('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('play'); io.unobserve(e.target); } }), { threshold: 0.3 });
+    document.querySelectorAll('.cl-instructions figure.diagram').forEach((f) => io.observe(f));
+    return () => io.disconnect();
+  }, []);
   useEffect(() => { store('session', 'fah-anthropic-key', key || null); }, [key]);
 
   const exec = async (withCheck: boolean) => {
@@ -154,7 +161,9 @@ export default function CodeLab({ lab, lessonSlug, lessonTitle, nextUrl, nextTit
         </div>
       )}
       <div className="cl-grid">
-        <section className="cl-instructions prose" dangerouslySetInnerHTML={{ __html: lab.html }} />
+        {lab.html
+          ? <section className="cl-instructions prose" dangerouslySetInnerHTML={{ __html: lab.html }} />
+          : <section className="cl-instructions prose">{children}</section>}
         <section className="cl-work">
           <div className="cl-editor">
             <div className="cl-bar">

@@ -4,7 +4,14 @@ import Base from '../../../layouts/Base.astro';
 import Callout from '../../../components/Callout.astro';
 import Flow from '../../../components/diagrams/Flow.astro';
 import Stack from '../../../components/diagrams/Stack.astro';
+import Trace from '../../../components/diagrams/Trace.astro';
+import Compare from '../../../components/diagrams/Compare.astro';
+import Bars from '../../../components/diagrams/Bars.astro';
+import Lanes from '../../../components/diagrams/Lanes.astro';
+import Fan from '../../../components/diagrams/Fan.astro';
+import States from '../../../components/diagrams/States.astro';
 import Progress from '../../../components/Progress.astro';
+import Stage from '../../../components/Stage.astro';
 import { PROJECTS, href, lessonUrl, lessons, SITE } from '../../../lib/site';
 import { projectPages, type ProjectPage } from '../../../lib/projects';
 
@@ -23,7 +30,7 @@ const all = await lessons();
 const pre = entry.data.lessons.map((s) => all.find((l) => l.id === s)).filter(Boolean);
 const partUrl = (e: ProjectPage) => href(`/p/${project.slug}/${e.data.part}/`);
 ---
-<Base title={`${project.slug} part ${entry.data.part}: ${entry.data.title}`} description={entry.data.tagline}>
+<Base lesson title={`${project.slug} part ${entry.data.part}: ${entry.data.title}`} description={entry.data.tagline}>
   <nav class="lesson-nav" aria-label="Project navigation">
     <a class="all" href={href(`/p/${project.slug}/`)}>{project.slug}</a>
     <span class="pn">
@@ -31,28 +38,31 @@ const partUrl = (e: ProjectPage) => href(`/p/${project.slug}/${e.data.part}/`);
       {next && <a href={partUrl(next)}>Part {next.data.part} →</a>}
     </span>
   </nav>
-  <article data-pagefind-body>
+  <article class="lesson" data-pagefind-body>
     <header class="lesson-head">
       <div class="kicker">{project.title} · Part {entry.data.part}</div>
       <h1>{entry.data.title}</h1>
       <p class="tagline">{entry.data.tagline}</p>
+      {pre.length > 0 && (
+        <div class="prereq"><b>Prerequisites</b>{pre.map((l, i) => <>{i > 0 && ' · '}<a href={lessonUrl(l!.id)}>{l!.data.order}. {l!.data.title}</a></>)}</div>
+      )}
+      {entry.data.goal && <Callout label="Goal">{entry.data.goal}</Callout>}
     </header>
-    {pre.length > 0 && (
-      <div class="prereq"><b>Prerequisites</b>{pre.map((l, i) => <>{i > 0 && ' · '}<a href={lessonUrl(l!.id)}>{l!.data.order}. {l!.data.title}</a></>)}</div>
-    )}
-    {entry.data.goal && <Callout label="Goal">{entry.data.goal}</Callout>}
-    <div class="prose"><Content components={{ Callout, Flow, Stack }} /></div>
-    {entry.data.test && (
-      <Callout type="math" label="Pass this part">Run <code>{entry.data.test}</code> from <code>projects/{project.slug}/</code>. Green means done.</Callout>
-    )}
+    <div class="prose"><Content components={{ Callout, Flow, Stack, Trace, Compare, Bars, Lanes, Fan, States }} /></div>
   </article>
+  <div class="lesson-after"><div class="after-main">
+  {entry.data.test && (
+    <Callout type="math" label="Pass this part">Run <code>{entry.data.test}</code> from <code>projects/{project.slug}/</code>. Green means done.</Callout>
+  )}
   <div class="complete-row">
     <button type="button" class="btn ghost" data-complete-toggle={`p:${project.slug}/${entry.data.part}`}>Mark complete</button>
     <a href={`${SITE.repo}/tree/main/projects/${project.slug}`} class="btn ghost small">Code on GitHub</a>
   </div>
+  </div></div>
   <nav class="lesson-nav">
     <a class="all" href={href(`/p/${project.slug}/`)}>All parts</a>
     <span class="pn">{next ? <a href={partUrl(next)}>Part {next.data.part}: {next.data.title} →</a> : <a href={href('/p/')}>All projects →</a>}</span>
   </nav>
+  <Stage />
   <Progress />
 </Base>

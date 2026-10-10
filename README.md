@@ -2,6 +2,8 @@
 
 **Learn AI agents by building them.** A free, static, hands-on course on AI agents and agent harnesses: 54 lessons in 8 sections, an in-browser Agent Lab for every concept, Python code labs that run in your browser, and three capstone projects you build end to end.
 
+Created by [Saksham Malhotra](https://github.com/sakshamm21).
+
 Inspired by the format of [freesystemdesign.com](https://freesystemdesign.com/): every lesson tells one story (problem → insight → fix → math → tradeoff) and ends with a page where you build it and watch it break.
 
 ## What's inside

@@ -13,6 +13,7 @@
     "test": "vitest run",
     "check": "node scripts/check-links.mjs"
   },
+  "author": "Saksham Malhotra (https://github.com/sakshamm21)",
   "license": "MIT",
   "dependencies": {
     "@astrojs/mdx": "^4.3.14",

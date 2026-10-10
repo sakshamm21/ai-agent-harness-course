@@ -77,7 +77,57 @@ Headings are statements, not labels: `## You asked it to fix a bug. It answered 
 <Callout type="math" label="Let us check the math">...</Callout>   {/* type: note | math | warn */}
 ```
 
+Figures for the right-hand stage. Each one animates when it comes on stage. Pick the one that teaches the section best:
+
+| Component | Use it when the section is about… | Example |
+|---|---|---|
+| `<Flow>` | a pipeline or loop, steps in order | the agent loop, prompt chaining, a RAG pipeline |
+| `<Stack>` | what fills the context window | system prompt + history + tool results vs the window |
+| `<Trace>` | what actually goes over the wire, turn by turn | tool_use / tool_result messages, an injection arriving in a web page, a handoff |
+| `<Compare>` | choosing between two to four options | workflow vs agent, RAG vs agentic search, memory kinds |
+| `<Bars>` | numbers to compare | cost per task, latency, pass rate, tokens |
+| `<Lanes>` | time: what runs when | sequential vs parallel calls, streaming first token, retries with backoff, timeouts |
+| `<Fan>` | one thing splitting into several (and maybe merging) | orchestrator and workers, subagents, a router picking one route |
+| `<States>` | a lifecycle with transitions | run states and stop reasons, approval flow, retry state, session resume |
+| a code fence | the code itself is the point | the 10-line loop, a tool schema, a hook |
+
+```mdx
+<Trace caption="..." steps={[
+  { role: "user", text: "Fix page 2 of /orders" },
+  { role: "model", text: 'read_file("app/orders.py")', tag: "tool_use", meta: "3k tok" },
+  { role: "tool", text: "def page(n): ...", meta: "+2.1k tok" },
+  { role: "error", text: "FileNotFoundError", bad: true },
+]} />
+{/* role: user | model | tool | result | system | error | human | note; optional tag, meta, bad, good */}
+
+<Compare caption="..." cols={[
+  { title: "Workflow", sub: "your code picks the steps", kind: "good", rows: ["+ Predictable cost", "- Breaks on the unexpected"] },
+  { title: "Agent", sub: "the model picks the steps", rows: ["+ Handles open-ended tasks", "- Cost varies run to run"] },
+]} verdict="One line that settles it." />
+{/* 2-4 cols; rows starting "+ " are pros, "- " are cons */}
+
+<Bars caption="..." unit="$" bars={[{ label: "Large model", value: 0.42, kind: "bad" }, { label: "Small + large", value: 0.11, kind: "good", note: "$0.11 · 4× cheaper" }]} />
+{/* unit: "$", "%", "s", "ms", "k", "tokens"...; max fixes the scale; note replaces the printed value */}
+
+<Lanes caption="..." unit="s" total={9} lanes={[
+  { heading: "One at a time" }, { label: "weather", start: 0, end: 3 }, { label: "flights", start: 3, end: 6 },
+  { heading: "In parallel" }, { label: "weather", start: 0, end: 3, kind: "good" }, { label: "flights", start: 0, end: 3, kind: "good", note: "done at 3 s" },
+]} marks={[{ at: 3, label: "parallel done" }]} />
+
+<Fan caption="..." root={{ label: "Orchestrator", sub: "plans 4 subtasks" }}
+  items={[{ label: "Worker", sub: "pricing" }, { label: "Worker", sub: "reviews" }]}
+  merge={{ label: "Writer", sub: "one report" }} fanLabel="subtasks" />
+{/* 2-6 items; pick={1} sends traffic down one branch only (a router); merge is optional */}
+
+<States caption="..." states={[{ id: "run", label: "Running" }, { id: "wait", label: "Awaiting approval", kind: "hl" }, { id: "done", label: "Done", kind: "good" }]}
+  edges={[{ from: "run", to: "wait", label: "risky tool" }, { from: "wait", to: "run", label: "approved" }, { from: "run", to: "done", label: "end_turn" }]}
+  path={["run", "wait", "run", "done"]} />
+{/* 2-6 states; every hop in path needs an edge; forward edges arc one way, backward edges the other */}
+```
+
 `kind` is `hl` (accent), `bad` (red) or `good` (green). Inline `<svg>` is fine too: use the classes `dg-box`, `dg-text`, `dg-sub`, `dg-line`, `dg-arrow` so it follows the theme. Inside `<Callout>` use `<br />` or blank lines for line breaks; Markdown bold works.
+
+**Two-pane layout.** On wide screens every top-level code fence and figure component in a lesson or capstone part also appears in the sticky stage on the right, and the stage shows whichever one the reader has scrolled past (built by `src/lib/rehype-scrolly.mjs`, driven by `src/components/Stage.astro`). In the stage, `<Flow>`, `<Stack>` and `<States>` are redrawn top to bottom (`vertical`). Aim for one figure per H2 section, so the stage changes as the story moves; vary the kind of figure to fit what each section is saying, and keep the numbers in a figure identical to the prose. So: put each figure right after the paragraph that introduces it, give diagrams a `caption` (it becomes the stage label), and keep code fences at the top level, not inside a list or `<Callout>`, if they should show on the stage. On phones everything stays inline.
 
 MDX gotchas: `{` `}` and `<` in prose must be escaped or put in backticks (`` `a < b` ``); a bare `<5` breaks the build.
 

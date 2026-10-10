@@ -1,4 +1,30 @@
 .lab { padding: 18px 0 40px; }
+/* Agent Lab. Narrow: one column, canvas right after the brief. Wide: brief and results on the left, the canvas pinned on the right. */
+.agentlab { display: flex; flex-direction: column; }
+.agentlab .lab-side { display: contents; }
+.agentlab .lab-head { order: 1; }
+.agentlab .passed { order: 2; }
+.agentlab .lab-main { order: 3; }
+.agentlab .runbar { order: 4; }
+.agentlab .hints { order: 5; }
+.agentlab .results { order: 6; }
+@media (min-width: 1100px) {
+  .agentlab { display: grid; grid-template-columns: minmax(340px, 420px) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .agentlab .lab-side { display: block; min-width: 0; }
+  .agentlab .lab-main { position: sticky; top: 72px; height: calc(100vh - 90px); min-height: 520px; }
+  /* Parts become a toolbar over the canvas; the inspector floats on the canvas only when a node is selected. */
+  .agentlab .lab-grid { position: relative; height: 100%; display: flex; flex-direction: column; gap: 10px; }
+  .agentlab .palette { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow: visible; padding: 8px 10px; }
+  .agentlab .pal-title { margin: 0 6px 0 2px; }
+  .agentlab .pal-item { width: auto; margin: 0; padding: 6px 10px; }
+  .agentlab .pal-help { margin: 0 0 0 auto; max-width: 300px; font-size: 12px; }
+  .agentlab .canvas { flex: 1; min-height: 0; }
+  .agentlab .inspector { position: absolute; right: 12px; top: 72px; width: 270px; max-height: calc(100% - 90px); z-index: 6; box-shadow: 0 18px 50px rgba(0, 0, 0, .35); animation: tick-in .25s ease both; }
+  .agentlab .inspector:has(.ins-empty) { display: none; }
+  .agentlab .lab-head .brief { font-size: 15.5px; }
+  .agentlab .runbar { margin-top: 4px; }
+  .agentlab .transcript { max-height: 52vh; }
+}
 .lab-head .back { font-size: 14px; color: var(--text-2); }
 .lab-head h1 { font-size: clamp(1.5rem, 4vw, 2rem); letter-spacing: -0.02em; margin: 8px 0 6px; }
 .lab-head .brief { color: var(--text-2); margin: 0 0 12px; max-width: 820px; }
@@ -35,6 +61,8 @@
 .lab-node .ln-sub { color: var(--text-3); font-size: 12px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 50%, transparent); } 50% { box-shadow: 0 0 0 8px transparent; } }
 .react-flow__handle { width: 10px; height: 10px; background: var(--accent); border: 2px solid var(--bg); }
+/* The global `svg { max-width: 100% }` collapses React Flow's zero-width edge layer and hides every wire. */
+.react-flow svg { max-width: none; }
 .react-flow__edge-path { stroke: var(--text-3); stroke-width: 1.6; }
 .react-flow__controls button { background: var(--bg-2); color: var(--text); border-color: var(--line); fill: var(--text); }
 .react-flow__background { color: var(--line-2); }
@@ -77,3 +105,43 @@
   .canvas { height: 380px; order: 1; }
   .inspector { order: 3; }
 }
+
+/* Traffic: packets travel the wires while a run plays, then the wires show the outcome */
+.canvas { position: relative; }
+.react-flow__edge-path.tr-edge { transition: stroke .3s; }
+.react-flow__edge-path.tr-flow { stroke: var(--accent); stroke-dasharray: 6 5; animation: tr-dash .6s linear infinite; }
+.react-flow__edge-path.tr-ok { stroke: color-mix(in srgb, var(--good) 75%, var(--text-3)); }
+.react-flow__edge-path.tr-bad { stroke: var(--bad); stroke-dasharray: 5 5; }
+.react-flow__edge-path.sel { stroke-width: 2.4; }
+@keyframes tr-dash { to { stroke-dashoffset: -11; } }
+.tr-packet { fill: var(--accent); filter: drop-shadow(0 0 4px var(--accent)); pointer-events: none; }
+.tr-packet.tr-ok { fill: var(--good); filter: drop-shadow(0 0 4px var(--good)); }
+.tr-packet.tr-bad { fill: var(--bad); filter: drop-shadow(0 0 4px var(--bad)); }
+.lab-node { transition: border-color .3s, box-shadow .3s; }
+.lab-node.live { border-color: color-mix(in srgb, var(--accent) 70%, var(--line-2)); animation: live 0.9s ease-in-out infinite; }
+@keyframes live { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); } 50% { box-shadow: 0 0 0 6px transparent; } }
+.sim-ticker {
+  position: absolute; top: 12px; left: 12px; z-index: 5; display: inline-flex; align-items: center; gap: 8px;
+  font: 12.5px var(--mono); color: var(--text); padding: 6px 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-2) 88%, transparent); border: 1px solid var(--line-2); backdrop-filter: blur(6px);
+  animation: tick-in .3s ease both;
+}
+.sim-ticker.pass { border-color: var(--good); color: var(--good); }
+.sim-ticker.fail { border-color: var(--bad); color: var(--bad); }
+.sim-ticker .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes tick-in { from { opacity: 0; transform: translateY(-4px); } }
+.results { animation: tick-in .35s ease both; }
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge-path.tr-flow, .lab-node.live, .sim-ticker .spin { animation: none; }
+  .tr-packet { display: none; }
+}
+
+/* Step-through: the current event is highlighted in the transcript and its part glows on the canvas */
+.stepbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px 0; }
+.stepbar .step-count { font-size: 12.5px; color: var(--text-3); }
+.transcript .bubble { cursor: pointer; transition: opacity .25s, border-color .25s, transform .25s; }
+.transcript.stepping .bubble.later { opacity: .35; }
+.transcript .bubble.current { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); transform: translateX(2px); }
+.lab-node.focus { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 24px color-mix(in srgb, var(--accent) 35%, transparent); transform: scale(1.06); }
+.lab-node { transition: border-color .3s, box-shadow .3s, transform .3s; }

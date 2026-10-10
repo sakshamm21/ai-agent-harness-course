@@ -1,0 +1,168 @@
+/* Two-pane lesson layout: prose on the left, a sticky stage with code and diagrams on the right.
+   Markup comes from src/lib/rehype-scrolly.mjs; behaviour from src/components/Stage.astro. */
+
+.wrap-lesson { max-width: 1380px; margin: 0 auto; padding: 0 16px; }
+.wrap-lesson > .lesson-nav, .lesson, .lesson-after { max-width: 720px; margin-inline: auto; }
+
+/* Reading progress, under the sticky header */
+.read-progress { position: fixed; left: 0; right: 0; top: 56px; height: 2px; z-index: 19; pointer-events: none; }
+.read-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); }
+
+/* Narrow screens: figures stay inline, the stage is hidden */
+.stage { display: none; }
+.vis-marker { display: none; }
+.vis-inline > figure.diagram, .vis-inline > pre { margin: 1.4rem 0; }
+
+/* Markers in the prose that point at the stage */
+.vis { margin: 1.1rem 0 1.3rem; }
+.vis-marker {
+  width: 100%; align-items: center; gap: 10px; cursor: pointer; text-align: left;
+  background: transparent; color: var(--text-3); font: 13px/1.3 var(--mono);
+  border: 1px dashed var(--line-2); border-radius: 10px; padding: 9px 12px;
+  transition: border-color .25s, background-color .25s, color .25s;
+}
+.vis-marker:hover { color: var(--text); border-color: var(--accent); }
+.vis-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 22px; border-radius: 6px; background: var(--bg-3); color: var(--accent); font-size: 11px; }
+.vis-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vis-arrow { opacity: .5; transition: transform .3s, opacity .3s; }
+.vis[data-current] .vis-marker { border-style: solid; border-color: color-mix(in srgb, var(--accent) 70%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--text); }
+.vis[data-current] .vis-arrow { opacity: 1; transform: translateX(4px); color: var(--accent); }
+
+@media (min-width: 1100px) {
+  .wrap-lesson { padding: 0 32px; }
+  .wrap-lesson > .lesson-nav { max-width: none; }
+  .lesson:has(.scrolly) {
+    max-width: none; display: grid; align-items: start;
+    grid-template-columns: minmax(0, 640px) minmax(0, 1fr); column-gap: 56px;
+  }
+  .lesson:has(.scrolly) > .prose, .lesson .scrolly { display: contents; }
+  .lesson:has(.scrolly) > .lesson-head { grid-column: 1; grid-row: 1; }
+  .scrolly-text { grid-column: 1; grid-row: 2; min-width: 0; }
+  .stage { display: block; grid-column: 2; grid-row: 1 / span 2; position: sticky; top: 76px; height: calc(100vh - 96px); min-height: 420px; align-self: start; margin-top: 22px; }
+  .vis-inline { display: none; }
+  .vis-marker { display: flex; }
+
+  .lesson-after { max-width: none; display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 1fr); column-gap: 56px; align-items: start; }
+  .lesson-after .after-main { grid-column: 1; grid-row: 1; }
+  .lesson-after .after-side { grid-column: 2; grid-row: 1; position: sticky; top: 90px; }
+  .lesson-after .after-side .build-cta { margin-top: 2.6rem; }
+}
+
+/* The stage: a canvas-like pane, like a system design whiteboard */
+.stage-inner {
+  height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 16px;
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-3) 22%, transparent) 1px, transparent 1.5px) 0 0 / 22px 22px,
+    radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--accent-2) 9%, transparent), transparent 60%),
+    radial-gradient(100% 70% at 0% 100%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+    var(--bg-2);
+  box-shadow: var(--shadow);
+}
+.stage-head { display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg-2) 85%, transparent); backdrop-filter: blur(6px); }
+.stage-count { font: 12px var(--mono); color: var(--text-3); min-width: 44px; }
+.stage-pips { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+.stage-pips i { width: 7px; height: 7px; border-radius: 99px; background: var(--line-2); cursor: pointer; transition: width .35s cubic-bezier(.2, .7, .2, 1), background-color .35s; }
+.stage-pips i:hover { background: var(--text-3); }
+.stage-pips i[data-on] { width: 22px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.stage-nav { display: flex; gap: 6px; }
+.stage-nav .icon-btn { height: 28px; min-width: 28px; font-size: 13px; }
+
+.stage-frames { flex: 1; min-height: 0; position: relative; display: grid; padding: 22px; }
+.frame {
+  grid-area: 1 / 1; align-self: center; min-height: 0; max-height: 100%; display: flex; flex-direction: column;
+  border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 82%, transparent); box-shadow: 0 18px 50px rgba(0, 0, 0, .28);
+  opacity: 0; visibility: hidden; transform: translateY(18px) scale(.98);
+  transition: opacity .45s ease, transform .55s cubic-bezier(.2, .7, .2, 1), visibility 0s linear .55s;
+}
+.frame[data-active] { opacity: 1; visibility: visible; transform: none; transition: opacity .45s ease .08s, transform .55s cubic-bezier(.2, .7, .2, 1) .08s, visibility 0s; }
+.frame-chrome { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); font: 12px var(--mono); color: var(--text-3); }
+.frame-chrome .dots { display: inline-flex; gap: 5px; }
+.frame-chrome .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); }
+.frame-chrome .dots i:nth-child(1) { background: color-mix(in srgb, var(--bad) 70%, var(--line-2)); }
+.frame-chrome .dots i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--line-2)); }
+.frame-chrome .dots i:nth-child(3) { background: color-mix(in srgb, var(--good) 70%, var(--line-2)); }
+.frame-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frame-body { min-height: 0; overflow: auto; }
+.frame-body > pre { margin: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; font-size: 13.5px !important; padding: 16px 18px !important; }
+.frame-body > figure.diagram { margin: 0; border: 0; background: transparent; padding: 22px 18px 16px; overflow: visible; }
+.frame-body > figure.diagram svg { width: 100%; height: auto; max-height: calc(100vh - 290px); display: block; margin: 0 auto; }
+.frame-body > figure.diagram.vertical svg { width: auto; max-width: 100%; }
+.frame-body > figure.diagram figcaption { font-size: 13px; }
+
+/* Animations. Everything is visible without JS; .play (added by Stage.astro) replays the entrance. */
+@keyframes fah-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fah-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes fah-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes fah-line { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@keyframes fah-rise { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes fah-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.dg-node, .dg-seg { transform-box: fill-box; }
+.play .dg-node { animation: fah-fade-up .55s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 120ms); }
+.play .dg-edge { stroke-dasharray: 1; animation: fah-draw .5s ease-out both; animation-delay: calc(var(--i, 0) * 120ms + 220ms); }
+.play .dg-seg { animation: fah-wipe .6s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 130ms); }
+.play .dg-seg-v { animation-name: fah-rise; }
+.play .dg-budget { animation: fah-fade .4s ease both; animation-delay: calc(var(--i, 0) * 130ms + 200ms); }
+.play .dg-packet { animation: fah-fade .4s ease both; animation-delay: .9s; }
+.frame-code .line, .vis-inline pre .line { display: inline-block; min-width: 1px; }
+.play pre .line { animation: fah-line .4s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 30ms + 120ms); }
+
+/* Animated "Build it" card */
+.build-art { display: flex; align-items: center; gap: 0; width: 100%; margin-bottom: 4px; }
+.ba-node { font: 600 12.5px var(--mono); padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--bg-3); color: var(--text); white-space: nowrap; }
+.ba-node:first-child { border-color: var(--accent); }
+.ba-wire { flex: 1; height: 2px; background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 10px); position: relative; margin: 0 6px; }
+.ba-wire i { position: absolute; top: -3px; left: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: fah-travel 2.2s cubic-bezier(.5, 0, .5, 1) infinite; }
+@keyframes fah-travel { 0% { left: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: calc(100% - 8px); opacity: 0; } }
+.after-side .build-cta { flex-direction: column; align-items: stretch; }
+.after-side .build-cta .btn { justify-content: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .frame, .frame[data-active] { transition: none; transform: none; }
+  .play .dg-node, .play .dg-edge, .play .dg-seg, .play .dg-budget, .play .dg-packet, .play pre .line { animation: none; }
+  .dg-packet, .dg-glow, .ba-wire i { display: none; }
+  .read-progress { display: none; }
+}
+
+/* Home: copy on the left, a live agent loop on the right */
+.hero { display: grid; gap: 40px; align-items: center; }
+.hero-stage { display: none; }
+@media (min-width: 960px) {
+  .hero { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); padding: 64px 0 40px; }
+  .hero-stage { display: block; height: 470px; }
+  .hero-frame { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 18px; }
+  .hero-frame figure.diagram { margin: 0; border: 0; background: transparent; padding: 0; overflow: visible; }
+  .hero-frame svg { height: 390px; width: auto; }
+  .sections { display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; }
+  .sections .section-block { margin: 36px 0 12px; }
+}
+.hero-copy > * { animation: fah-fade-up .7s cubic-bezier(.2, .7, .2, 1) both; }
+.hero-copy > :nth-child(2) { animation-delay: .08s; }
+.hero-copy > :nth-child(3), .hero-copy > :nth-child(4) { animation-delay: .16s; }
+.hero-copy > :nth-child(5) { animation-delay: .24s; }
+.hero-stage { animation: fah-fade-up .8s cubic-bezier(.2, .7, .2, 1) .15s both; }
+.lesson-list a { transition: background-color .2s, padding-left .2s; }
+.lesson-list a:hover { padding-left: 18px; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-copy > *, .hero-stage { animation: none; }
+  .lesson-list a:hover { padding-left: 14px; }
+}
+
+/* Entrance animations for Trace, Compare, Bars, Lanes */
+@keyframes fah-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes fah-sweep { 0% { left: 0; opacity: 1; } 95% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+.play .tr-item { animation: fah-fade-up .45s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 380ms); }
+.play .cmp-col { animation: fah-fade-up .5s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 160ms); }
+.play .cmp-col li { animation: fah-fade-up .4s ease both; animation-delay: calc(var(--i, 0) * 160ms + var(--j, 0) * 110ms + 250ms); }
+.play .cmp-verdict { animation: fah-fade-up .5s ease both; animation-delay: calc(var(--i, 0) * 160ms + 700ms); }
+.play .bar-row { animation: fah-fade .3s ease both; animation-delay: calc(var(--i, 0) * 140ms); }
+.play .bar-fill { animation: fah-grow .9s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 140ms + 120ms); }
+.play .bar-val { animation: fah-fade .4s ease both; animation-delay: calc(var(--i, 0) * 140ms + 700ms); }
+.play .ln-bar { animation: fah-grow var(--len, .4s) linear both; animation-delay: var(--d, 0s); }
+.play .ln-note, .play .ln-mark { animation: fah-fade .3s ease both; animation-delay: var(--d, 0s); }
+.play .ln-head { animation: fah-sweep var(--sweep, 2.6s) linear both; }
+@media (prefers-reduced-motion: reduce) {
+  .play .tr-item, .play .cmp-col, .play .cmp-col li, .play .cmp-verdict, .play .bar-row, .play .bar-fill, .play .bar-val, .play .ln-bar, .play .ln-note, .play .ln-mark, .play .ln-head { animation: none; }
+}

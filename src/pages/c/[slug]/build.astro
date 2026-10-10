@@ -4,7 +4,16 @@ import LabApp from '../../../components/lab/LabApp';
 import CodeLab from '../../../components/codelab/CodeLab';
 import { lessons, href, lessonUrl, type Lesson } from '../../../lib/site';
 import { SCENARIOS } from '../../../lab/scenarios';
-import { CODELABS } from '../../../lib/codelabs';
+import { CODELABS, codelabHtml, codelabContent } from '../../../lib/codelabs';
+import Callout from '../../../components/Callout.astro';
+import Flow from '../../../components/diagrams/Flow.astro';
+import Stack from '../../../components/diagrams/Stack.astro';
+import Trace from '../../../components/diagrams/Trace.astro';
+import Compare from '../../../components/diagrams/Compare.astro';
+import Bars from '../../../components/diagrams/Bars.astro';
+import Lanes from '../../../components/diagrams/Lanes.astro';
+import Fan from '../../../components/diagrams/Fan.astro';
+import States from '../../../components/diagrams/States.astro';
 
 export async function getStaticPaths() {
   const all = await lessons();
@@ -22,14 +31,18 @@ interface Props { entry: Lesson; next?: Lesson }
 const { entry, next } = Astro.props;
 const id = entry.data.build.scenario ?? entry.id;
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const codelab = entry.data.build.type === 'code' ? { ...CODELABS[id], html: await codelabHtml(id) } : undefined;
+const Readme = entry.data.build.type === 'code' ? codelabContent(id) : undefined;
 ---
-<Base title={`Build: ${entry.data.title}`} wide description={`Hands-on lab for "${entry.data.title}".`}>
+<Base title={`Build: ${entry.data.title}`} lesson description={`Hands-on lab for "${entry.data.title}".`}>
   {entry.data.build.type === 'lab' ? (
     <LabApp client:only="react" scenario={SCENARIOS[id]} lessonSlug={entry.id} lessonTitle={entry.data.title}
       nextUrl={next ? lessonUrl(next.id) : href('/p/')} nextTitle={next?.data.title ?? 'Projects'} base={base} />
   ) : (
-    <CodeLab client:only="react" lab={CODELABS[id]} lessonSlug={entry.id} lessonTitle={entry.data.title}
-      nextUrl={next ? lessonUrl(next.id) : href('/p/')} nextTitle={next?.data.title ?? 'Projects'} base={base} />
+    <CodeLab client:only="react" lab={codelab!} lessonSlug={entry.id} lessonTitle={entry.data.title}
+      nextUrl={next ? lessonUrl(next.id) : href('/p/')} nextTitle={next?.data.title ?? 'Projects'} base={base}>
+      {Readme && <Readme components={{ Callout, Flow, Stack, Trace, Compare, Bars, Lanes, Fan, States }} />}
+    </CodeLab>
   )}
   <noscript><p>The lab runs in your browser and needs JavaScript.</p></noscript>
 </Base>

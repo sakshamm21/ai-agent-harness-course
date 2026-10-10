@@ -1,0 +1,29 @@
+---
+/**
+ * Side-by-side comparison of two to four options.
+ * <Compare caption="..." cols={[
+ *   { title: "Workflow", sub: "your code picks the steps", kind: "good", rows: ["Predictable cost", "Easy to test"] },
+ *   { title: "Agent", sub: "the model picks the steps", rows: ["Handles the unexpected", "Costs vary run to run"] },
+ * ]} verdict="Use the workflow until the steps stop being knowable in advance." />
+ * kind: "hl" | "good" | "bad" tints a column. Start a row with "+ " or "- " to mark it as a pro or a con.
+ */
+interface Col { title: string; sub?: string; kind?: 'hl' | 'good' | 'bad'; rows: string[] }
+interface Props { cols: Col[]; caption?: string; verdict?: string; vertical?: boolean }
+const { cols, caption, verdict } = Astro.props;
+const mark = (r: string) => (r.startsWith('+ ') ? ['pro', r.slice(2)] : r.startsWith('- ') ? ['con', r.slice(2)] : ['', r]);
+---
+<figure class="diagram compare">
+  <div class="cmp-grid" style={`--cols:${cols.length}`}>
+    {cols.map((c, ci) => (
+      <div class={`cmp-col ${c.kind ?? ''}`} style={`--i:${ci}`}>
+        <div class="cmp-title">{c.title}</div>
+        {c.sub && <div class="cmp-sub">{c.sub}</div>}
+        <ul>
+          {c.rows.map((r, ri) => { const [k, t] = mark(r); return <li class={k} style={`--j:${ri}`}>{t}</li>; })}
+        </ul>
+      </div>
+    ))}
+  </div>
+  {verdict && <div class="cmp-verdict" style={`--i:${cols.length}`}>{verdict}</div>}
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>

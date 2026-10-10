@@ -1,13 +1,15 @@
 ---
 import Base from '../layouts/Base.astro';
 import Progress from '../components/Progress.astro';
+import Flow from '../components/diagrams/Flow.astro';
 import { lessons, sections, lessonUrl, PROJECTS, href, SITE } from '../lib/site';
 const all = await lessons();
 const bySection = sections.map((s, i) => ({ ...s, num: i + 1, items: all.filter((l) => l.data.section === s.id) }));
 const labs = all.filter((l) => l.data.build.type !== 'none').length;
 ---
-<Base title={SITE.name}>
+<Base title={SITE.name} wide>
   <section class="hero">
+    <div class="hero-copy">
     <h1>Learn AI agents<br /><em>by building them.</em></h1>
     <p>A free course on agents and agent harnesses: the loop, tools, context, memory, multi-agent patterns, safety, evals, and three real projects you build end to end.</p>
     <a class="btn" href={lessonUrl(all[0]?.id ?? 'llm')}>Start here →</a>
@@ -18,8 +20,18 @@ const labs = all.filter((l) => l.data.build.type !== 'none').length;
       <span><b>3</b> capstone projects</span>
       <span><b>Free.</b> No login.</span>
     </div>
+    </div>
+    <div class="hero-stage" aria-hidden="true">
+      <div class="stage-inner">
+        <div class="stage-head"><span class="stage-count">agent.py</span><span class="stage-pips"><i data-on></i><i></i><i></i></span></div>
+        <div class="hero-frame play">
+          <Flow vertical loop steps={[{ label: 'Task', sub: 'fix the failing test' }, { label: 'Model', sub: 'decides the next step', kind: 'hl' }, { label: 'Harness', sub: 'runs the tool, checks permissions' }, { label: 'Tool result', sub: 'appended to context', kind: 'good' }]} loopLabel="repeat until done" />
+        </div>
+      </div>
+    </div>
   </section>
 
+  <div class="sections">
   {bySection.map((s) => (
     <section class="section-block" id={s.id}>
       <h2><span class="num">{String(s.num).padStart(2, '0')}</span>{s.title}<span class="count">{s.items.length} lessons</span></h2>
@@ -37,6 +49,7 @@ const labs = all.filter((l) => l.data.build.type !== 'none').length;
       </ol>
     </section>
   ))}
+  </div>
 
   <section class="section-block" id="projects">
     <h2><span class="num">09</span>Capstone Projects<span class="count">3 projects</span></h2>

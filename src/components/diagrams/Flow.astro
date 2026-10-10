@@ -3,31 +3,95 @@
  * Boxes joined by arrows. Use in MDX without importing:
  * <Flow steps={["User", {label: "Model", sub: "decides", kind: "hl"}, "Tools"]} loop caption="The agent loop" />
  * kind: "hl" | "bad" | "good". `loop` draws a return arrow from the last box to the first.
+ * `vertical` stacks the boxes top to bottom; the lesson stage (rehype-scrolly) uses it to fill a tall pane.
+ * A glowing packet travels the arrows, and each box lights up while the packet is inside it.
  */
 type Step = string | { label: string; sub?: string; kind?: 'hl' | 'bad' | 'good' };
-interface Props { steps: Step[]; loop?: boolean; caption?: string; loopLabel?: string }
-const { steps, loop = false, caption, loopLabel = '' } = Astro.props;
+interface Props { steps: Step[]; loop?: boolean; caption?: string; loopLabel?: string; vertical?: boolean }
+const { steps, loop = false, caption, loopLabel = '', vertical = false } = Astro.props;
 const items = steps.map((s) => (typeof s === 'string' ? { label: s } : s));
-const W = 128, H = 54, GAP = 40;
-const width = items.length * W + (items.length - 1) * GAP + 8;
-const height = H + (loop ? 56 : 8);
-const x = (i: number) => 4 + i * (W + GAP);
+const n = items.length, last = n - 1;
+// Arrowhead marker ids must be unique per figure: a marker inside a hidden copy (display: none) does not render.
+const uid = 'fa' + [...JSON.stringify([steps, loop, vertical])].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
+const hasLoop = loop && n > 1;
+
+// Geometry. Every box is { x, y } with size W x H.
+const W = vertical ? 248 : 128, H = vertical ? 58 : 54, GAP = vertical ? 38 : 40, PAD = 4;
+const boxes = items.map((_, i) => (vertical ? { x: PAD, y: PAD + i * (H + GAP) } : { x: PAD + i * (W + GAP), y: PAD }));
+const LOOP_OUT = 34; // how far the return arrow swings out from the boxes
+const width = vertical ? PAD + W + (hasLoop ? LOOP_OUT + 44 : PAD) : PAD + n * W + last * GAP + PAD;
+const height = vertical ? PAD + n * H + last * GAP + PAD : H + (hasLoop ? 56 : 8);
+const mid = (i: number) => ({ x: boxes[i].x + W / 2, y: boxes[i].y + H / 2 });
+
+const edges = items.slice(0, -1).map((_, i) => (vertical
+  ? { x1: mid(i).x, y1: boxes[i].y + H, x2: mid(i).x, y2: boxes[i + 1].y - 2 }
+  : { x1: boxes[i].x + W, y1: mid(i).y, x2: boxes[i + 1].x - 2, y2: mid(i).y }));
+const loopPath = !hasLoop ? '' : vertical
+  ? `M ${PAD + W} ${mid(last).y} H ${PAD + W + LOOP_OUT} V ${mid(0).y} H ${PAD + W + 4}`
+  : `M ${mid(last).x} ${PAD + H} V ${H + 34} H ${mid(0).x} V ${H + 8}`;
+
+// The packet's route through box centres, as a polyline.
+const route: { x: number; y: number }[] = items.map((_, i) => mid(i));
+if (hasLoop) {
+  if (vertical) route.push({ x: PAD + W + LOOP_OUT, y: mid(last).y }, { x: PAD + W + LOOP_OUT, y: mid(0).y }, mid(0));
+  else route.push({ x: mid(last).x, y: H + 34 }, { x: mid(0).x, y: H + 34 }, mid(0));
+}
+const packetPath = route.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ');
+const segLen = route.slice(1).map((p, i) => Math.hypot(p.x - route[i].x, p.y - route[i].y));
+const total = segLen.reduce((a, b) => a + b, 0) || 1;
+const dur = `${Math.max(2.4, (hasLoop ? 2 : 1) * n * 0.75)}s`;
+
+// Sample the route to find when the packet is inside each box, and turn that into opacity keyframes.
+const SAMPLES = 240;
+const at = (t: number) => {
+  let d = t * total;
+  for (let k = 0; k < segLen.length; k++) {
+    if (d <= segLen[k] || k === segLen.length - 1) {
+      const f = segLen[k] ? Math.min(1, d / segLen[k]) : 0;
+      return { x: route[k].x + (route[k + 1].x - route[k].x) * f, y: route[k].y + (route[k + 1].y - route[k].y) * f };
+    }
+    d -= segLen[k];
+  }
+  return route[0];
+};
+const glow = (i: number) => {
+  const b = boxes[i];
+  const inside = Array.from({ length: SAMPLES + 1 }, (_, s) => {
+    const p = at(s / SAMPLES);
+    return p.x >= b.x && p.x <= b.x + W && p.y >= b.y && p.y <= b.y + H ? 1 : 0;
+  });
+  const t: string[] = [], v: number[] = [];
+  inside.forEach((on, s) => { if (s === 0 || s === SAMPLES || on !== inside[s - 1]) { t.push((s / SAMPLES).toFixed(4)); v.push(on); } });
+  return { keyTimes: t.join(';'), values: v.join(';') };
+};
 ---
-<figure class="diagram">
+<figure class={`diagram${vertical ? ' vertical' : ''}`}>
   <svg viewBox={`0 0 ${width} ${height}`} width={width} role="img" aria-label={caption ?? items.map((i) => i.label).join(' → ')}>
-    <defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrow" /></marker></defs>
+    <defs><marker id={uid} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrow" /></marker></defs>
+    {n > 1 && (
+      <circle class="dg-packet" r="5" cx="0" cy="0">
+        <animateMotion dur={dur} repeatCount="indefinite" path={packetPath} calcMode="linear" />
+      </circle>
+    )}
     {items.map((it, i) => (
-      <g>
-        <rect class={`dg-box ${it.kind ?? ''}`} x={x(i)} y={4} width={W} height={H} rx={9} />
-        <text class="dg-text" x={x(i) + W / 2} y={it.sub ? 27 : 36} text-anchor="middle">{it.label}</text>
-        {it.sub && <text class="dg-sub" x={x(i) + W / 2} y={44} text-anchor="middle">{it.sub}</text>}
-        {i < items.length - 1 && <line class="dg-line" x1={x(i) + W} y1={4 + H / 2} x2={x(i + 1) - 2} y2={4 + H / 2} marker-end="url(#fa)" />}
+      <g class="dg-node" style={`--i:${i}`}>
+        <rect class={`dg-box ${it.kind ?? ''}`} x={boxes[i].x} y={boxes[i].y} width={W} height={H} rx={9} />
+        {n > 1 && (
+          <rect class="dg-glow" x={boxes[i].x} y={boxes[i].y} width={W} height={H} rx={9} opacity="0">
+            <animate attributeName="opacity" dur={dur} repeatCount="indefinite" calcMode="discrete" {...glow(i)} />
+          </rect>
+        )}
+        <text class="dg-text" x={mid(i).x} y={boxes[i].y + (it.sub ? 23 : 32) + (vertical ? 2 : 0)} text-anchor="middle">{it.label}</text>
+        {it.sub && <text class="dg-sub" x={mid(i).x} y={boxes[i].y + 40 + (vertical ? 2 : 0)} text-anchor="middle">{it.sub}</text>}
+        {i < last && <line class="dg-line dg-edge" pathLength="1" x1={edges[i].x1} y1={edges[i].y1} x2={edges[i].x2} y2={edges[i].y2} marker-end={`url(#${uid})`} />}
       </g>
     ))}
-    {loop && items.length > 1 && (
-      <g>
-        <path class="dg-line" d={`M ${x(items.length - 1) + W / 2} ${4 + H} V ${H + 34} H ${x(0) + W / 2} V ${H + 8}`} marker-end="url(#fa)" />
-        {loopLabel && <text class="dg-sub" x={width / 2} y={H + 50} text-anchor="middle">{loopLabel}</text>}
+    {hasLoop && (
+      <g class="dg-node" style={`--i:${n}`}>
+        <path class="dg-line dg-edge" pathLength="1" d={loopPath} marker-end={`url(#${uid})`} />
+        {loopLabel && (vertical
+          ? <text class="dg-sub" x={PAD + W + LOOP_OUT + 14} y={height / 2} text-anchor="middle" transform={`rotate(90 ${PAD + W + LOOP_OUT + 14} ${height / 2})`}>{loopLabel}</text>
+          : <text class="dg-sub" x={width / 2} y={H + 50} text-anchor="middle">{loopLabel}</text>)}
       </g>
     )}
   </svg>

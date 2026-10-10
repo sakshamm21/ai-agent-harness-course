@@ -1,0 +1,94 @@
+---
+/**
+ * One node fanning out to several, optionally merging back: orchestrator and workers, subagents,
+ * parallel calls, a router picking one route.
+ * <Fan caption="..." root={{ label: "Orchestrator", sub: "splits the question", kind: "hl" }}
+ *   items={[{ label: "Worker", sub: "pricing" }, { label: "Worker", sub: "reviews" }]}
+ *   merge={{ label: "Writer", sub: "one report" }} />
+ * `pick={1}` sends traffic down only that branch (a router); the rest are drawn dimmed.
+ * `fanLabel` / `mergeLabel` annotate the two layers of arrows.
+ */
+import { routePath, sample, inBox, windowsToKeys, wrap, uid, type Pt, type Seg, type Box } from './geom';
+interface N { label: string; sub?: string; kind?: 'hl' | 'good' | 'bad' }
+interface Props { root: N; items: N[]; merge?: N; pick?: number; caption?: string; fanLabel?: string; mergeLabel?: string; vertical?: boolean }
+const { root, items, merge, pick, caption, fanLabel, mergeLabel } = Astro.props;
+const n = items.length;
+const GAP = 14, H = 52, RW = 190;
+const IW = Math.min(150, Math.max(92, (600 - (n - 1) * GAP) / n));
+const width = Math.max(RW + 8, n * IW + (n - 1) * GAP + 8);
+const ROW1 = 4, ROW2 = 128, ROW3 = 252;
+const height = (merge ? ROW3 : ROW2) + H + 4;
+const rootBox: Box = { x: (width - RW) / 2, y: ROW1, w: RW, h: H };
+const itemBox = (i: number): Box => ({ x: 4 + i * (IW + GAP) + (width - 8 - (n * IW + (n - 1) * GAP)) / 2, y: ROW2, w: IW, h: H });
+const mergeBox: Box = { x: (width - RW) / 2, y: ROW3, w: RW, h: H };
+const c = (b: Box): Pt => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+const bottom = (b: Box): Pt => ({ x: b.x + b.w / 2, y: b.y + b.h });
+const top = (b: Box): Pt => ({ x: b.x + b.w / 2, y: b.y });
+const curve = (a: Pt, b: Pt): Seg => ({ kind: 'Q', c: { x: b.x, y: a.y + (b.y - a.y) * 0.15 }, to: b });
+const id = uid('fan', [root, items, merge, pick]);
+const live = (i: number) => pick === undefined || pick === i;
+const dur = 2.6;
+// Each branch's packet route: root centre → item centre → merge centre.
+const branches = items.map((_, i) => {
+  const b = itemBox(i);
+  const segs: Seg[] = [{ kind: 'L', to: bottom(rootBox) }, curve(bottom(rootBox), top(b)), { kind: 'L', to: c(b) }];
+  if (merge) segs.push({ kind: 'L', to: bottom(b) }, curve(bottom(b), top(mergeBox)), { kind: 'L', to: c(mergeBox) });
+  const pts = sample(c(rootBox), segs);
+  const total = pts[pts.length - 1].d || 1;
+  const glowItem = windowsToKeys((t) => { const d = t * total; const p = pts.find((q) => q.d >= d) ?? pts[pts.length - 1]; return inBox(p.p, b); });
+  return { d: routePath(c(rootBox), segs), glowItem };
+});
+const glowFirst = windowsToKeys((t) => t < 0.12);
+const glowLast = windowsToKeys((t) => t > 0.88);
+const lines = (label: string) => wrap(label, Math.floor(IW / 8));
+---
+<figure class="diagram fan">
+  <svg viewBox={`0 0 ${width} ${height}`} width={width} role="img" aria-label={caption ?? `${root.label} → ${items.map((i) => i.label).join(', ')}${merge ? ` → ${merge.label}` : ''}`}>
+    <defs><marker id={id} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrow" /></marker></defs>
+    {items.map((_, i) => {
+      const b = itemBox(i);
+      const s = bottom(rootBox), e = top(b);
+      return (
+        <g class={`dg-node${live(i) ? '' : ' dim'}`} style={`--i:${i + 1}`}>
+          <path class="dg-line dg-edge" pathLength="1" d={`M ${s.x} ${s.y} Q ${e.x} ${s.y + (e.y - s.y) * 0.15} ${e.x} ${e.y - 2}`} marker-end={`url(#${id})`} />
+          {merge && <path class="dg-line dg-edge" pathLength="1" d={`M ${bottom(b).x} ${bottom(b).y} Q ${top(mergeBox).x} ${bottom(b).y + (top(mergeBox).y - bottom(b).y) * 0.15} ${top(mergeBox).x} ${top(mergeBox).y - 2}`} marker-end={`url(#${id})`} />}
+        </g>
+      );
+    })}
+    {items.map((_, i) => live(i) && (
+      <circle class="dg-packet" r="5" cx="0" cy="0">
+        <animateMotion dur={`${dur}s`} begin={`${(i * 0.15).toFixed(2)}s`} repeatCount="indefinite" path={branches[i].d} calcMode="linear" />
+      </circle>
+    ))}
+    <g class="dg-node" style="--i:0">
+      <rect class={`dg-box ${root.kind ?? 'hl'}`} x={rootBox.x} y={rootBox.y} width={RW} height={H} rx={10} />
+      <rect class="dg-glow" x={rootBox.x} y={rootBox.y} width={RW} height={H} rx={10} opacity="0"><animate attributeName="opacity" dur={`${dur}s`} repeatCount="indefinite" calcMode="discrete" {...glowFirst} /></rect>
+      <text class="dg-text" x={c(rootBox).x} y={rootBox.y + (root.sub ? 23 : 31)} text-anchor="middle">{root.label}</text>
+      {root.sub && <text class="dg-sub" x={c(rootBox).x} y={rootBox.y + 40} text-anchor="middle">{root.sub}</text>}
+    </g>
+    {fanLabel && <text class="dg-sub dg-halo dg-node" style={`--i:1`} x={width / 2} y={ROW1 + H + 38} text-anchor="middle">{fanLabel}</text>}
+    {items.map((it, i) => {
+      const b = itemBox(i);
+      return (
+        <g class={`dg-node${live(i) ? '' : ' dim'}`} style={`--i:${i + 1}`}>
+          <rect class={`dg-box ${it.kind ?? ''}`} x={b.x} y={b.y} width={IW} height={H} rx={9} />
+          {live(i) && <rect class="dg-glow" x={b.x} y={b.y} width={IW} height={H} rx={9} opacity="0"><animate attributeName="opacity" dur={`${dur}s`} begin={`${(i * 0.15).toFixed(2)}s`} repeatCount="indefinite" calcMode="discrete" {...branches[i].glowItem} /></rect>}
+          {it.sub ? <>
+            <text class="dg-text" x={c(b).x} y={b.y + 22} text-anchor="middle">{it.label}</text>
+            <text class="dg-sub" x={c(b).x} y={b.y + 39} text-anchor="middle">{it.sub}</text>
+          </> : lines(it.label).map((l, k, all) => <text class="dg-text" x={c(b).x} y={b.y + 31 + (k - (all.length - 1) / 2) * 15} text-anchor="middle">{l}</text>)}
+        </g>
+      );
+    })}
+    {merge && (
+      <g class="dg-node" style={`--i:${n + 1}`}>
+        {mergeLabel && <text class="dg-sub dg-halo" x={width / 2} y={ROW2 + H + 38} text-anchor="middle">{mergeLabel}</text>}
+        <rect class={`dg-box ${merge.kind ?? 'good'}`} x={mergeBox.x} y={mergeBox.y} width={RW} height={H} rx={10} />
+        <rect class="dg-glow" x={mergeBox.x} y={mergeBox.y} width={RW} height={H} rx={10} opacity="0"><animate attributeName="opacity" dur={`${dur}s`} repeatCount="indefinite" calcMode="discrete" {...glowLast} /></rect>
+        <text class="dg-text" x={c(mergeBox).x} y={mergeBox.y + (merge.sub ? 23 : 31)} text-anchor="middle">{merge.label}</text>
+        {merge.sub && <text class="dg-sub" x={c(mergeBox).x} y={mergeBox.y + 40} text-anchor="middle">{merge.sub}</text>}
+      </g>
+    )}
+  </svg>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
