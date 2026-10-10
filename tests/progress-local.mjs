@@ -29,7 +29,7 @@ const open = () => chromium.launchPersistentContext(profile, { executablePath: p
 let dev = await startDev();
 let ctx = await open();
 let page = ctx.pages()[0] ?? await ctx.newPage();
-await page.goto(BASE + '/c/tokens/', { waitUntil: 'networkidle' });
+await page.goto(BASE + '/c/tokens/#build', { waitUntil: 'networkidle' });
 await page.locator('[data-complete-toggle]').click();
 await page.goto(BASE + '/c/agent_loop/build/', { waitUntil: 'networkidle' });
 await page.getByRole('button', { name: /Hint/ }).click();

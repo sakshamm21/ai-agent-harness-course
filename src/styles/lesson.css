@@ -42,10 +42,6 @@
   .vis-inline { display: none; }
   .vis-marker { display: flex; }
 
-  .lesson-after { max-width: none; display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 1fr); column-gap: 56px; align-items: start; }
-  .lesson-after .after-main { grid-column: 1; grid-row: 1; }
-  .lesson-after .after-side { grid-column: 2; grid-row: 1; position: sticky; top: 90px; }
-  .lesson-after .after-side .build-cta { margin-top: 2.6rem; }
 }
 
 /* The stage: a canvas-like pane, like a system design whiteboard */
@@ -116,8 +112,6 @@
 .ba-wire { flex: 1; height: 2px; background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 10px); position: relative; margin: 0 6px; }
 .ba-wire i { position: absolute; top: -3px; left: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: fah-travel 2.2s cubic-bezier(.5, 0, .5, 1) infinite; }
 @keyframes fah-travel { 0% { left: 0; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: calc(100% - 8px); opacity: 0; } }
-.after-side .build-cta { flex-direction: column; align-items: stretch; }
-.after-side .build-cta .btn { justify-content: center; }
 
 @media (prefers-reduced-motion: reduce) {
   .frame, .frame[data-active] { transition: none; transform: none; }
@@ -165,4 +159,54 @@
 .play .ln-head { animation: fah-sweep var(--sweep, 2.6s) linear both; }
 @media (prefers-reduced-motion: reduce) {
   .play .tr-item, .play .cmp-col, .play .cmp-col li, .play .cmp-verdict, .play .bar-row, .play .bar-fill, .play .bar-val, .play .ln-bar, .play .ln-note, .play .ln-mark, .play .ln-head { animation: none; }
+}
+
+/* Sub-lessons: a lesson shows one h2 section at a time, then a final "Build it" step.
+   Sections come from rehype-scrolly; the stepper script is in src/pages/c/[slug]/index.astro.
+   Nothing is hidden unless that script ran (html.stepped), so the page still reads top to bottom without JS. */
+html.stepped .step:not([data-current]), html.stepped .lesson-after:not([data-current]) { display: none; }
+html.stepped .lesson[data-on-build] :is(.scrolly-text, .steps-only, .stage) { display: none; }
+html.stepped .lesson[data-on-build] { display: block; max-width: 720px; }
+html.stepped .lesson-after { max-width: 720px; }
+html.stepped :is(.step, .lesson-after)[data-current] { animation: fah-fade-up .45s cubic-bezier(.2, .7, .2, 1) both; }
+html.stepped .step > h2:first-child { margin-top: 1.5rem; }
+
+.steps { margin: 20px 0 0; }
+.steps-rail { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0; }
+.steps-rail li { flex: 1; }
+.steps-rail button { display: block; width: 100%; padding: 8px 0; background: none; border: 0; cursor: pointer; }
+.steps-rail button span { display: block; height: 4px; border-radius: 99px; background: var(--line-2); transition: background-color .3s, transform .3s; }
+.steps-rail button:hover span { background: var(--text-3); }
+.steps-rail button[data-state='done'] span { background: color-mix(in srgb, var(--accent) 55%, var(--line-2)); }
+.steps-rail button[data-state='current'] span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); transform: scaleY(1.5); }
+.steps-now { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; margin: 2px 0 0; min-height: 22px; }
+.steps-count { font: 12px var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+.steps-skip { background: none; border: 0; padding: 0; cursor: pointer; font: 13px var(--font); color: var(--text-3); }
+.steps-skip:hover { color: var(--text); }
+
+.step-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 3rem 0 0; }
+.step-btn { display: flex; flex-direction: column; gap: 4px; min-width: 0; text-align: left; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg-2); color: var(--text); cursor: pointer; font: inherit; transition: border-color .2s, transform .2s; }
+.step-btn:hover { border-color: var(--accent); text-decoration: none; transform: translateY(-1px); }
+.step-btn small { font: 12px var(--mono); color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.step-btn b { font-family: var(--display); font-weight: 600; font-size: 15.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.step-btn.next { grid-column: 2; text-align: right; align-items: flex-end; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--bg-2)); }
+.step-btn.next small { color: var(--accent); }
+@media (max-width: 520px) {
+  .step-nav { grid-template-columns: 1fr; }
+  .step-btn.next { grid-column: 1; grid-row: 1; }
+}
+
+.build-head { margin-top: 1.5rem; }
+.build-head .kicker { font: 12px var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+.build-head h2 { font-size: 1.45rem; line-height: 1.25; letter-spacing: -0.015em; margin: 6px 0 8px; }
+.build-head p { color: var(--text-2); font-size: 17px; margin: 0; }
+.lesson-after .build-cta { margin-top: 1.4rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  html.stepped :is(.step, .lesson-after)[data-current] { animation: none; }
+  .step-btn:hover { transform: none; }
+}
+@media print {
+  html.stepped .step:not([data-current]), html.stepped .lesson-after:not([data-current]) { display: block; }
+  .steps, .step-nav { display: none; }
 }

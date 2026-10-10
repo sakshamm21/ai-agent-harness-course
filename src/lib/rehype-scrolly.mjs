@@ -13,6 +13,10 @@
  * A small client script (src/components/Stage.astro) swaps the active frame as the reader scrolls
  * past each marker. Without JavaScript the first frame shows and everything stays readable inline.
  * Only lessons and capstone parts (content/lessons/, content/projects/) are transformed.
+ *
+ * Lessons are also cut into sub-lessons: each h2 and what follows it becomes <section class="step">.
+ * The stepper script in src/pages/c/[slug]/index.astro shows one at a time; without JavaScript they
+ * simply read top to bottom.
  */
 
 const DIAGRAMS = new Set(['Flow', 'Stack', 'Trace', 'Compare', 'Bars', 'Lanes', 'Fan', 'States']);
@@ -34,6 +38,25 @@ function describe(node) {
   return { kind: 'code', label: lang === 'plaintext' || lang === 'txt' ? 'output' : lang };
 }
 
+const toText = (node) => (node.type === 'text' ? node.value : (node.children || []).map(toText).join(''));
+
+/** Group a lesson's nodes into one <section class="step"> per h2. */
+function intoSteps(nodes) {
+  const steps = [];
+  let cur = null;
+  for (const n of nodes) {
+    const isH2 = n.type === 'element' && n.tagName === 'h2';
+    if (!cur && !isH2 && n.type === 'text' && !n.value.trim()) continue;
+    if (isH2 || !cur) {
+      cur = el('section', { className: ['step'], dataStep: String(steps.length), dataTitle: isH2 ? toText(n).trim() : 'Start', ...(steps.length === 0 ? { dataCurrent: '' } : {}) }, []);
+      steps.push(cur);
+    }
+    if (n.type === 'element' && n.properties?.dataFrame !== undefined) n.properties.dataStep = String(steps.length - 1);
+    cur.children.push(n);
+  }
+  return steps;
+}
+
 function isVisual(node) {
   if (node.type === 'mdxJsxFlowElement' && DIAGRAMS.has(node.name)) return true;
   return node.type === 'element' && node.tagName === 'pre';
@@ -44,6 +67,7 @@ export default function rehypeScrolly() {
     const path = String(file?.path || file?.history?.[0] || '');
     if (!/content[\\/](lessons|projects)[\\/]/.test(path)) return;
 
+    const isLesson = /content[\\/]lessons[\\/]/.test(path);
     const keep = [];   // ESM imports/exports must stay at the root
     const body = [];
     for (const n of tree.children) (n.type === 'mdxjsEsm' ? keep : body).push(n);
@@ -80,12 +104,16 @@ export default function rehypeScrolly() {
         ]),
       );
     }
-    if (!frames.length) return;
+    const textBody = isLesson ? intoSteps(textChildren) : textChildren;
+    if (!frames.length) {
+      if (isLesson) tree.children = [...keep, el('div', { className: ['steps-only'] }, textBody)];
+      return;
+    }
 
     tree.children = [
       ...keep,
       el('div', { className: ['scrolly'] }, [
-        el('div', { className: ['scrolly-text'] }, textChildren),
+        el('div', { className: ['scrolly-text'] }, textBody),
         el('aside', { className: ['stage'], ariaLabel: 'Code and diagrams for this lesson', dataPagefindIgnore: '' }, [
           el('div', { className: ['stage-inner'] }, [
             el('div', { className: ['stage-head'] }, [

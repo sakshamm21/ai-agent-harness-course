@@ -31,7 +31,7 @@ const Content = overview ? (await render(overview)).Content : null;
     <div class="kicker">{project.kicker}</div>
     <h1>{project.title}</h1>
     <p class="tagline">{overview?.data.tagline ?? project.blurb}</p>
-    <div class="byline"><span>by <a href={href('/about/')}>{SITE.author}</a></span><span>·</span><span>{parts.length} parts</span><span>·</span><a href={`${SITE.repo}/tree/main/projects/${project.slug}`}>Code on GitHub</a></div>
+    <div class="byline"><span>{parts.length} parts</span><span>·</span><a href={`${SITE.repo}/tree/main/projects/${project.slug}`}>Code on GitHub</a></div>
   </header>
   <div class="prose" data-pagefind-body>
     {Content && <Content components={{ Callout, Flow, Stack, Trace, Compare, Bars, Lanes, Fan, States }} />}

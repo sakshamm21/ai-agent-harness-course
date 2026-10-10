@@ -2,12 +2,13 @@
 // node scripts/validate-content.mjs [slug ...]
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { compile, evaluate } from '@mdx-js/mdx';
 import * as runtime from 'react/jsx-runtime';
 import { z } from 'zod';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const curriculum = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/curriculum.json'), 'utf8'));
 const slugs = new Set(curriculum.map((c) => c.slug));
 const only = new Set(process.argv.slice(2));
@@ -61,7 +62,7 @@ const dir = path.join(ROOT, 'src/content/lessons');
 for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.mdx')).sort()) {
   const slug = file.replace(/\.mdx$/, '');
   if (only.size && !only.has(slug)) continue;
-  const src = fs.readFileSync(path.join(dir, file), 'utf8');
+  const src = fs.readFileSync(path.join(dir, file), 'utf8').replace(/\r\n/g, '\n'); // Windows checkouts use CRLF
   const m = src.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (!m) { fail(file, 'no frontmatter'); continue; }
   let fm;
