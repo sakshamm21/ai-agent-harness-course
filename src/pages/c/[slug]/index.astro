@@ -14,7 +14,7 @@ import Bars from '../../../components/diagrams/Bars.astro';
 import Lanes from '../../../components/diagrams/Lanes.astro';
 import Fan from '../../../components/diagrams/Fan.astro';
 import States from '../../../components/diagrams/States.astro';
-import { lessons, sections, href, usedInLink, SITE, type Lesson } from '../../../lib/site';
+import { lessons, sections, href, lessonUrl, usedInLink, type Lesson } from '../../../lib/site';
 
 export async function getStaticPaths() {
   const all = await lessons();
@@ -26,42 +26,47 @@ const { Content } = await render(entry);
 const d = entry.data;
 const section = sections.find((s) => s.id === d.section)!;
 const sectionNum = sections.indexOf(section) + 1;
+const isCode = d.build.type === 'code';
+const nextUrl = next ? lessonUrl(next.id) : href('/p/');
+const nextTitle = next ? next.data.title : 'Build the projects';
 ---
 <Base lesson title={d.title} description={`${d.tagline} Lesson ${d.order} of the free AI agents course.`}>
   <LessonNav prev={prev} next={next} />
+  <script is:inline>document.documentElement.classList.add('stepped');</script>
   <article class="lesson" data-pagefind-body>
     <header class="lesson-head">
       <div class="kicker">Section {sectionNum} · {section.title} · Lesson {d.order}</div>
       <h1>{d.title}</h1>
       <p class="tagline">{d.tagline}</p>
       <div class="byline">
-        <span>by <a href={href('/about/')}>{SITE.author}</a></span>
-        <span>·</span><span>{d.readingMinutes} min read</span>
+        <span>{d.readingMinutes} min read</span>
         <span>·</span><span>Real world: {d.realWorld}</span>
       </div>
+      <nav class="steps" aria-label="Parts of this lesson" data-steps data-next-url={nextUrl} data-next-title={nextTitle} hidden></nav>
     </header>
     <div class="prose">
       <Content components={{ Callout, Flow, Stack, Trace, Compare, Bars, Lanes, Fan, States }} />
     </div>
   </article>
 
-  <div class="lesson-after">
-    {d.build.type !== 'none' && (
-      <aside class="after-side">
-        <div class="build-cta">
-          <div class="build-art" aria-hidden="true">
-            <span class="ba-node">{d.build.type === 'code' ? 'agent.py' : 'Model'}</span>
-            <span class="ba-wire"><i></i></span>
-            <span class="ba-node">{d.build.type === 'code' ? 'Check ✓' : 'Tools'}</span>
-          </div>
-          <div><strong>Now build it yourself</strong><p>{d.build.type === 'code' ? 'Write and run real Python in your browser. No install.' : 'Wire the parts on a canvas, run the scenario, and watch where it breaks.'}</p></div>
-          <a class="btn" href={href(`/c/${entry.id}/build/`)}>Build it →</a>
-        </div>
-      </aside>
-    )}
+  <div class="lesson-after" data-build-step>
     <div class="after-main">
+      <div class="build-head">
+        <div class="kicker">Last step</div>
+        <h2>Build it</h2>
+        <p>{isCode ? 'You have read how it works. Now write it: real Python, run in your browser, checked against tests.' : 'You have read how it works. Now wire it up on a canvas, run the scenario, and watch where it breaks.'}</p>
+      </div>
+      <div class="build-cta">
+        <div class="build-art" aria-hidden="true">
+          <span class="ba-node">{isCode ? 'agent.py' : 'Model'}</span>
+          <span class="ba-wire"><i></i></span>
+          <span class="ba-node">{isCode ? 'Check ✓' : 'Tools'}</span>
+        </div>
+        <div><strong>{isCode ? 'Code lab' : 'Hands-on lab'}: {d.title}</strong><p>{isCode ? 'No install. Hints and a full solution are there if you get stuck.' : 'No install. It runs in your browser, with hints if you get stuck.'}</p></div>
+        <a class="btn" href={href(`/c/${entry.id}/build/`)}>Build it →</a>
+      </div>
       {d.usedIn.length > 0 && (
-        <div class="chips">Used in:{d.usedIn.map((u) => { const l = usedInLink(u); return <a class="chip" href={l.url} title={l.title}>{l.label}</a>; })}</div>
+        <div class="chips">Then use it in a project:{d.usedIn.map((u) => { const l = usedInLink(u); return <a class="chip" href={l.url} title={l.title}>{l.label}</a>; })}</div>
       )}
 
       <QuickCheck quiz={d.quiz} />
@@ -81,4 +86,84 @@ const sectionNum = sections.indexOf(section) + 1;
   <LessonNav prev={prev} next={next} />
   <Stage />
   <Progress />
+  <script is:inline>
+    // Sub-lessons: one h2 section at a time, then a final "Build it" step. Sections come from rehype-scrolly.
+    (function () {
+      var root = document.documentElement;
+      var art = document.querySelector('article.lesson');
+      var bar = document.querySelector('[data-steps]');
+      var build = document.querySelector('[data-build-step]');
+      var panels = [].slice.call(document.querySelectorAll('.lesson .step'));
+      if (!art || !bar || panels.length < 2) { root.classList.remove('stepped'); return; }
+      var titles = panels.map(function (s) { return s.getAttribute('data-title') || ''; });
+      if (build) { panels.push(build); titles.push('Build it'); }
+      var n = panels.length, cur = -1;
+      var esc = function (t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+      var key = function (i) { return panels[i] === build ? 'build' : 'part-' + (i + 1); };
+
+      bar.innerHTML = '<ol class="steps-rail">' + titles.map(function (t, i) {
+        return '<li><button type="button" data-step-go="' + i + '" title="' + esc(t) + '" aria-label="Part ' + (i + 1) + ' of ' + n + ': ' + esc(t) + '"><span></span></button></li>';
+      }).join('') + '</ol><p class="steps-now"><span class="steps-count"></span>' + (build ? '<button type="button" class="steps-skip" data-step-go="' + (n - 1) + '">Skip to Build it →</button>' : '') + '</p>';
+      bar.hidden = false;
+      var count = bar.querySelector('.steps-count'), skip = bar.querySelector('.steps-skip');
+      var nav = document.createElement('nav');
+      nav.className = 'step-nav';
+      nav.setAttribute('aria-label', 'Previous and next part');
+
+      function btn(i, dir) {
+        var small = dir < 0 ? '← Previous' : panels[i] === build ? 'Last step →' : 'Next →';
+        return '<button type="button" class="step-btn ' + (dir < 0 ? 'prev' : 'next') + '" data-step-go="' + i + '"><small>' + small + '</small><b>' + esc(titles[i]) + '</b></button>';
+      }
+
+      function show(i, opts) {
+        i = Math.max(0, Math.min(n - 1, i));
+        if (i === cur) return;
+        cur = i;
+        var onBuild = panels[i] === build;
+        panels.forEach(function (p, k) { p.toggleAttribute('data-current', k === i); });
+        art.toggleAttribute('data-on-build', onBuild);
+        bar.querySelectorAll('.steps-rail [data-step-go]').forEach(function (b) {
+          var k = +b.getAttribute('data-step-go');
+          b.setAttribute('data-state', k < i ? 'done' : k === i ? 'current' : 'todo');
+          if (k === i) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+        });
+        count.textContent = 'Part ' + (i + 1) + ' of ' + n;
+        if (skip) skip.hidden = onBuild;
+        nav.innerHTML = (i > 0 ? btn(i - 1, -1) : '') + (i < n - 1 ? btn(i + 1, 1)
+          : '<a class="step-btn next" href="' + esc(bar.getAttribute('data-next-url')) + '"><small>Next lesson →</small><b>' + esc(bar.getAttribute('data-next-title')) + '</b></a>');
+        (onBuild ? build.querySelector('.after-main') || build : panels[i]).appendChild(nav);
+        var rp = document.querySelector('.read-progress');
+        if (rp) rp.style.setProperty('--p', ((i + 1) / n).toFixed(4));
+        if (opts && opts.push) { try { history.pushState({ step: i }, '', i === 0 ? location.pathname + location.search : '#' + key(i)); } catch (e) {} }
+        if (opts && opts.scroll) {
+          var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          var y = (opts.target || bar).getBoundingClientRect().top + window.scrollY - 84;
+          window.scrollTo({ top: Math.max(0, y), behavior: reduce ? 'auto' : 'smooth' });
+        }
+        document.dispatchEvent(new CustomEvent('fah:step', { detail: { step: i, build: onBuild } }));
+      }
+
+      // #part-3, #build, or the id of any heading inside a part
+      function fromHash() {
+        var h = decodeURIComponent(location.hash.slice(1));
+        if (!h) return { i: 0 };
+        if (h === 'build' && build) return { i: n - 1 };
+        var m = /^part-(\d+)$/.exec(h);
+        if (m) return { i: +m[1] - 1 };
+        var t = document.getElementById(h);
+        for (var k = 0; t && k < n; k++) if (panels[k].contains(t)) return { i: k, target: t };
+        return { i: Math.max(cur, 0) };
+      }
+
+      document.addEventListener('click', function (e) {
+        var b = e.target.closest && e.target.closest('[data-step-go]');
+        if (b) show(+b.getAttribute('data-step-go'), { push: true, scroll: true });
+      });
+      var sync = function () { var f = fromHash(); show(f.i, { scroll: true, target: f.target }); };
+      window.addEventListener('popstate', sync);
+      window.addEventListener('hashchange', sync);
+      var first = fromHash();
+      show(first.i, { scroll: !!first.target, target: first.target });
+    })();
+  </script>
 </Base>

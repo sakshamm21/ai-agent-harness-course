@@ -1,4 +1,8 @@
 ---
+import '@fontsource-variable/inter/wght.css';
+import '@fontsource-variable/inter/wght-italic.css';
+import '@fontsource-variable/space-grotesk/wght.css';
+import '@fontsource-variable/jetbrains-mono/wght.css';
 import '../styles/global.css';
 import '../styles/lesson.css';
 import { SITE, href } from '../lib/site';
@@ -51,7 +55,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     </main>
     <footer class="site-footer">
       <div class={`${wrap} cols`}>
-        <div>{SITE.name}. Free, no login, no tracking cookies.<br />Content CC BY-NC-SA 4.0 · Code MIT<br /><span class="credit">Created by <a href={SITE.authorUrl}>{SITE.author}</a></span></div>
+        <div>{SITE.name}. Free, no login, no tracking cookies.<br />Content CC BY-NC-SA 4.0 · Code MIT</div>
         <nav aria-label="Footer">
           <a href={href('/about/')}>About</a>
           <a href={href('/progress/')}>Your progress</a>
@@ -61,6 +65,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
           <a href={href('/rss.xml')}>RSS</a>
         </nav>
       </div>
+      <p class={`${wrap} credit`}>Created by <a href={SITE.authorUrl}>{SITE.author}</a></p>
     </footer>
     <script is:inline>
       document.getElementById('theme-toggle')?.addEventListener('click', () => {

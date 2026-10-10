@@ -14,6 +14,11 @@
   const count = document.querySelector<HTMLElement>('.stage-count');
   const wide = window.matchMedia('(min-width: 1100px)');
   let active = -1;
+  // Lessons are split into steps (sub-lessons); the stage then only cycles through the current step's figures.
+  const stepped = document.documentElement.classList.contains('stepped');
+  let step: string | null = stepped ? document.querySelector('.step[data-current]')?.getAttribute('data-step') ?? '0' : null;
+  const inStep = (k: number) => step === null || markers[k]?.closest('.step')?.getAttribute('data-step') === step;
+  const pool = () => frames.map((_, k) => k).filter(inStep);
   const bar = document.querySelector<HTMLElement>('.read-progress');
   const article = document.querySelector<HTMLElement>('article.lesson');
   function progress() {
@@ -22,8 +27,10 @@
     const p = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height - window.innerHeight * 0.6)));
     bar.style.setProperty('--p', p.toFixed(4));
   }
-  window.addEventListener('scroll', () => requestAnimationFrame(progress), { passive: true });
-  progress();
+  if (!stepped) {
+    window.addEventListener('scroll', () => requestAnimationFrame(progress), { passive: true });
+    progress();
+  }
 
   // Number each code line so lines can cascade in when a frame plays.
   document.querySelectorAll<HTMLElement>('.frame-code pre, .vis-inline pre').forEach((pre) => {
@@ -43,17 +50,20 @@
       if (k === active) { f.setAttribute('data-active', ''); f.removeAttribute('aria-hidden'); play(f); }
       else { f.removeAttribute('data-active'); f.setAttribute('aria-hidden', 'true'); }
     });
-    pips.forEach((p, k) => p.toggleAttribute('data-on', k === active));
+    pips.forEach((p, k) => { p.toggleAttribute('data-on', k === active); p.style.display = inStep(k) ? '' : 'none'; });
     markers.forEach((m, k) => m.toggleAttribute('data-current', k === active));
-    if (count) count.textContent = `${active + 1} / ${frames.length}`;
+    const p = pool();
+    if (count) count.textContent = `${Math.max(1, p.indexOf(active) + 1)} / ${p.length || 1}`;
   }
 
   let lockUntil = 0; // after a click, let the smooth scroll finish before scroll position decides again
   function pick() {
     if (!wide.matches || performance.now() < lockUntil) return;
+    const p = pool();
+    if (!p.length) return;
     const line = window.innerHeight * 0.55;
-    let i = 0;
-    markers.forEach((m, k) => { if (m.getBoundingClientRect().top < line) i = k; });
+    let i = p[0];
+    for (const k of p) if (markers[k].getBoundingClientRect().top < line) i = k;
     setActive(i);
   }
 
@@ -67,7 +77,22 @@
     setActive(i);
   }
 
+  /** Move to the previous or next figure of the current step. */
+  function move(dir: number) {
+    const p = pool();
+    const t = p[p.indexOf(active) + dir];
+    if (t !== undefined) goTo(t);
+  }
+
   if (stage && frames.length) {
+    document.addEventListener('fah:step', (e) => {
+      const d = (e as CustomEvent<{ step: number; build: boolean }>).detail;
+      if (d.build) return;
+      step = String(d.step);
+      const p = pool();
+      lockUntil = performance.now() + 700; // the page scrolls back to the top of the step
+      if (p.length) { active = -1; setActive(p[0]); }
+    });
     let queued = false;
     window.addEventListener('scroll', () => {
       if (queued) return;
@@ -79,17 +104,17 @@
       const t = e.target as HTMLElement;
       const marker = t.closest<HTMLElement>('[data-goto]');
       if (marker) { lockUntil = performance.now() + 600; setActive(Number(marker.dataset.goto)); return; }
-      if (t.closest('[data-stage-prev]')) goTo(active - 1);
-      if (t.closest('[data-stage-next]')) goTo(active + 1);
+      if (t.closest('[data-stage-prev]')) move(-1);
+      if (t.closest('[data-stage-next]')) move(1);
       const pip = t.closest<HTMLElement>('[data-pip]');
       if (pip) goTo(Number(pip.dataset.pip));
     });
     stage.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); goTo(active + 1); }
-      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); goTo(active - 1); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); move(1); }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); move(-1); }
     });
     active = -1;
-    setActive(0);
+    setActive(pool()[0] ?? 0);
     pick();
   }
 
