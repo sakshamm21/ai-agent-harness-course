@@ -92,11 +92,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2.5rem 0; }
 .hero p { color: var(--text-2); font-size: 1.15rem; margin: 0 0 28px; max-width: 560px; }
 .hero .stats { display: flex; gap: 22px; color: var(--text-3); font-size: 14px; margin-top: 24px; flex-wrap: wrap; }
 .hero .stats b { color: var(--text); }
-.btn { display: inline-flex; align-items: center; gap: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 600; padding: 10px 18px; border-radius: 9px; border: 0; cursor: pointer; font-size: 15px; font-family: inherit; }
-.btn:hover { text-decoration: none; filter: brightness(1.08); }
-.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line-2); }
-.btn.small { padding: 6px 12px; font-size: 14px; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 600; padding: 10px 18px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; font-size: 15px; line-height: 1.2; font-family: inherit; white-space: nowrap; box-shadow: 0 1px 0 rgba(255, 255, 255, .18) inset, 0 6px 16px color-mix(in srgb, var(--accent) 22%, transparent); transition: transform .15s, box-shadow .2s, filter .2s, background-color .2s, border-color .2s, color .2s; }
+.btn:hover { text-decoration: none; filter: brightness(1.08); transform: translateY(-1px); }
+.btn:active { transform: translateY(0) scale(.98); filter: brightness(.96); }
+.btn.ghost { background: var(--bg-2); color: var(--text); border-color: var(--line-2); box-shadow: none; }
+.btn.ghost:hover { filter: none; border-color: color-mix(in srgb, var(--accent) 60%, var(--line-2)); background: color-mix(in srgb, var(--accent) 8%, var(--bg-2)); }
+.btn.ghost.danger:hover { border-color: var(--bad); color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--bg-2)); }
+.btn.small { padding: 7px 12px; font-size: 13.5px; border-radius: 9px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; filter: none; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .btn, .btn:hover, .btn:active { transition: none; transform: none; } }
 .progress-line { color: var(--text-3); font-size: 14px; margin-left: 12px; }
 
 .section-block { margin: 48px 0; }
