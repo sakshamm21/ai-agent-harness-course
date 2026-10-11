@@ -7,6 +7,7 @@ import '@xyflow/react/dist/style.css';
 import './lab.css';
 import { simulate } from '../../lab/engine';
 import { NODE_DEFS } from '../../lab/nodes';
+import { NodeIcon, TONE } from './icons';
 import type { Graph, NodeType, Scenario, SimOutput } from '../../lab/types';
 
 interface Props { scenario: Scenario; lessonSlug: string; lessonTitle: string; nextUrl?: string; nextTitle?: string; base: string }
@@ -32,7 +33,7 @@ function summary(kind: NodeType, cfg: Record<string, any>): string {
   switch (kind) {
     case 'model': return `${cfg.tier}${cfg.reasoning ? ' · reasons' : ''}${cfg.parallelTools ? ' · parallel' : ''}${cfg.cachePrefix ? ' · cached' : ''}`;
     case 'loop': return `max ${cfg.maxTurns} turns${Number(cfg.maxCost) ? ` · $${cfg.maxCost}` : ''}`;
-    case 'tool': return String(cfg.name || 'unnamed');
+    case 'tool': return String(cfg.name || 'name me');
     case 'memory': return `${cfg.kind} · write ${cfg.writePolicy}`;
     case 'retriever': return `chunk ${cfg.chunkSize} · k=${cfg.topK}`;
     case 'judge': return `bar ${cfg.passBar}`;
@@ -42,6 +43,7 @@ function summary(kind: NodeType, cfg: Record<string, any>): string {
     case 'permissions': return [cfg.deny && `deny ${cfg.deny}`, cfg.ask && `ask ${cfg.ask}`].filter(Boolean).join(' · ') || 'allow all';
     case 'router': return cfg.routes || 'no routes';
     case 'approval': return cfg.rule;
+    case 'user': return 'sends the tasks';
     default: return '';
   }
 }
@@ -49,10 +51,13 @@ function summary(kind: NodeType, cfg: Record<string, any>): string {
 function LabNodeView({ data, selected }: NodeProps<FNode>) {
   const def = NODE_DEFS[data.kind];
   return (
-    <div className={`lab-node${selected ? ' sel' : ''}${data.hot ? ' hot' : ''}${data.live ? ' live' : ''}${data.focus ? ' focus' : ''}`}>
+    <div className={`lab-node tone-${TONE[data.kind]}${selected ? ' sel' : ''}${data.hot ? ' hot' : ''}${data.live ? ' live' : ''}${data.focus ? ' focus' : ''}`}>
       {data.kind !== 'user' && <Handle type="target" position={Position.Left} />}
-      <div className="ln-head"><span aria-hidden="true">{def.icon}</span>{def.label}</div>
-      <div className="ln-sub">{summary(data.kind, data.cfg)}</div>
+      <span className="nd-icon"><NodeIcon kind={data.kind} size={17} /></span>
+      <span className="nd-text">
+        <span className="nd-head">{def.label}</span>
+        <span className="nd-sub">{summary(data.kind, data.cfg) || def.blurb}</span>
+      </span>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -124,7 +129,10 @@ function Lab({ scenario, lessonSlug, lessonTitle, nextUrl, nextTitle, base }: Pr
     let position = pos;
     if (!position) {
       const r = wrapRef.current?.getBoundingClientRect();
-      position = rf.screenToFlowPosition({ x: (r?.left ?? 0) + (r?.width ?? 400) / 2, y: (r?.top ?? 0) + (r?.height ?? 300) / 2 });
+      position = rf.screenToFlowPosition({ x: (r?.left ?? 0) + (r?.width ?? 400) * 0.36, y: (r?.top ?? 0) + (r?.height ?? 300) * 0.3 });
+      // Clicking a part drops it left of centre, clear of the settings panel; step down until it is not sitting on top of another node.
+      const taken = (p: { x: number; y: number }) => rf.getNodes().some((n) => Math.abs(n.position.x - p.x) < 190 && Math.abs(n.position.y - p.y) < 64);
+      for (let k = 0; k < 12 && taken(position); k++) position = { x: position.x, y: position.y + 76 };
     }
     const id = `${kind}-${Date.now().toString(36)}-${idRef.current++}`;
     const cfg = { ...NODE_DEFS[kind].defaults };
@@ -243,7 +251,11 @@ function Lab({ scenario, lessonSlug, lessonTitle, nextUrl, nextTitle, base }: Pr
         )}
 
         <div className="runbar">
-          <button type="button" className="btn" onClick={run} disabled={running}>{running ? 'Running…' : `▶ Run ${scenario.runs ?? 20}× (seeds 1–${scenario.runs ?? 20})`}</button>
+          <button type="button" className="btn run" onClick={run} disabled={running}>
+            {running ? <span className="spin" aria-hidden="true" /> : <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5L7 4.5Z" /></svg>}
+            {running ? 'Running…' : `Run ${scenario.runs ?? 20}×`}
+            {!running && <small>seeds 1–{scenario.runs ?? 20}</small>}
+          </button>
           <button type="button" className="btn ghost small" onClick={() => load(scenario.starter)}>Reset</button>
           <button type="button" className="btn ghost small" onClick={() => setHints((h) => Math.min(h + 1, scenario.hints.length))} disabled={hints >= scenario.hints.length}>Hint ({hints}/{scenario.hints.length})</button>
           {hints >= 2 && <button type="button" className="btn ghost small" onClick={() => load(scenario.solution)}>Show solution</button>}
@@ -320,14 +332,14 @@ function Lab({ scenario, lessonSlug, lessonTitle, nextUrl, nextTitle, base }: Pr
       <div className="lab-main">
         <div className="lab-grid">
           <aside className="palette" aria-label="Parts">
-            <div className="pal-title">Parts</div>
+            <div className="pal-title">Add a part</div>
             {scenario.palette.map((kind) => {
               const def = NODE_DEFS[kind];
               return (
                 <button key={kind} type="button" className="pal-item" draggable
                   onDragStart={(e) => { e.dataTransfer.setData('application/x-lab-node', kind); e.dataTransfer.effectAllowed = 'move'; }}
                   onClick={() => addNode(kind)} title={def.blurb}>
-                  <span aria-hidden="true">{def.icon}</span><span>{def.label}</span>
+                  <span className={`nd-icon tone-${TONE[kind]}`}><NodeIcon kind={kind} size={14} /></span><span>{def.label}</span><span className="pal-plus" aria-hidden="true">+</span>
                 </button>
               );
             })}
@@ -357,13 +369,18 @@ function Lab({ scenario, lessonSlug, lessonTitle, nextUrl, nextTitle, base }: Pr
           <aside className="inspector" aria-label="Inspector">
             {sel ? (
               <>
-                <div className="ins-title"><span aria-hidden="true">{NODE_DEFS[sel.data.kind].icon}</span> {NODE_DEFS[sel.data.kind].label}</div>
+                <div className="ins-title">
+                  <span className={`nd-icon tone-${TONE[sel.data.kind]}`}><NodeIcon kind={sel.data.kind} size={15} /></span>
+                  <span>{NODE_DEFS[sel.data.kind].label}</span>
+                  <button type="button" className="ins-close" aria-label="Close settings" onClick={() => { setSelected(null); setNodes((ns) => ns.map((n) => (n.selected ? { ...n, selected: false } : n))); }}>×</button>
+                </div>
                 <p className="ins-blurb">{NODE_DEFS[sel.data.kind].blurb}</p>
+                {NODE_DEFS[sel.data.kind].fields.length === 0 && <p className="ins-none">Nothing to set on this part. Wire it to the next one.</p>}
                 {NODE_DEFS[sel.data.kind].fields.map((f) => {
                   const v = sel.data.cfg[f.key];
                   const id = `f-${sel.id}-${f.key}`;
                   return (
-                    <label key={f.key} className="field" htmlFor={id}>
+                    <label key={f.key} className={`field field-${f.kind}`} htmlFor={id}>
                       <span>{f.label}{f.kind === 'range' ? `: ${v}` : ''}</span>
                       {f.kind === 'select' && <select id={id} value={v} onChange={(e) => updateCfg(f.key, e.target.value)}>{f.options!.map((o) => <option key={o}>{o}</option>)}</select>}
                       {f.kind === 'number' && <input id={id} type="number" value={v} min={f.min} max={f.max} step={f.step ?? 1} onChange={(e) => updateCfg(f.key, e.target.value === '' ? '' : Number(e.target.value))} />}
@@ -375,7 +392,7 @@ function Lab({ scenario, lessonSlug, lessonTitle, nextUrl, nextTitle, base }: Pr
                     </label>
                   );
                 })}
-                <button type="button" className="btn ghost small" onClick={removeSelected}>Remove node</button>
+                <button type="button" className="btn ghost small danger" onClick={removeSelected}>Remove node</button>
               </>
             ) : (
               <p className="ins-empty">Select a node to change its settings.</p>

@@ -167,6 +167,7 @@ export default function CodeLab({ lab, lessonSlug, lessonTitle, nextUrl, nextTit
         <section className="cl-work">
           <div className="cl-editor">
             <div className="cl-bar">
+              <span className="dots" aria-hidden="true"><i /><i /><i /></span>
               <span className="file">lab.py</span>
               <button type="button" className="linkish" onClick={() => { if (confirm('Replace your code with the starter?')) setCode(lab.starter); }}>Reset</button>
               <button type="button" className="linkish" onClick={() => { if (confirm('Load the reference solution? Try it yourself first.')) setCode(lab.solution); }}>Show solution</button>

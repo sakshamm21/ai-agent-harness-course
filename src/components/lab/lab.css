@@ -46,25 +46,18 @@
 .pal-item:hover { border-color: var(--accent); }
 .pal-help { font-size: 12.5px; color: var(--text-3); line-height: 1.45; margin: 10px 4px 0; }
 .canvas { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--bg); min-height: 300px; }
-.inspector .ins-title { font-weight: 700; margin-bottom: 4px; }
 .inspector .ins-blurb, .inspector .ins-empty { font-size: 13.5px; color: var(--text-2); margin: 0 0 12px; }
 .field { display: grid; gap: 4px; margin-bottom: 12px; font-size: 13.5px; color: var(--text-2); }
 .field input[type='text'], .field input[type='number'], .field select, .field textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 8px; font: inherit; font-size: 14px; }
 .field textarea { font-family: var(--mono); font-size: 12.5px; resize: vertical; }
-.field input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--accent); }
 .field small { color: var(--text-3); font-size: 12px; }
 
-.lab-node { background: var(--bg-3); border: 1.5px solid var(--line-2); border-radius: 10px; padding: 8px 12px; min-width: 130px; color: var(--text); font-size: 13px; box-shadow: var(--shadow); }
-.lab-node.sel { border-color: var(--accent); }
+.lab-node { color: var(--text); box-shadow: var(--shadow); }
 .lab-node.hot { border-color: var(--bad); animation: pulse 1.2s ease-in-out 3; }
-.lab-node .ln-head { font-weight: 700; display: flex; gap: 6px; align-items: center; }
-.lab-node .ln-sub { color: var(--text-3); font-size: 12px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 50%, transparent); } 50% { box-shadow: 0 0 0 8px transparent; } }
-.react-flow__handle { width: 10px; height: 10px; background: var(--accent); border: 2px solid var(--bg); }
 /* The global `svg { max-width: 100% }` collapses React Flow's zero-width edge layer and hides every wire. */
 .react-flow svg { max-width: none; }
 .react-flow__edge-path { stroke: var(--text-3); stroke-width: 1.6; }
-.react-flow__controls button { background: var(--bg-2); color: var(--text); border-color: var(--line); fill: var(--text); }
 .react-flow__background { color: var(--line-2); }
 
 .runbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 14px 0 8px; }
@@ -145,3 +138,101 @@
 .transcript .bubble.current { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); transform: translateX(2px); }
 .lab-node.focus { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent), 0 0 24px color-mix(in srgb, var(--accent) 35%, transparent); transform: scale(1.06); }
 .lab-node { transition: border-color .3s, box-shadow .3s, transform .3s; }
+
+/* ---- Lab look: parts, nodes, inspector and controls share one visual language ---- */
+.tone-talk { --tone: var(--accent); }
+.tone-think { --tone: var(--accent-2); }
+.tone-flow { --tone: #2bb8a6; }
+.tone-act { --tone: var(--warn); }
+.tone-store { --tone: #4aa8e8; }
+.tone-guard { --tone: #e8789a; }
+:root[data-theme='light'] .tone-flow { --tone: #0f8576; }
+:root[data-theme='light'] .tone-store { --tone: #1f6fb0; }
+:root[data-theme='light'] .tone-guard { --tone: #c0406a; }
+.nd-icon { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: var(--tone, var(--accent)); background: color-mix(in srgb, var(--tone, var(--accent)) 15%, transparent); border: 1px solid color-mix(in srgb, var(--tone, var(--accent)) 32%, transparent); }
+.nd-svg { display: block; max-width: none; }
+
+/* Nodes on the canvas */
+.lab-node { display: flex; align-items: center; gap: 10px; min-width: 168px; max-width: 240px; padding: 9px 14px 9px 9px; border-radius: 13px; border: 1px solid var(--line-2); background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 6%, var(--bg-2)), var(--bg-2)); font-size: 13px; animation: nd-pop .32s cubic-bezier(.2, .8, .2, 1.2) backwards; }
+.lab-node:hover { border-color: color-mix(in srgb, var(--tone) 55%, var(--line-2)); }
+.lab-node.sel { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent), var(--shadow); }
+.nd-text { display: grid; min-width: 0; line-height: 1.25; }
+.nd-head { font: 600 13.5px var(--display); color: var(--text); white-space: nowrap; }
+.nd-sub { font: 11.5px var(--mono); color: var(--text-3); margin-top: 2px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes nd-pop { from { opacity: 0; transform: scale(.86); } }
+.react-flow__node { cursor: grab; }
+.react-flow__handle { width: 11px; height: 11px; background: var(--bg); border: 2px solid var(--accent); transition: transform .15s, background-color .15s; }
+.react-flow__handle:hover, .react-flow__handle.connectingfrom, .react-flow__handle.valid { background: var(--accent); transform: translate(var(--hx, 0), -50%) scale(1.35); }
+.react-flow__handle-left { --hx: -50%; }
+.react-flow__handle-right { --hx: 50%; }
+.react-flow__connection-path { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; }
+.react-flow__controls { border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+.react-flow__controls button { width: 30px; height: 30px; background: var(--bg-2); color: var(--text-2); fill: currentColor; border-bottom: 1px solid var(--line); transition: background-color .15s, color .15s; }
+.react-flow__controls button:hover { background: var(--bg-3); color: var(--text); }
+.react-flow__controls button:last-child { border-bottom: 0; }
+.canvas { border-radius: 16px; background:
+  radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--accent-2) 7%, transparent), transparent 60%),
+  radial-gradient(100% 70% at 0% 100%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 60%),
+  var(--bg); }
+
+/* Parts palette */
+.palette { border-radius: 14px; }
+.pal-title { font: 11.5px var(--mono); white-space: nowrap; }
+.pal-item { gap: 9px; padding: 6px 10px 6px 6px; border-radius: 11px; background: var(--bg); border-color: var(--line-2); font-weight: 500; font-size: 13.5px; white-space: nowrap; transition: border-color .15s, background-color .15s, transform .15s, box-shadow .2s; }
+.pal-item .nd-icon { width: 26px; height: 26px; border-radius: 8px; }
+.pal-item .pal-plus { margin-left: auto; padding-left: 4px; color: var(--text-3); font: 500 15px var(--mono); transition: color .15s, transform .15s; }
+.pal-item:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0, 0, 0, .18); }
+.pal-item:hover .pal-plus { color: var(--accent); transform: rotate(90deg); }
+.pal-item:active { cursor: grabbing; transform: scale(.97); box-shadow: none; }
+
+/* Inspector */
+.inspector { border-radius: 14px; padding: 14px; }
+.inspector .ins-title { display: flex; align-items: center; gap: 10px; font: 600 15px var(--display); margin-bottom: 8px; }
+.inspector .ins-title .nd-icon { width: 30px; height: 30px; }
+.ins-close { margin-left: auto; width: 28px; height: 28px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--text-3); font-size: 18px; line-height: 1; cursor: pointer; transition: background-color .15s, color .15s, border-color .15s; }
+.ins-close:hover { background: var(--bg-3); color: var(--text); border-color: var(--line-2); }
+.inspector .ins-blurb { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.ins-none { font-size: 13px; color: var(--text-3); margin: 0 0 12px; }
+.field > span { font-weight: 500; color: var(--text-2); }
+.field input[type='text'], .field input[type='number'], .field select, .field textarea { border-radius: 9px; padding: 7px 10px; transition: border-color .15s, box-shadow .15s; }
+.field input[type='text']:focus, .field input[type='number']:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.field select, .tabs select { appearance: none; padding-right: 28px; background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%); background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+.field input[type='range'] { width: 100%; accent-color: var(--accent); }
+/* A yes/no setting reads as a switch on the same row as its label */
+.field-bool { grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; }
+.field-bool small { grid-column: 1 / -1; }
+.field input[type='checkbox'] { appearance: none; width: 36px; height: 20px; border-radius: 99px; background: var(--line-2); position: relative; cursor: pointer; transition: background-color .2s; margin: 0; }
+.field input[type='checkbox']::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .2s cubic-bezier(.2, .8, .2, 1.2); }
+.field input[type='checkbox']:checked { background: var(--accent); }
+.field input[type='checkbox']:checked::after { transform: translateX(16px); }
+
+/* Goals, run bar, results */
+.goals li { padding: 5px 13px; background: var(--bg-2); transition: border-color .3s, background-color .3s; }
+.goals li.pass { background: color-mix(in srgb, var(--good) 9%, var(--bg-2)); }
+.goals li.fail { background: color-mix(in srgb, var(--bad) 8%, var(--bg-2)); }
+.btn.run small { font: 500 11.5px var(--mono); opacity: .75; }
+.btn .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
+.hints { margin: 10px 0 0; padding: 12px 14px 12px 34px; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 10px; background: var(--bg-2); }
+.results { border-radius: 14px; overflow: hidden; }
+.tabs { gap: 6px; padding: 8px; background: color-mix(in srgb, var(--bg-3) 45%, transparent); }
+.tabs button { font-weight: 500; padding: 6px 12px; transition: background-color .15s, color .15s; }
+.tabs button:hover { color: var(--text); background: color-mix(in srgb, var(--bg-3) 70%, transparent); }
+.tabs button.on { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--line-2); }
+.tabs select { border-radius: 8px; padding-top: 5px; padding-bottom: 5px; }
+.stepbar .btn.small { min-width: 34px; }
+.bubble { border-radius: 12px; padding: 9px 13px; }
+.bubble .who { font-family: var(--mono); font-size: 11px; }
+
+@media (min-width: 1100px) {
+  .agentlab .palette { flex-wrap: nowrap; min-height: 54px; overflow-x: auto; }
+  .agentlab .pal-help { flex: 1 1 0; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agentlab .inspector { top: 76px; width: 280px; max-height: calc(100% - 92px); border-color: var(--line-2); box-shadow: 0 18px 50px rgba(0, 0, 0, .28); backdrop-filter: blur(10px); background: color-mix(in srgb, var(--bg-2) 94%, transparent); }
+}
+@media (max-width: 900px) {
+  .palette { align-items: center; }
+  .pal-item .pal-plus { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-node, .btn .spin { animation: none; }
+  .pal-item, .pal-item:hover, .pal-item:active { transition: none; transform: none; }
+}
