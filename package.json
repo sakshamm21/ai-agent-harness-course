@@ -1,7 +1,7 @@
 {
   "name": "free-agent-harness",
   "version": "0.1.0",
-  "description": "",
+  "description": "Learn AI agents by building them — 54 hands-on lessons, visual Agent Labs, in-browser Python code labs, and 3 production capstones.",
   "scripts": {
     "postinstall": "node scripts/copy-pyodide.mjs",
     "predev": "node scripts/copy-pyodide.mjs",
